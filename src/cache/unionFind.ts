@@ -1,0 +1,146 @@
+import type { Turn } from "../core/types.js";
+import type { SparseVector } from "./similarity.js";
+import { cosine_similarity, weighted_average } from "./similarity.js";
+
+export interface ClusterNode {
+  id: string;
+  parent: string;          // points to self if root
+  rank: number;
+  vector: SparseVector;
+  turns: Turn[];           // original turns in this node
+}
+
+export class UnionFindForest {
+  private nodes = new Map<string, ClusterNode>();
+
+  add(id: string, vector: SparseVector, turns: Turn[]): void {
+    this.nodes.set(id, {
+      id,
+      parent: id,
+      rank: 0,
+      vector,
+      turns,
+    });
+  }
+
+  find(id: string): string {
+    const node = this.nodes.get(id);
+    if (!node) return id;
+    if (node.parent !== id) {
+      node.parent = this.find(node.parent); // path compression
+    }
+    return node.parent;
+  }
+
+  union(a_id: string, b_id: string): string {
+    const root_a = this.find(a_id);
+    const root_b = this.find(b_id);
+    if (root_a === root_b) return root_a;
+
+    const a = this.nodes.get(root_a)!;
+    const b = this.nodes.get(root_b)!;
+
+    // Merge by rank
+    let winner: ClusterNode;
+    let loser: ClusterNode;
+    if (a.rank >= b.rank) {
+      winner = a;
+      loser = b;
+    } else {
+      winner = b;
+      loser = a;
+    }
+
+    loser.parent = winner.id;
+    if (winner.rank === loser.rank) {
+      winner.rank++;
+    }
+
+    // Weighted-average centroid
+    const w_a = winner.turns.length;
+    const w_b = loser.turns.length;
+    winner.vector = weighted_average(winner.vector, w_a, loser.vector, w_b);
+    winner.turns = [...winner.turns, ...loser.turns];
+
+    return winner.id;
+  }
+
+  roots(): ClusterNode[] {
+    const result: ClusterNode[] = [];
+    for (const node of this.nodes.values()) {
+      if (node.parent === node.id) {
+        result.push(node);
+      }
+    }
+    return result;
+  }
+
+  root_count(): number {
+    return this.roots().length;
+  }
+
+  get_node(id: string): ClusterNode | undefined {
+    return this.nodes.get(id);
+  }
+
+  /** Find the root closest to the given vector. Returns [root_id, similarity]. */
+  nearest_root(vector: SparseVector): [string, number] | null {
+    const roots = this.roots();
+    if (roots.length === 0) return null;
+
+    let best_id = roots[0]!.id;
+    let best_sim = cosine_similarity(vector, roots[0]!.vector);
+
+    for (let i = 1; i < roots.length; i++) {
+      const sim = cosine_similarity(vector, roots[i]!.vector);
+      if (sim > best_sim) {
+        best_sim = sim;
+        best_id = roots[i]!.id;
+      }
+    }
+
+    return [best_id, best_sim];
+  }
+
+  /** Find the closest pair of roots. Returns [id_a, id_b, similarity]. */
+  closest_pair(): [string, string, number] | null {
+    const roots = this.roots();
+    if (roots.length < 2) return null;
+
+    let best_a = roots[0]!.id;
+    let best_b = roots[1]!.id;
+    let best_sim = -1;
+
+    for (let i = 0; i < roots.length; i++) {
+      for (let j = i + 1; j < roots.length; j++) {
+        const sim = cosine_similarity(roots[i]!.vector, roots[j]!.vector);
+        if (sim > best_sim) {
+          best_sim = sim;
+          best_a = roots[i]!.id;
+          best_b = roots[j]!.id;
+        }
+      }
+    }
+
+    return [best_a, best_b, best_sim];
+  }
+
+  /** Get all turns belonging to the cluster rooted at root_id. */
+  expand(root_id: string): Turn[] {
+    const root = this.find(root_id);
+    const node = this.nodes.get(root);
+    return node ? node.turns : [];
+  }
+
+  /** Find which cluster a turn belongs to and return it. */
+  find_turn(message_id: string): Turn | undefined {
+    for (const node of this.nodes.values()) {
+      for (const turn of node.turns) {
+        if (turn.id === message_id) {
+          return turn;
+        }
+      }
+    }
+    return undefined;
+  }
+}
