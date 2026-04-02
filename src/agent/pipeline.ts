@@ -150,9 +150,8 @@ export class Pipeline {
     // 4. Assemble response
     let assistantTurn = await assembleTurn(stream);
 
-    // 4b. Now append the user turn to cache (after model has responded,
-    //     so it wasn't duplicated in the prompt via cache.read())
-    this.cache.append(userTurn);
+    // 4b. Do NOT append userTurn to cache — it's already in contextMessages
+    //     from assembleContext. The cache holds history (assistant + tool results).
 
     // 5. Filter — content validation (skip for tool-use-only turns)
     const hasToolCalls = assistantTurn.tool_calls && assistantTurn.tool_calls.length > 0;
