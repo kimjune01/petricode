@@ -16,7 +16,7 @@ Follow `WORKPLAN.md` sequentially. Each item has: what it does, dependencies, te
 
 ### Current state
 
-No implementation yet. Start at item 1 (Scaffold).
+All 14 work plan items complete. 158 tests passing. MVP v0.1 implemented.
 
 ### Stack
 
