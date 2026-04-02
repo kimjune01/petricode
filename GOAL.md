@@ -1,6 +1,6 @@
 # Goal
 
-🧪 Build an **experimental harness** — a coding agent that fills all six Natural Framework roles with clean, swappable interfaces. Not a product. A laboratory.
+🧫 Build an **experimental harness** — a coding agent that fills all six Natural Framework roles with clean, swappable interfaces. Not a product. A laboratory.
 
 ## What this is
 
@@ -18,7 +18,7 @@ The goal is to **experiment our way into a full-6-slotted harness** — one that
 
 The harness should feel familiar to anyone who's used a modern terminal coding agent. Emulate the look-and-feel of Claude Code based on publicly available screenshots, demos, and documentation:
 
-- **Logo:** 🧪 (alembic) — an experiment, not a product
+- **Logo:** 🧫 (alembic) — an experiment, not a product
 - **Terminal UI:** Ink/React-based, similar layout. Conversation history with message bubbles, tool call groups with collapsible output, streaming markdown rendering, status line at bottom.
 - **Color palette:** Muted dark theme with accent colors for different message types (user, assistant, tool results, errors). Match the general aesthetic visible in public demos and screenshots.
 - **Tool output:** Collapsible tool call groups. Show tool name, brief result, expandable full output. Progress indicators for long-running operations.

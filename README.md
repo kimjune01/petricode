@@ -1,4 +1,4 @@
-# 🧪 claude-left
+# 🧫 claude-left
 
 AGPL-3.0 specification for a coding agent harness, derived from the [Natural Framework](https://june.kim/the-natural-framework) diagnosis — not from any proprietary source code.
 
