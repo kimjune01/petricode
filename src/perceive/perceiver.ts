@@ -21,6 +21,13 @@ export class Perceiver implements PerceiveSlot {
     this.skillDirs = opts.skillDirs ?? [];
   }
 
+  /** Return a summary of discovered context files and estimated token count. */
+  async contextSummary(): Promise<{ fileCount: number; tokenEstimate: number }> {
+    const context = await discoverContext(this.projectDir, this.globalConfigDir);
+    const totalChars = context.reduce((sum, f) => sum + f.content.length, 0);
+    return { fileCount: context.length, tokenEstimate: Math.ceil(totalChars / 4) };
+  }
+
   async perceive(raw_input: unknown): Promise<PerceivedEvent | RetryableError> {
     const input = String(raw_input);
 

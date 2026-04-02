@@ -2,11 +2,11 @@ import { readFile, readdir, stat } from "fs/promises";
 import { join } from "path";
 import type { ContextFragment } from "../core/types.js";
 
-const INSTRUCTION_FILES = ["instructions.md", "CLAUDE.md", "README.md"];
+const INSTRUCTION_FILES = ["instructions.md", "CLAUDE.md", "AGENTS.md", "README.md"];
 
 /**
  * Discover context fragments by walking for instruction files.
- * Precedence: global (0.3) < project (0.7) < subdirectory (0.5).
+ * Precedence: global (0.3) < project (0.7) < subdirectory (0.9).
  */
 export async function discoverContext(
   projectDir: string,
@@ -35,7 +35,7 @@ export async function discoverContext(
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
       const subAgents = join(projectDir, entry.name, ".agents");
-      await collectFromDir(subAgents, fragments, 0.5);
+      await collectFromDir(subAgents, fragments, 0.9);
     }
   } catch {
     // projectDir might not exist

@@ -248,6 +248,11 @@ export class Pipeline {
     return this.skills;
   }
 
+  /** Summary of discovered context files and estimated token count. */
+  async contextSummary(): Promise<{ fileCount: number; tokenEstimate: number }> {
+    return this.perceiver.contextSummary();
+  }
+
   // ── Private ────────────────────────────────────────────────────
 
   private buildConversation(
@@ -274,7 +279,7 @@ export class Pipeline {
     return this.registry.list().map((tool) => ({
       name: tool.name,
       description: tool.description,
-      input_schema: tool.input_schema,
+      input_schema: { type: "object", ...tool.input_schema } as Record<string, unknown>,
     }));
   }
 

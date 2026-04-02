@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import type { Turn, ToolCall } from "../core/types.js";
 import type { AppPhase } from "./state.js";
@@ -21,7 +21,17 @@ export default function App({ pipeline, resumeSessionId }: AppProps) {
   const { exit } = useApp();
   const [state, setState] = useState(initialState);
   const [reviewerFindings, setReviewerFindings] = useState<string[]>([]);
+  const [contextSummary, setContextSummary] = useState<string | undefined>(undefined);
   const confirmResolveRef = useRef<((allowed: boolean) => void) | null>(null);
+
+  useEffect(() => {
+    if (!pipeline) return;
+    pipeline.contextSummary().then(({ fileCount, tokenEstimate }) => {
+      if (fileCount > 0) {
+        setContextSummary(`Loaded ${fileCount} context file${fileCount === 1 ? "" : "s"} (${tokenEstimate.toLocaleString()} tokens)`);
+      }
+    }).catch(() => {});
+  }, [pipeline]);
 
   useInput((_ch, key) => {
     if (key.ctrl && _ch === "c") {
@@ -170,6 +180,7 @@ export default function App({ pipeline, resumeSessionId }: AppProps) {
         model={state.model}
         tokenCount={state.tokenCount}
         phase={state.phase}
+        contextSummary={contextSummary}
       />
     </Box>
   );

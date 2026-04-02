@@ -75,7 +75,7 @@ describe("contextDiscovery", () => {
     expect(project!.relevance).toBeGreaterThan(global!.relevance);
   });
 
-  test("subdirectory .agents/ also discovered", async () => {
+  test("subdirectory .agents/ discovered with highest relevance", async () => {
     const subDir = join(tmp, "sub", ".agents");
     mkdirSync(subDir, { recursive: true });
     writeFileSync(join(subDir, "instructions.md"), "sub rules");
@@ -83,6 +83,44 @@ describe("contextDiscovery", () => {
     const fragments = await discoverContext(tmp);
     const found = fragments.find((f) => f.source.includes("sub/.agents/instructions.md"));
     expect(found).toBeDefined();
+    expect(found!.relevance).toBe(0.9);
+  });
+
+  test("AGENTS.md recognized as instruction file", async () => {
+    const globalDir = join(tmp, "global-config");
+    mkdirSync(globalDir, { recursive: true });
+    writeFileSync(join(globalDir, "AGENTS.md"), "agent instructions");
+
+    const fragments = await discoverContext(tmp, globalDir);
+    const found = fragments.find((f) => f.source.includes("AGENTS.md"));
+    expect(found).toBeDefined();
+    expect(found!.content).toContain("agent instructions");
+  });
+
+  test("subdirectory relevance > project relevance > global relevance", async () => {
+    // Global
+    const globalDir = join(tmp, "global-config");
+    mkdirSync(globalDir, { recursive: true });
+    writeFileSync(join(globalDir, "instructions.md"), "global rules");
+
+    // Project
+    const agentsDir = join(tmp, ".agents");
+    mkdirSync(agentsDir);
+    writeFileSync(join(agentsDir, "instructions.md"), "project rules");
+
+    // Subdirectory
+    const subDir = join(tmp, "sub", ".agents");
+    mkdirSync(subDir, { recursive: true });
+    writeFileSync(join(subDir, "instructions.md"), "sub rules");
+
+    const fragments = await discoverContext(tmp, globalDir);
+    const global = fragments.find((f) => f.source.includes("global-config"));
+    const project = fragments.find((f) => f.source.includes(join(tmp, ".agents")));
+    const sub = fragments.find((f) => f.source.includes("sub/.agents"));
+
+    expect(global!.relevance).toBe(0.3);
+    expect(project!.relevance).toBe(0.7);
+    expect(sub!.relevance).toBe(0.9);
   });
 });
 
