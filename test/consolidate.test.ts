@@ -105,8 +105,8 @@ describe("Consolidator", () => {
     ]);
 
     // Primary and reviewer for volley — converge immediately
-    const primary = mockProvider(["polished skill body"]);
-    const reviewer = mockProvider(["NO_ISSUES"]);
+    const primary = mockProvider(["polished skill body"], "primary");
+    const reviewer = mockProvider(["NO_ISSUES"], "reviewer");
 
     const consolidator = createConsolidator({ fast, primary, reviewer });
 
@@ -129,8 +129,8 @@ describe("Consolidator", () => {
 
   test("returns empty for sessions with no patterns", async () => {
     const fast = mockProvider(["No clear patterns found."]);
-    const primary = mockProvider(["polished"]);
-    const reviewer = mockProvider(["NO_ISSUES"]);
+    const primary = mockProvider(["polished"], "primary");
+    const reviewer = mockProvider(["NO_ISSUES"], "reviewer");
 
     const consolidator = createConsolidator({ fast, primary, reviewer });
     const sessions = [makeSession("s1", ["hi", "hello"])];
@@ -158,8 +158,8 @@ describe("ConsolidateCommand", () => {
 
   test("runConsolidate reports no sessions", async () => {
     const fast = mockProvider([""]);
-    const primary = mockProvider([""]);
-    const reviewer = mockProvider(["NO_ISSUES"]);
+    const primary = mockProvider([""], "primary");
+    const reviewer = mockProvider(["NO_ISSUES"], "reviewer");
     const consolidator = createConsolidator({ fast, primary, reviewer });
 
     const result = await runConsolidate({ remember, consolidator });
@@ -225,8 +225,8 @@ describe("ConsolidateCommand", () => {
     const fast = mockProvider([
       "PROBLEM: error handling missing | APPROACH: add try-catch | OUTCOME: errors caught",
     ]);
-    const primary = mockProvider(["polished: add error boundaries around risky code"]);
-    const reviewer = mockProvider(["NO_ISSUES"]);
+    const primary = mockProvider(["polished: add error boundaries around risky code"], "primary");
+    const reviewer = mockProvider(["NO_ISSUES"], "reviewer");
 
     const consolidator = createConsolidator({
       fast,

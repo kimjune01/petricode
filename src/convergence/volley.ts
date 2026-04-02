@@ -51,6 +51,16 @@ export async function volley(
   primary: Provider,
   reviewer: Provider,
 ): Promise<ConvergedArtifact> {
+  // Input validation
+  if (!artifact || !artifact.trim()) {
+    throw new Error("Volley: artifact is empty or whitespace-only");
+  }
+  if (primary.model_id() === reviewer.model_id()) {
+    throw new Error(
+      `Volley: primary and reviewer use the same model (${primary.model_id()}). Self-review is an anti-pattern.`,
+    );
+  }
+
   let current = artifact;
   const findings: string[] = [];
 

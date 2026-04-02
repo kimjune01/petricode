@@ -29,10 +29,37 @@ function mockProvider(
 
 // ── Tests ──────────────────────────────────────────────────────
 
+describe("Volley input validation", () => {
+  test("empty artifact throws", () => {
+    const p = mockProvider([], "primary");
+    const r = mockProvider([], "reviewer");
+    expect(() => volley("", p, r)).toThrow(/empty/i);
+  });
+
+  test("whitespace-only artifact throws", () => {
+    const p = mockProvider([], "primary");
+    const r = mockProvider([], "reviewer");
+    expect(() => volley("   \n\t  ", p, r)).toThrow(/empty/i);
+  });
+
+  test("same model_id for primary and reviewer throws", () => {
+    const p = mockProvider([], "same-model");
+    const r = mockProvider([], "same-model");
+    expect(() => volley("valid artifact", p, r)).toThrow(/self-review/i);
+  });
+
+  test("valid inputs do not throw", async () => {
+    const p = mockProvider(["revised"], "model-a");
+    const r = mockProvider(["NO_ISSUES"], "model-b");
+    const result = await volley("valid artifact", p, r);
+    expect(result.converged).toBe(true);
+  });
+});
+
 describe("Volley", () => {
   test("clean artifact converges in round 1", async () => {
-    const primary = mockProvider(["artifact text"]);
-    const reviewer = mockProvider(["NO_ISSUES"]);
+    const primary = mockProvider(["artifact text"], "primary");
+    const reviewer = mockProvider(["NO_ISSUES"], "reviewer");
 
     const result = await volley("clean artifact", primary, reviewer);
     expect(result.converged).toBe(true);
@@ -41,11 +68,11 @@ describe("Volley", () => {
   });
 
   test("flawed artifact converges by round 2", async () => {
-    const primary = mockProvider(["revised artifact"]);
+    const primary = mockProvider(["revised artifact"], "primary");
     const reviewer = mockProvider([
       "Issue: missing error handling", // round 1: finds issue
       "NO_ISSUES",                      // round 2: satisfied
-    ]);
+    ], "reviewer");
 
     const result = await volley("flawed artifact", primary, reviewer);
     expect(result.converged).toBe(true);
@@ -57,8 +84,8 @@ describe("Volley", () => {
 
   test("max 5 rounds hard stop", async () => {
     // Reviewer never satisfied
-    const primary = mockProvider(["attempt"]);
-    const reviewer = mockProvider(["still broken"]);
+    const primary = mockProvider(["attempt"], "primary");
+    const reviewer = mockProvider(["still broken"], "reviewer");
 
     const result = await volley("bad artifact", primary, reviewer);
     expect(result.converged).toBe(false);
@@ -67,12 +94,12 @@ describe("Volley", () => {
   });
 
   test("returns reviewer findings from each round", async () => {
-    const primary = mockProvider(["v2", "v3"]);
+    const primary = mockProvider(["v2", "v3"], "primary");
     const reviewer = mockProvider([
       "finding A",
       "finding B",
       "NO_ISSUES",
-    ]);
+    ], "reviewer");
 
     const result = await volley("v1", primary, reviewer);
     expect(result.converged).toBe(true);
