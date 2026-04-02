@@ -1,43 +1,65 @@
 # 🧫 petricode
 
-AGPL-3.0 specification for a coding agent harness, derived from the [Natural Framework](https://june.kim/the-natural-framework) — not from any proprietary source code.
+Experimental coding agent harness. AGPL-3.0. TypeScript + Bun.
 
-## Provenance
+A laboratory for agent architectures with six [Natural Framework](https://june.kim/the-natural-framework) roles: Perceive, Cache, Filter, Attend (human), Remember, Consolidate. Each automated role is a swappable interface. The goal is to experiment our way into a harness that actually learns between sessions.
 
-This spec is informed by:
-- [Diagnosis LLM](https://june.kim/diagnosis-llm) — six-role mapping of the agent stack (published March 2026)
-- [SOAP Demo](https://github.com/kimjune01/soar-demo) — blind diagnostic pipeline applied to gemini-cli (Apache 2.0 source)
-- The Natural Framework's six roles: Perceive, Cache, Filter, Attend, Remember, Consolidate
-- Public open-source implementations (aider, opencode, goose, cline, codex) for reference
+## Quick start
 
-No proprietary source code was read, copied, or referenced.
+```bash
+bun install
+bun test                    # 176 tests, no API keys needed
+bun run src/cli.ts          # TUI shell (stub response — pipeline not wired to CLI yet)
+```
+
+## Sanity check (requires API keys)
+
+See [TESTING.md](TESTING.md) for the full testing guide, including how to run sanity checks with real models.
+
+```bash
+export ANTHROPIC_API_KEY=sk-...
+export OPENAI_API_KEY=sk-...
+bun run test-drive.ts       # one-shot pipeline test with real providers
+```
+
+## Architecture
+
+Five automated slots, one human slot. Every slot is an interface in `src/core/contracts.ts`.
+
+```
+User input → Perceive → Cache → Filter → [human decides] → Remember → Consolidate
+```
+
+Three model tiers: primary (Anthropic), reviewer (OpenAI), fast (cheap). The reviewer is a [Maxwell's demon](https://june.kim/forge) — it sits at the gate between volley rounds, selects which changes pass, and the artifact's entropy decreases. Paid for honestly in reviewer tokens.
 
 ## Structure
 
 ```
-spec/
-  00-architecture.md   — roles, tower structure, typed interfaces
-  01-perceive.md       — input: terminal, filesystem, API responses
-  02-cache.md          — tree-shaped context with progressive disclosure
-  03-filter.md         — validation, policy, eviction, loop detection
-  04-skills.md         — procedural memory: format, discovery, activation, lifecycle
-  05-remember.md       — session persistence, filesystem CRUD
-  06-consolidate.md    — the backward pass: skill extraction, memory distillation
-  07-composition.md    — how roles compose across tower levels
-  08-anti-patterns.md  — diagnosed failures from real systems
-  09-convergence.md    — the monoidal contract: volley protocol, fixed-point skills
+src/
+  core/           contracts, types, runtime DI, errors
+  agent/          pipeline, loop, turn assembly, context, tool subpipe
+  providers/      anthropic, openai adapters, router, retry
+  cache/          union-find hot/cold zones, TF-IDF, LRU eviction
+  filter/         content validation, policy, loop detection, tool masking, circuit breaker
+  perceive/       context discovery, @file refs, skill discovery
+  remember/       SQLite sessions, skill store, decision store
+  consolidate/    triple extraction, candidate generation
+  convergence/    volley protocol
+  tools/          file read/write, shell, grep, glob, registry
+  skills/         loader, activation, $ARGUMENTS substitution
+  session/        bootstrap, resume
+  config/         models, defaults
+  commands/       slash commands (/exit, /help, /compact, /skills, /consolidate)
+  app/            Ink TUI components
+spec/             role specifications and anti-patterns
+test/             176 tests + test harness (PipelineRig, golden providers)
+worklog/          timestamped work log
 ```
 
-Attend (04) is intentionally absent — that's the human's job. The harness presents options and records decisions, but selection stays with the person at the keyboard.
+## Provenance
 
-## Why AGPL
-
-MIT lets anyone fork the pipe, close it, and sell the throttled version. AGPL ensures improvements flow back to the commons.
-
-## For maintainers
-
-See `PETRICODE.md` for editing guidelines.
+No proprietary source code was read, copied, or referenced. `reference/features.md` lists provenance-clean open-source implementations (Apache 2.0, MIT) for each feature. Test harness design adapted from [gemini-cli](https://github.com/google-gemini/gemini-cli) (Apache 2.0).
 
 ## License
 
-AGPL-3.0. If you serve a harness built from this spec, your improvements stay open.
+AGPL-3.0. Improvements to the pipe stay in the commons.
