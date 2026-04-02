@@ -40,9 +40,27 @@ Gaps at lower levels propagate upward. A missing Filter inside Remember (no evic
 
 **Subpipes may be partial.** The top-level loop completes all roles. Subpipes complete a prefix and stop — this is documented, not a gap. The context subpipe stops at Filter because progressive disclosure (Cache) handles what Attend would do.
 
-## What the pipe is not
+## Model-agnostic, multi-model
 
 The pipe is not inference. Inference is the black box inside the streaming subpipe. The pipe receives the model's output and routes it through the forward roles. The pipe's quality determines how efficiently inference tokens are spent.
+
+The harness operates with any two SOTA models simultaneously — one from each major vendor. This is a design requirement, not a convenience feature:
+
+- **No vendor lock-in.** The pipe works regardless of which model fills the black box. Switching models is a config change, not an architecture change.
+- **Two models, different jobs.** The primary model handles the main conversation. A secondary model handles mechanical work: compaction summaries, union-find cluster merging, convergence detection in Consolidate, loop detection queries. Cheap model for Filter-level work, expensive model for the forward pass.
+- **Provider interface.** A single `Provider` trait abstracts the API boundary:
+
+```
+Provider:
+  .generate(prompt: Content[], config: ModelConfig) → AsyncGenerator<StreamChunk>
+  .model_id() → string
+  .token_limit() → number
+  .supports_tools() → boolean
+```
+
+Two providers configured at startup. The harness routes calls by role: primary provider for the agent loop, secondary provider for internal operations. The routing is explicit — the harness never silently falls back from one to the other.
+
+Supported out of the box: Anthropic API, OpenAI API. Any provider implementing the trait works. The harness does not privilege either vendor.
 
 ## Invariants
 
