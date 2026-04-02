@@ -1,7 +1,7 @@
 // ── Forward pipe orchestrator ────────────────────────────────────
 // Perceive → Cache → Provider → Filter → Tool subpipe → Remember
 
-import type { Content, Turn, PerceivedEvent } from "../core/types.js";
+import type { Content, Turn, Skill, PerceivedEvent } from "../core/types.js";
 import type { FilterSlot, RememberSlot } from "../core/contracts.js";
 import type { Provider, ToolDefinition } from "../providers/provider.js";
 import type { TierRouter } from "../providers/router.js";
@@ -19,6 +19,13 @@ import {
   toolResultsToContent,
   type ConfirmFn,
 } from "./toolSubpipe.js";
+import { loadSkills } from "../skills/loader.js";
+import {
+  matchSlashCommand,
+  matchAutoTriggers,
+  substituteArguments,
+} from "../skills/activation.js";
+import type { ActivatedSkill } from "../skills/types.js";
 
 export interface PipelineOptions {
   router: TierRouter;
@@ -42,6 +49,7 @@ export class Pipeline {
   private onConfirm?: ConfirmFn;
   private maxToolRounds: number = 10;
   private _sessionId!: string;
+  private skills: Skill[] = [];
 
   async init(options: PipelineOptions): Promise<void> {
     this.router = options.router;
@@ -55,6 +63,9 @@ export class Pipeline {
     this.perceiver = new Perceiver({
       projectDir: options.projectDir,
     });
+
+    // Discover skills
+    this.skills = await loadSkills(options.projectDir);
 
     // Cache slot
     this.cache = new UnionFindCache();
@@ -91,6 +102,25 @@ export class Pipeline {
     const perceived = await this.perceiver.perceive(input);
     if (perceived.kind === "retryable") {
       throw new Error(`Perceive failed: ${perceived.message}`);
+    }
+
+    // 1b. Skill activation — inject skill body as system context
+    const slashMatch = matchSlashCommand(input, this.skills);
+    const autoMatches = matchAutoTriggers(input, this.skills);
+    const activeSkills: ActivatedSkill[] = [
+      ...(slashMatch ? [slashMatch] : []),
+      ...autoMatches,
+    ];
+
+    if (activeSkills.length > 0) {
+      for (const active of activeSkills) {
+        const body = substituteArguments(active.skill.body, active.arguments);
+        // Inject skill body as additional context content
+        (perceived as PerceivedEvent).content.push({
+          type: "text",
+          text: `[skill:${active.skill.name}] ${body}`,
+        });
+      }
     }
 
     // 2. Cache — append user turn
@@ -211,6 +241,11 @@ export class Pipeline {
   /** Current session ID. */
   sessionId(): string {
     return this._sessionId;
+  }
+
+  /** Loaded skills for command registration. */
+  loadedSkills(): Skill[] {
+    return this.skills;
   }
 
   // ── Private ────────────────────────────────────────────────────

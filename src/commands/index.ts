@@ -16,12 +16,33 @@ const commands: Record<string, CommandHandler> = {
       "  /help     — show this message",
       "  /exit     — quit petricode",
       "  /compact  — compact conversation history (stub)",
-      "  /skills   — list available skills (stub)",
+      "  /skills   — list available skills",
     ].join("\n"),
   }),
   compact: () => ({ output: "Compaction not yet implemented." }),
   skills: () => ({ output: "No skills loaded." }),
 };
+
+/**
+ * Register additional command handlers (e.g., from loaded skills).
+ * Existing built-in commands cannot be overridden.
+ */
+export function registerCommands(
+  handlers: Record<string, CommandHandler>,
+): void {
+  for (const [name, handler] of Object.entries(handlers)) {
+    if (!(name in commands)) {
+      commands[name] = handler;
+    }
+  }
+}
+
+/**
+ * Override a specific command handler (e.g., replacing the /skills stub).
+ */
+export function overrideCommand(name: string, handler: CommandHandler): void {
+  commands[name] = handler;
+}
 
 /**
  * Try to parse and execute a slash command. Returns null if the input
