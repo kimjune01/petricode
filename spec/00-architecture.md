@@ -69,6 +69,10 @@ The routing is explicit — the harness never silently falls back between tiers.
 
 Supported out of the box: Anthropic API, OpenAI API. Any provider implementing the trait works. The harness does not privilege either vendor.
 
+## Convergence
+
+Every composition in the pipe converges — running the same operation twice produces the same result. This is the monoidal contract. Skills are fixed-point operators. Composed skills inherit convergence. The Volley protocol (primary drafts, reviewer challenges, converge in two rounds) enforces this at every boundary. See 09-convergence.md.
+
 ## Invariants
 
 1. The top-level loop completes Perceive through Remember on every turn. Subpipes may be partial (documented prefixes).

@@ -25,6 +25,7 @@ spec/
   06-consolidate.md    — the backward pass: skill extraction, memory distillation
   07-composition.md    — how roles compose across tower levels
   08-anti-patterns.md  — diagnosed failures from real systems
+  09-convergence.md    — the monoidal contract: volley protocol, fixed-point skills
 ```
 
 Attend (04) is intentionally absent — that's the human's job. The harness presents options and records decisions, but selection stays with the person at the keyboard.
