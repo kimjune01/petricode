@@ -84,6 +84,39 @@ Cloud-scheduled recurring tasks. Daily PR reviews, dependency audits, CI failure
 ### Marketplace
 Community distribution of skills, plugins, and agents. AGPL ensures shared improvements flow back.
 
+## Tier 5 — Quality of life (unprioritized, defer until after MVP)
+
+Sourced from public documentation of aider, opencode, cline, goose, and vendor CLIs. Prioritize after MVP validates the core pipe.
+
+- Theme picker with light/dark/colorblind variants
+- Rebindable keybindings via JSON config
+- Vim editing mode
+- External editor for prompt composition (Ctrl+G → $EDITOR)
+- Token usage / cost display (`/cost`, `/usage`, `/stats`)
+- Customizable status line (model, context %, cost, git branch)
+- Automatic edit checkpointing with rewind (`/rewind`)
+- Copy last response / export conversation to file
+- Image paste from clipboard
+- Interactive diff viewer for uncommitted changes
+- Security review command for pending changes
+- Named sessions with resume-by-name
+- Fork session (branch off a resumed session)
+- Prompt ghost-text suggestions based on conversation history
+- Bash mode with `!` prefix (run shell, output to context)
+- Reverse prompt history search (Ctrl+R)
+- Live model switching mid-session
+- Effort level adjustment (low/medium/high/max)
+- Terminal bell / custom notification on completion
+- Auto-commit with attribution (Co-authored-by)
+- Scrape webpage into chat (`/web`)
+- Output style presets (default, explanatory, learning)
+- Chat language setting
+- Doctor/diagnostics command (`/doctor`)
+- Verbose/debug transcript toggle
+- In-session task list with persistence across compactions
+- Stash current prompt (Ctrl+S, like git stash for input)
+- Conditional rules that activate on file patterns
+
 ## Not planned
 
 - Telemetry / analytics reporting to remote servers
