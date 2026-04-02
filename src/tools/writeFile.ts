@@ -6,7 +6,6 @@ export const WriteFileTool: Tool = {
   name: "file_write",
   description: "Write content to a file, creating parent directories if needed.",
   input_schema: {
-    type: "object",
     properties: {
       path: { type: "string", description: "Absolute path to write" },
       content: { type: "string", description: "File content" },

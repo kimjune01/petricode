@@ -161,6 +161,28 @@ describe("ToolRegistry", () => {
     ).rejects.toThrow('missing required argument: "path"');
   });
 
+  test("wrong type for required field gives actionable error", async () => {
+    const registry = createDefaultRegistry();
+    await expect(
+      registry.execute("shell", { command: 123 })
+    ).rejects.toThrow("Tool 'shell': expected string for 'command', got number");
+  });
+
+  test("wrong type for optional field gives actionable error", async () => {
+    const registry = createDefaultRegistry();
+    await expect(
+      registry.execute("shell", { command: "echo hi", timeout: "slow" })
+    ).rejects.toThrow("Tool 'shell': expected number for 'timeout', got string");
+  });
+
+  test("correct types pass validation", async () => {
+    const p = join(TMP, "type-check.txt");
+    writeFileSync(p, "type check ok");
+    const registry = createDefaultRegistry();
+    const result = await registry.execute("file_read", { path: p });
+    expect(result).toBe("type check ok");
+  });
+
   test("createDefaultRegistry has all five tools", () => {
     const registry = createDefaultRegistry();
     const names = registry.list().map((t) => t.name).sort();

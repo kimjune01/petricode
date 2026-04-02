@@ -5,7 +5,6 @@ export const GrepTool: Tool = {
   name: "grep",
   description: "Search for a regex pattern in files. Returns matching lines.",
   input_schema: {
-    type: "object",
     properties: {
       pattern: { type: "string", description: "Regex pattern to search for" },
       path: {

@@ -19,13 +19,23 @@ export class ToolRegistry {
     const tool = this.tools.get(name);
     if (!tool) throw new Error(`Unknown tool: "${name}"`);
 
-    // Validate required fields from schema
+    // Validate required fields and types from schema
     const schema = tool.input_schema;
-    const required = (schema.required ?? []) as string[];
-    for (const field of required) {
+    for (const field of schema.required) {
       if (args[field] === undefined || args[field] === null) {
         throw new Error(
           `Tool "${name}" missing required argument: "${field}"`
+        );
+      }
+    }
+    for (const [field, value] of Object.entries(args)) {
+      const propSchema = schema.properties[field];
+      if (!propSchema) continue;
+      const expected = propSchema.type;
+      const actual = Array.isArray(value) ? "array" : typeof value;
+      if (actual !== expected) {
+        throw new Error(
+          `Tool '${name}': expected ${expected} for '${field}', got ${actual}`
         );
       }
     }

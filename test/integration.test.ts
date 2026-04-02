@@ -115,7 +115,7 @@ describe("runToolSubpipe", () => {
     registry.register({
       name: "file_read",
       description: "Read a file",
-      input_schema: { type: "object", properties: { path: { type: "string" } }, required: ["path"] },
+      input_schema: { properties: { path: { type: "string" } }, required: ["path"] },
       execute: async (args) => `contents of ${(args as Record<string, unknown>).path}`,
     });
 
@@ -140,7 +140,7 @@ describe("runToolSubpipe", () => {
     registry.register({
       name: "shell",
       description: "Run shell",
-      input_schema: { type: "object" },
+      input_schema: { properties: {}, required: [] },
       execute: async () => "executed",
     });
 
@@ -168,7 +168,7 @@ describe("runToolSubpipe", () => {
     registry.register({
       name: "file_write",
       description: "Write a file",
-      input_schema: { type: "object" },
+      input_schema: { properties: {}, required: [] },
       execute: async () => "written",
     });
 
@@ -196,7 +196,7 @@ describe("runToolSubpipe", () => {
     registry.register({
       name: "file_read",
       description: "Read",
-      input_schema: { type: "object" },
+      input_schema: { properties: {}, required: [] },
       execute: async () => "ok",
     });
 
@@ -275,7 +275,6 @@ describe("Pipeline", () => {
       name: "file_read",
       description: "Read a file",
       input_schema: {
-        type: "object",
         properties: { path: { type: "string" } },
         required: ["path"],
       },
@@ -371,7 +370,7 @@ describe("Pipeline", () => {
     registry.register({
       name: "shell",
       description: "Shell",
-      input_schema: { type: "object" },
+      input_schema: { properties: {}, required: [] },
       execute: async () => "executed",
     });
 

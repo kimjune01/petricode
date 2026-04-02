@@ -5,7 +5,6 @@ export const GlobTool: Tool = {
   name: "glob",
   description: "Find files matching a glob pattern. Returns matched paths.",
   input_schema: {
-    type: "object",
     properties: {
       pattern: { type: "string", description: "Glob pattern (e.g. '**/*.ts')" },
       path: {

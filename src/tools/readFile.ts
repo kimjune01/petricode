@@ -5,7 +5,6 @@ export const ReadFileTool: Tool = {
   name: "file_read",
   description: "Read the contents of a file at the given path.",
   input_schema: {
-    type: "object",
     properties: {
       path: { type: "string", description: "Absolute path to the file" },
     },

@@ -7,7 +7,6 @@ export const ShellTool: Tool = {
   name: "shell",
   description: "Execute a shell command and return stdout+stderr.",
   input_schema: {
-    type: "object",
     properties: {
       command: { type: "string", description: "Shell command to execute" },
       timeout: {
