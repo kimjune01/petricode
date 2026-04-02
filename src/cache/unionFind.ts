@@ -37,8 +37,9 @@ export class UnionFindForest {
     const root_b = this.find(b_id);
     if (root_a === root_b) return root_a;
 
-    const a = this.nodes.get(root_a)!;
-    const b = this.nodes.get(root_b)!;
+    const a = this.nodes.get(root_a);
+    const b = this.nodes.get(root_b);
+    if (!a || !b) return a ? root_a : root_b;
 
     // Merge by rank
     let winner: ClusterNode;
@@ -61,6 +62,7 @@ export class UnionFindForest {
     const w_b = loser.turns.length;
     winner.vector = weighted_average(winner.vector, w_a, loser.vector, w_b);
     winner.turns = [...winner.turns, ...loser.turns];
+    loser.turns = []; // C4: prevent stale copies from leaking into find_turn
 
     return winner.id;
   }

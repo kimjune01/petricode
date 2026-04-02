@@ -1,4 +1,4 @@
-import type { Content, StreamChunk } from "../core/types.js";
+import type { Message, StreamChunk } from "../core/types.js";
 
 export interface ModelConfig {
   temperature?: number;
@@ -14,7 +14,7 @@ export interface ToolDefinition {
 
 export interface Provider {
   generate(
-    prompt: Content[][],
+    prompt: Message[],
     config: ModelConfig,
   ): AsyncGenerator<StreamChunk>;
   model_id(): string;

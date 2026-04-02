@@ -85,7 +85,9 @@ export class UnionFindCache implements CacheSlot {
   }
 
   expand(root_id: string): Turn[] {
-    return this.forest.expand(root_id);
+    // Strip cluster_ prefix so cold summary IDs resolve in the forest
+    const id = root_id.startsWith("cluster_") ? root_id.slice(8) : root_id;
+    return this.forest.expand(id);
   }
 
   find(message_id: string): Turn | undefined {

@@ -11,9 +11,17 @@ export type StreamChunk =
   | { type: "tool_use_delta"; input_json: string }
   | { type: "done" };
 
+// ── Message (prompt-level wrapper with explicit role) ────────────
+
+export interface Message {
+  role: "user" | "assistant" | "system";
+  content: Content[];
+}
+
 // ── Core domain ───────────────────────────────────────────────────
 
 export interface ToolCall {
+  id: string;
   name: string;
   args: Record<string, unknown>;
   result?: string;

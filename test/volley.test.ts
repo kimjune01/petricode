@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { volley } from "../src/convergence/volley.js";
 import type { Provider } from "../src/providers/provider.js";
-import type { Content, StreamChunk } from "../src/core/types.js";
+import type { Message, StreamChunk } from "../src/core/types.js";
 import type { ModelConfig } from "../src/providers/provider.js";
 
 // ── Mock provider factory ──────────────────────────────────────
@@ -16,7 +16,7 @@ function mockProvider(
     token_limit: () => 100_000,
     supports_tools: () => false,
     async *generate(
-      _prompt: Content[][],
+      _prompt: Message[],
       _config: ModelConfig,
     ): AsyncGenerator<StreamChunk> {
       const text = responses[callIndex] ?? responses[responses.length - 1]!;

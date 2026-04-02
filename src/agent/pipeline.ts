@@ -1,7 +1,7 @@
 // ── Forward pipe orchestrator ────────────────────────────────────
 // Perceive → Cache → Provider → Filter → Tool subpipe → Remember
 
-import type { Content, Turn, Skill, PerceivedEvent } from "../core/types.js";
+import type { Content, Message, Turn, Skill, PerceivedEvent } from "../core/types.js";
 import type { FilterSlot, RememberSlot } from "../core/contracts.js";
 import type { Provider, ToolDefinition } from "../providers/provider.js";
 import type { TierRouter } from "../providers/router.js";
@@ -251,19 +251,19 @@ export class Pipeline {
   // ── Private ────────────────────────────────────────────────────
 
   private buildConversation(
-    contextMessages: Content[][],
+    contextMessages: Message[],
     cachedTurns: Turn[],
-  ): Content[][] {
-    const conversation: Content[][] = [];
+  ): Message[] {
+    const conversation: Message[] = [];
 
-    // System context first
-    if (contextMessages.length > 0) {
-      conversation.push(contextMessages[0]!);
+    // Context messages (system + user from perceiver)
+    for (const msg of contextMessages) {
+      conversation.push(msg);
     }
 
     // Cached turns as conversation history
     for (const t of cachedTurns) {
-      conversation.push(t.content);
+      conversation.push({ role: t.role, content: t.content });
     }
 
     return conversation;

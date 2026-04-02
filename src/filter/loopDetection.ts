@@ -18,7 +18,12 @@ export class LoopDetector {
    * Returns Reject if the same call has appeared `threshold` consecutive times.
    */
   check(call: ToolCall): FilterResult {
-    const key = JSON.stringify({ name: call.name, args: call.args });
+    let key: string;
+    try {
+      key = JSON.stringify({ name: call.name, args: call.args });
+    } catch {
+      key = `${call.name}:unserializable`;
+    }
     this.history.push(key);
 
     // Count consecutive identical calls from the end

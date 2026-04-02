@@ -1,7 +1,7 @@
 // ── Retry wrapper for providers ─────────────────────────────────
 // Exponential backoff with jitter. Retries only transient errors.
 
-import type { Content, StreamChunk } from "../core/types.js";
+import type { Message, StreamChunk } from "../core/types.js";
 import type { Provider, ModelConfig } from "./provider.js";
 
 const TRANSIENT_CODES = new Set([429, 500, 502, 503, 529]);
@@ -72,7 +72,7 @@ export class RetryProvider implements Provider {
   ) {}
 
   async *generate(
-    prompt: Content[][],
+    prompt: Message[],
     config: ModelConfig,
   ): AsyncGenerator<StreamChunk> {
     let lastErr: unknown;

@@ -1,4 +1,4 @@
-import type { Content, Turn } from "../core/types.js";
+import type { Content, Message, Turn } from "../core/types.js";
 import type { Provider, ModelConfig } from "../providers/provider.js";
 import { assembleTurn } from "./turn.js";
 
@@ -27,8 +27,8 @@ export async function runLoop(
   } = options;
 
   // Build initial conversation: a single user message
-  const conversation: Content[][] = [
-    [{ type: "text", text: prompt }],
+  const conversation: Message[] = [
+    { role: "user", content: [{ type: "text", text: prompt }] },
   ];
 
   const turns: Turn[] = [];
@@ -39,7 +39,7 @@ export async function runLoop(
     turns.push(turn);
 
     // Append assistant turn to conversation
-    conversation.push(turn.content);
+    conversation.push({ role: "assistant", content: turn.content });
 
     // No tool calls → done
     if (!turn.tool_calls || turn.tool_calls.length === 0) {
@@ -49,14 +49,6 @@ export async function runLoop(
     // Execute tools and build a tool_result message
     const toolResults: Content[] = [];
     for (const tc of turn.tool_calls) {
-      const toolContent = turn.content.find(
-        (c) => c.type === "tool_use" && c.name === tc.name,
-      );
-      const toolUseId =
-        toolContent && toolContent.type === "tool_use"
-          ? toolContent.id
-          : crypto.randomUUID();
-
       const result = toolExecutor
         ? await toolExecutor(tc.name, tc.args)
         : `No executor for tool: ${tc.name}`;
@@ -64,13 +56,13 @@ export async function runLoop(
       tc.result = result;
       toolResults.push({
         type: "tool_result",
-        tool_use_id: toolUseId,
+        tool_use_id: tc.id,
         content: result,
       });
     }
 
     // Append tool results as a new conversation turn
-    conversation.push(toolResults);
+    conversation.push({ role: "user", content: toolResults });
   }
 
   return turns;

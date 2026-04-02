@@ -27,7 +27,7 @@ export const GrepTool: Tool = {
     const glob = args.glob as string | undefined;
 
     return new Promise<string>((resolve, reject) => {
-      const grepArgs = ["-rn", ...(glob ? ["--include", glob] : []), pattern, searchPath];
+      const grepArgs = ["-rn", ...(glob ? ["--include", glob] : []), "--", pattern, searchPath];
       const proc = spawn("grep", grepArgs, {
         stdio: ["ignore", "pipe", "pipe"],
       });

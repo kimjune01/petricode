@@ -7,7 +7,7 @@ import { createConsolidator, groupTriples } from "../src/consolidate/consolidato
 import { parseTriples } from "../src/consolidate/extractor.js";
 import { runConsolidate, writeApproved } from "../src/commands/consolidate.js";
 import type { Provider } from "../src/providers/provider.js";
-import type { Content, StreamChunk, Session, CandidateSkill, PerceivedEvent } from "../src/core/types.js";
+import type { Message, StreamChunk, Session, CandidateSkill, PerceivedEvent } from "../src/core/types.js";
 import type { ModelConfig } from "../src/providers/provider.js";
 import type { ReviewDecision } from "../src/app/components/ConsolidateReview.js";
 
@@ -20,7 +20,7 @@ function mockProvider(responses: string[], id: string = "mock"): Provider {
     token_limit: () => 100_000,
     supports_tools: () => false,
     async *generate(
-      _prompt: Content[][],
+      _prompt: Message[],
       _config: ModelConfig,
     ): AsyncGenerator<StreamChunk> {
       const text = responses[callIndex] ?? responses[responses.length - 1]!;

@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import type { Content, StreamChunk } from "../src/core/types.js";
+import type { Message, StreamChunk } from "../src/core/types.js";
 import type { Provider } from "../src/providers/provider.js";
 import type { ModelConfig } from "../src/providers/provider.js";
 import { AnthropicProvider } from "../src/providers/anthropic.js";
@@ -29,7 +29,7 @@ class MockProvider implements Provider {
   }
 
   async *generate(
-    _prompt: Content[][],
+    _prompt: Message[],
     _config?: ModelConfig,
   ): AsyncGenerator<StreamChunk> {
     for (const chunk of this.chunks) {
@@ -142,7 +142,7 @@ describe("mocked stream", () => {
       { type: "done" },
     ];
     const provider = new MockProvider("anthropic", "test-model", { chunks });
-    const prompt: Content[][] = [[{ type: "text", text: "hello" }]];
+    const prompt: Message[] = [{ role: "user", content: [{ type: "text", text: "hello" }] }];
 
     const result = await collect(provider.generate(prompt));
 
@@ -159,7 +159,7 @@ describe("mocked stream", () => {
       { type: "done" },
     ];
     const provider = new MockProvider("openai", "test-model", { chunks });
-    const prompt: Content[][] = [[{ type: "text", text: "read a file" }]];
+    const prompt: Message[] = [{ role: "user", content: [{ type: "text", text: "read a file" }] }];
 
     const result = await collect(provider.generate(prompt));
 

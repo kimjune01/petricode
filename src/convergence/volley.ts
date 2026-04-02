@@ -3,7 +3,7 @@
 // the reviewer finds no issues.
 
 import type { Provider } from "../providers/provider.js";
-import type { Content } from "../core/types.js";
+import type { Message } from "../core/types.js";
 
 const MAX_ROUNDS = 5;
 
@@ -19,7 +19,7 @@ export interface ConvergedArtifact {
  */
 async function collectResponse(
   provider: Provider,
-  prompt: Content[][],
+  prompt: Message[],
 ): Promise<string> {
   let text = "";
   for await (const chunk of provider.generate(prompt, { max_tokens: 4096 })) {
@@ -33,8 +33,8 @@ async function collectResponse(
 /**
  * Build a simple text prompt (single user message).
  */
-function userMessage(text: string): Content[][] {
-  return [[{ type: "text", text }]];
+function userMessage(text: string): Message[] {
+  return [{ role: "user", content: [{ type: "text", text }] }];
 }
 
 /**
@@ -86,8 +86,8 @@ export async function volley(
 
     // Primary revises with accumulated context
     const revisePrompt = userMessage(
-      `Revise the following artifact based on this reviewer feedback.\n\n` +
-      `Reviewer feedback:\n${reviewResponse}\n\n` +
+      `Revise the following artifact based on all reviewer feedback so far.\n\n` +
+      `Reviewer feedback:\n${findings.join("\n")}\n\n` +
       `Current artifact:\n---\n${current}\n---\n\n` +
       `Produce the revised artifact only, no commentary.`,
     );

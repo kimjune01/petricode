@@ -3,7 +3,7 @@
 // problem → approach → outcome triples.
 
 import type { Provider } from "../providers/provider.js";
-import type { Content, Session, StreamChunk, DecisionRecord } from "../core/types.js";
+import type { Message, Session, StreamChunk, DecisionRecord } from "../core/types.js";
 
 export interface Triple {
   problem: string;
@@ -15,7 +15,7 @@ export interface Triple {
 /**
  * Collect full text from a provider stream.
  */
-async function collect(provider: Provider, prompt: Content[][]): Promise<string> {
+async function collect(provider: Provider, prompt: Message[]): Promise<string> {
   let text = "";
   for await (const chunk of provider.generate(prompt, { max_tokens: 4096 })) {
     if (chunk.type === "content_delta") {
@@ -28,8 +28,8 @@ async function collect(provider: Provider, prompt: Content[][]): Promise<string>
 /**
  * Build a single user message.
  */
-function userMsg(text: string): Content[][] {
-  return [[{ type: "text", text }]];
+function userMsg(text: string): Message[] {
+  return [{ role: "user", content: [{ type: "text", text }] }];
 }
 
 /**

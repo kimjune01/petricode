@@ -18,10 +18,12 @@ export class SkillStore {
 
   private serializeSkill(skill: Skill): string {
     const lines = ["---"];
+    lines.push(`name: ${skill.name}`);
     for (const [key, value] of Object.entries(skill.frontmatter)) {
+      if (key === "name") continue; // already written above
       lines.push(`${key}: ${JSON.stringify(value)}`);
     }
-    lines.push(`trigger: ${JSON.stringify(skill.trigger)}`);
+    lines.push(`trigger: ${skill.trigger}`);
     lines.push("---");
     lines.push("");
     lines.push(skill.body);

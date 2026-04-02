@@ -2,7 +2,7 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import type { Content, StreamChunk, Turn } from "../src/core/types.js";
+import type { Message, StreamChunk, Turn } from "../src/core/types.js";
 import type { Provider, ModelConfig } from "../src/providers/provider.js";
 import type { TiersConfig } from "../src/config/models.js";
 import { TierRouter } from "../src/providers/router.js";
@@ -23,7 +23,7 @@ function makeMockProvider(
 ): Provider {
   let callIndex = 0;
   return {
-    generate(_prompt: Content[][], _config: ModelConfig) {
+    generate(_prompt: Message[], _config: ModelConfig) {
       const chunks = calls[callIndex++] ?? [
         { type: "content_delta" as const, text: "(exhausted)" },
         { type: "done" as const },

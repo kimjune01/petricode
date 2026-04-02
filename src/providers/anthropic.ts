@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { Content, StreamChunk } from "../core/types.js";
+import type { Content, Message, StreamChunk } from "../core/types.js";
 import type { Provider, ModelConfig } from "./provider.js";
 
 const MODEL_TOKEN_LIMITS: Record<string, number> = {
@@ -9,13 +9,6 @@ const MODEL_TOKEN_LIMITS: Record<string, number> = {
 };
 
 const DEFAULT_TOKEN_LIMIT = 200_000;
-
-function toAnthropicRole(
-  turnIndex: number,
-): "user" | "assistant" {
-  // Alternating user/assistant; first turn is user
-  return turnIndex % 2 === 0 ? "user" : "assistant";
-}
 
 function toAnthropicContent(
   blocks: Content[],
@@ -51,12 +44,27 @@ export class AnthropicProvider implements Provider {
   }
 
   async *generate(
-    prompt: Content[][],
+    prompt: Message[],
     config: ModelConfig,
   ): AsyncGenerator<StreamChunk> {
-    const messages = prompt.map((turn, i) => ({
-      role: toAnthropicRole(i),
-      content: toAnthropicContent(turn),
+    // Extract system messages for the system param
+    const systemBlocks: string[] = [];
+    const nonSystemMessages: Message[] = [];
+    for (const msg of prompt) {
+      if (msg.role === "system") {
+        const text = msg.content
+          .filter((b) => b.type === "text")
+          .map((b) => (b as { type: "text"; text: string }).text)
+          .join("\n");
+        if (text) systemBlocks.push(text);
+      } else {
+        nonSystemMessages.push(msg);
+      }
+    }
+
+    const messages = nonSystemMessages.map((msg) => ({
+      role: msg.role as "user" | "assistant",
+      content: toAnthropicContent(msg.content),
     }));
 
     const params: Anthropic.MessageCreateParams = {
@@ -65,6 +73,10 @@ export class AnthropicProvider implements Provider {
       messages,
       stream: true,
     };
+
+    if (systemBlocks.length > 0) {
+      params.system = systemBlocks.join("\n\n");
+    }
 
     if (config.temperature !== undefined) {
       params.temperature = config.temperature;

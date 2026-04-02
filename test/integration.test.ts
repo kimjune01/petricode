@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import type { Content, StreamChunk, Turn } from "../src/core/types.js";
+import type { Content, Message, StreamChunk, Turn } from "../src/core/types.js";
 import type { Provider, ModelConfig } from "../src/providers/provider.js";
 import type { TiersConfig } from "../src/config/models.js";
 import { TierRouter } from "../src/providers/router.js";
@@ -21,7 +21,7 @@ function makeMockProvider(
 ): Provider {
   let callIndex = 0;
   return {
-    generate(_prompt: Content[][], _config: ModelConfig) {
+    generate(_prompt: Message[], _config: ModelConfig) {
       const chunks = calls[callIndex++] ?? [
         { type: "content_delta" as const, text: "(exhausted)" },
         { type: "done" as const },
@@ -88,8 +88,9 @@ describe("assembleContext", () => {
     };
 
     const messages = assembleContext(event);
-    expect(messages[0]).toHaveLength(2);
-    expect(messages[1]).toEqual([{ type: "text", text: "Hello world" }]);
+    expect(messages[0]!.role).toBe("system");
+    expect(messages[0]!.content).toHaveLength(2);
+    expect(messages[1]).toEqual({ role: "user", content: [{ type: "text", text: "Hello world" }] });
   });
 
   test("produces user message when no context", () => {
@@ -102,7 +103,7 @@ describe("assembleContext", () => {
 
     const messages = assembleContext(event);
     expect(messages).toHaveLength(1);
-    expect(messages[0]).toEqual([{ type: "text", text: "Just a question" }]);
+    expect(messages[0]).toEqual({ role: "user", content: [{ type: "text", text: "Just a question" }] });
   });
 });
 
@@ -124,7 +125,7 @@ describe("runToolSubpipe", () => {
       content: [
         { type: "tool_use", id: "tu1", name: "file_read", input: { path: "/foo.ts" } },
       ],
-      tool_calls: [{ name: "file_read", args: { path: "/foo.ts" } }],
+      tool_calls: [{ id: "tu1", name: "file_read", args: { path: "/foo.ts" } }],
       timestamp: Date.now(),
     };
 
@@ -149,7 +150,7 @@ describe("runToolSubpipe", () => {
       content: [
         { type: "tool_use", id: "tu1", name: "shell", input: {} },
       ],
-      tool_calls: [{ name: "shell", args: {} }],
+      tool_calls: [{ id: "tu1", name: "shell", args: {} }],
       timestamp: Date.now(),
     };
 
@@ -177,7 +178,7 @@ describe("runToolSubpipe", () => {
       content: [
         { type: "tool_use", id: "tu1", name: "file_write", input: {} },
       ],
-      tool_calls: [{ name: "file_write", args: {} }],
+      tool_calls: [{ id: "tu1", name: "file_write", args: {} }],
       timestamp: Date.now(),
     };
 
@@ -207,7 +208,7 @@ describe("runToolSubpipe", () => {
       content: [
         { type: "tool_use", id: "tu1", name: "file_read", input: {} },
       ],
-      tool_calls: [{ name: "file_read", args: {} }],
+      tool_calls: [{ id: "tu1", name: "file_read", args: {} }],
       timestamp: Date.now(),
     };
 

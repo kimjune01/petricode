@@ -105,7 +105,7 @@ describe("Policy engine", () => {
 describe("Loop detection", () => {
   test("allows calls below threshold", () => {
     const detector = new LoopDetector(5);
-    const call: ToolCall = { name: "file_read", args: { path: "/tmp/x" } };
+    const call: ToolCall = { id: "tc1", name: "file_read", args: { path: "/tmp/x" } };
     for (let i = 0; i < 4; i++) {
       expect(detector.check(call).pass).toBe(true);
     }
@@ -113,7 +113,7 @@ describe("Loop detection", () => {
 
   test("rejects on 5th identical call", () => {
     const detector = new LoopDetector(5);
-    const call: ToolCall = { name: "file_read", args: { path: "/tmp/x" } };
+    const call: ToolCall = { id: "tc1", name: "file_read", args: { path: "/tmp/x" } };
     for (let i = 0; i < 4; i++) {
       detector.check(call);
     }
@@ -126,8 +126,8 @@ describe("Loop detection", () => {
 
   test("different calls reset the streak", () => {
     const detector = new LoopDetector(3);
-    const callA: ToolCall = { name: "file_read", args: { path: "/a" } };
-    const callB: ToolCall = { name: "file_read", args: { path: "/b" } };
+    const callA: ToolCall = { id: "tcA", name: "file_read", args: { path: "/a" } };
+    const callB: ToolCall = { id: "tcB", name: "file_read", args: { path: "/b" } };
 
     detector.check(callA);
     detector.check(callA);
@@ -138,7 +138,7 @@ describe("Loop detection", () => {
 
   test("reset clears history", () => {
     const detector = new LoopDetector(2);
-    const call: ToolCall = { name: "shell", args: { command: "ls" } };
+    const call: ToolCall = { id: "tc2", name: "shell", args: { command: "ls" } };
     detector.check(call);
     detector.reset();
     expect(detector.check(call).pass).toBe(true);

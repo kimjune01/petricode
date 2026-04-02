@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import type { Content, StreamChunk } from "../src/core/types.js";
+import type { Message, StreamChunk } from "../src/core/types.js";
 import type { Provider, ModelConfig } from "../src/providers/provider.js";
 import { assembleTurn } from "../src/agent/turn.js";
 import { runLoop } from "../src/agent/loop.js";
@@ -11,7 +11,7 @@ function makeProvider(
 ): Provider {
   let callIndex = 0;
   return {
-    generate(_prompt: Content[][], _config: ModelConfig) {
+    generate(_prompt: Message[], _config: ModelConfig) {
       const chunks = calls[callIndex++] ?? [];
       return (async function* () {
         for (const c of chunks) yield c;
@@ -56,9 +56,10 @@ describe("assembleTurn", () => {
       name: "read_file",
       input: { path: "/foo.ts" },
     });
-    expect(turn.tool_calls).toEqual([
-      { name: "read_file", args: { path: "/foo.ts" } },
-    ]);
+    expect(turn.tool_calls).toHaveLength(1);
+    expect(turn.tool_calls![0]!.id).toBe("t1");
+    expect(turn.tool_calls![0]!.name).toBe("read_file");
+    expect(turn.tool_calls![0]!.args).toEqual({ path: "/foo.ts" });
   });
 });
 

@@ -43,14 +43,7 @@ export async function runToolSubpipe(
   }
 
   for (const tc of turn.tool_calls) {
-    // Find the matching tool_use content block for its id
-    const toolContent = turn.content.find(
-      (c) => c.type === "tool_use" && c.name === tc.name,
-    );
-    const toolUseId =
-      toolContent && toolContent.type === "tool_use"
-        ? toolContent.id
-        : crypto.randomUUID();
+    const toolUseId = tc.id;
 
     // Loop detection
     if (loopDetector) {

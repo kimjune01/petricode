@@ -22,6 +22,26 @@ export async function assembleTurn(
         break;
 
       case "tool_use_start":
+        // Flush any in-progress tool before starting a new one (C2)
+        if (currentTool) {
+          let args: Record<string, unknown>;
+          try {
+            args = currentTool.jsonBuf
+              ? (JSON.parse(currentTool.jsonBuf) as Record<string, unknown>)
+              : {};
+          } catch {
+            args = {};
+            content.push({ type: "text", text: `[malformed tool JSON: ${currentTool.jsonBuf}]` });
+          }
+          content.push({
+            type: "tool_use",
+            id: currentTool.id,
+            name: currentTool.name,
+            input: args,
+          });
+          toolCalls.push({ id: currentTool.id, name: currentTool.name, args });
+          currentTool = null;
+        }
         // Flush any accumulated text before the tool block
         if (textBuffer) {
           content.push({ type: "text", text: textBuffer });
@@ -39,16 +59,22 @@ export async function assembleTurn(
       case "done":
         // Flush any in-progress tool
         if (currentTool) {
-          const args = currentTool.jsonBuf
-            ? (JSON.parse(currentTool.jsonBuf) as Record<string, unknown>)
-            : {};
+          let args: Record<string, unknown>;
+          try {
+            args = currentTool.jsonBuf
+              ? (JSON.parse(currentTool.jsonBuf) as Record<string, unknown>)
+              : {};
+          } catch {
+            args = {};
+            content.push({ type: "text", text: `[malformed tool JSON: ${currentTool.jsonBuf}]` });
+          }
           content.push({
             type: "tool_use",
             id: currentTool.id,
             name: currentTool.name,
             input: args,
           });
-          toolCalls.push({ name: currentTool.name, args });
+          toolCalls.push({ id: currentTool.id, name: currentTool.name, args });
           currentTool = null;
         }
         // Flush trailing text
@@ -62,16 +88,22 @@ export async function assembleTurn(
 
   // Safety: flush if stream ends without a done chunk
   if (currentTool) {
-    const args = currentTool.jsonBuf
-      ? (JSON.parse(currentTool.jsonBuf) as Record<string, unknown>)
-      : {};
+    let args: Record<string, unknown>;
+    try {
+      args = currentTool.jsonBuf
+        ? (JSON.parse(currentTool.jsonBuf) as Record<string, unknown>)
+        : {};
+    } catch {
+      args = {};
+      content.push({ type: "text", text: `[malformed tool JSON: ${currentTool.jsonBuf}]` });
+    }
     content.push({
       type: "tool_use",
       id: currentTool.id,
       name: currentTool.name,
       input: args,
     });
-    toolCalls.push({ name: currentTool.name, args });
+    toolCalls.push({ id: currentTool.id, name: currentTool.name, args });
   }
   if (textBuffer) {
     content.push({ type: "text", text: textBuffer });

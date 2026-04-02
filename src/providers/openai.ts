@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import type { Content, StreamChunk } from "../core/types.js";
+import type { Content, Message, StreamChunk } from "../core/types.js";
 import type { Provider, ModelConfig } from "./provider.js";
 
 const MODEL_TOKEN_LIMITS: Record<string, number> = {
@@ -11,13 +11,21 @@ const MODEL_TOKEN_LIMITS: Record<string, number> = {
 const DEFAULT_TOKEN_LIMIT = 128_000;
 
 function toOpenAIMessages(
-  prompt: Content[][],
+  prompt: Message[],
 ): OpenAI.Chat.ChatCompletionMessageParam[] {
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
-  for (let i = 0; i < prompt.length; i++) {
-    const role = i % 2 === 0 ? "user" : "assistant";
-    const turn = prompt[i];
-    if (!turn) continue;
+  for (const msg of prompt) {
+    const turn = msg.content;
+    const role = msg.role;
+
+    if (role === "system") {
+      const text = turn
+        .filter((b) => b.type === "text")
+        .map((b) => (b as { type: "text"; text: string }).text)
+        .join("\n");
+      messages.push({ role: "system", content: text });
+      continue;
+    }
 
     // Check if turn has tool_result blocks — those become tool messages
     const toolResults = turn.filter((b) => b.type === "tool_result");
@@ -92,7 +100,7 @@ export class OpenAIProvider implements Provider {
   }
 
   async *generate(
-    prompt: Content[][],
+    prompt: Message[],
     config: ModelConfig,
   ): AsyncGenerator<StreamChunk> {
     const messages = toOpenAIMessages(prompt);

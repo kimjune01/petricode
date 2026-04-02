@@ -102,7 +102,7 @@ export class SessionStore {
 
   read(sessionId: string): PerceivedEvent[] {
     const rows = this.db
-      .query("SELECT role, content_json, timestamp FROM messages WHERE session_id = ? ORDER BY timestamp")
+      .query("SELECT role, content_json, timestamp FROM messages WHERE session_id = ? ORDER BY timestamp, rowid")
       .all(sessionId) as { role: string; content_json: string; timestamp: number }[];
 
     return rows.map((row) => ({
@@ -145,7 +145,7 @@ export class SessionStore {
     if (!sessionRow) return null;
 
     const messageRows = this.db
-      .query("SELECT id, role, content_json, timestamp FROM messages WHERE session_id = ? ORDER BY timestamp")
+      .query("SELECT id, role, content_json, timestamp FROM messages WHERE session_id = ? ORDER BY timestamp, rowid")
       .all(sessionId) as { id: string; role: string; content_json: string; timestamp: number }[];
 
     const turns: Turn[] = messageRows.map((m) => {
@@ -156,9 +156,12 @@ export class SessionStore {
       const toolCalls: ToolCall[] | undefined =
         toolCallRows.length > 0
           ? toolCallRows.map((tc) => ({
+              id: crypto.randomUUID(),
               name: tc.name,
               args: JSON.parse(tc.args_json),
-              ...(tc.result != null ? { result: tc.result } : {}),
+              ...(tc.result != null
+                ? { result: tc.result.startsWith("blob:") ? this.readBlob(tc.result.slice(5)) : tc.result }
+                : {}),
             }))
           : undefined;
 
