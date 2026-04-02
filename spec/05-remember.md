@@ -2,20 +2,32 @@
 
 Persist to durable store. Remember is the CRUD interface to persistent storage. The store is the substrate; Remember is the API.
 
+## Interface
+
+```
+Remember:
+  .append(event: SessionEvent) → void
+  .read(session_id: string) → Session | null
+  .list(filter?: SessionFilter) → SessionSummary[]
+  .prune(policy: PrunePolicy) → PruneResult { removed: number, freed_bytes: number }
+  .write_skill(skill: Skill) → void
+  .read_skills() → Skill[]
+```
+
 ## Stores
 
 ### Session logs
 
-Full conversation transcripts persisted to disk.
+Full conversation transcripts persisted to disk. Default implementation: SQLite database.
 
 ```
-~/.config/agent/tmp/<project-hash>/chats/session-<timestamp>-<id>.json
+~/.config/petricode/data/<project-hash>/sessions.db
 ```
 
-- **Format:** JSON with messages, tool calls, thoughts, token usage, timestamps
+- **Schema:** sessions table (id, project_hash, start_time, last_updated, summary), messages table (session_id, role, content, timestamp, token_count), tool_calls table (session_id, message_id, name, args, result, status)
 - **Write:** append on each message, tool call, and thought
-- **Read:** on session resume
-- **Binary data:** MUST NOT store base64-encoded binary inline. Store a pointer to a separate file. Inline binary causes multi-GB session files and OOM on indexing.
+- **Read:** on session resume, and by Consolidate for pattern extraction
+- **Binary data:** MUST NOT store base64-encoded binary inline. Store a pointer to a separate file. Inline binary causes multi-GB databases and OOM on indexing.
 
 ### Filesystem (the primary store)
 
@@ -30,9 +42,9 @@ The agent reads and writes files as its primary Remember mechanism. The filesyst
 Skills, instructions, and configuration that change how the agent processes future sessions.
 
 ```
-~/.config/agent/skills/       ← skills (procedures)
-~/.config/agent/memory/       ← learned facts, preferences
-project/.agent/instructions   ← project-specific instructions
+~/.config/petricode/skills/       ← skills (procedures)
+~/.config/petricode/memory/       ← learned facts, preferences
+project/.agents/instructions      ← project-specific instructions
 ```
 
 - **Write:** by Consolidate (skill extraction, memory distillation)

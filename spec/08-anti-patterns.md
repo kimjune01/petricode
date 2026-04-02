@@ -64,6 +64,4 @@ Diagnosed failures from real systems. Each anti-pattern maps to a missing or bro
 
 ## The meta-pattern
 
-All six anti-patterns share a common cause: **the vendor has no incentive to fix the pipe.** An inefficient harness burns more inference tokens per task. A flat cache that wastes tokens, a Remember that stores binary inline, a missing eviction policy that causes OOM — all increase token consumption. The vendor's revenue scales with tokens consumed, not tasks completed.
-
-The fix is structural: build the pipe outside the inference vendor's control, under a license that prevents re-throttling (AGPL). See README.md.
+These anti-patterns persist across vendor implementations because the incentive structure does not reward fixing them. The fix is structural: build the pipe independently, under a license that prevents re-throttling (AGPL).

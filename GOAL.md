@@ -4,28 +4,28 @@
 
 ## What this is
 
-A harness for experimenting with agent architectures. Every role (Perceive, Cache, Filter, Attend, Remember, Consolidate) has a slot. Every slot has a clean interface. Algorithms, data structures, and entire inner towers can be swapped in and out without touching the rest of the pipe.
+A harness for experimenting with agent architectures. Every automated role (Perceive, Cache, Filter, Remember, Consolidate) has a slot. Every slot has a clean interface. Algorithms, data structures, and entire inner towers can be swapped in and out without touching the rest of the pipe. Attend stays with the human.
 
 The goal is to **experiment our way into a full-6-slotted harness** — one that actually learns, actually evicts, actually discloses context progressively. The kind of pipe that vendors won't build because it would reduce token consumption.
 
 ## What this is not
 
-- Not a the leading vendor CLI clone. Not feature-parity with any vendor product.
+- Not a clone of any vendor product. Not feature-parity with any specific tool.
 - Not a product. No telemetry, no analytics, no RLHF reporting, no vendor-serving observability.
 - Not enterprise software. No managed settings, no SSO, no org-wide policy enforcement.
 
 ## Look and feel
 
-The harness should feel familiar to anyone who's used a modern terminal coding agent. Emulate the look-and-feel of the leading vendor CLI based on publicly available screenshots, demos, and documentation:
+The harness should feel familiar to anyone who's used a modern terminal coding agent. Follow familiar terminal-agent conventions:
 
-- **Logo:** 🧫 (alembic) — an experiment, not a product
-- **Terminal UI:** Ink/React-based, similar layout. Conversation history with message bubbles, tool call groups with collapsible output, streaming markdown rendering, status line at bottom.
-- **Color palette:** Muted dark theme with accent colors for different message types (user, assistant, tool results, errors). Match the general aesthetic visible in public demos and screenshots.
+- **Logo:** 🧫 (petri dish) — growing code cultures in the commons
+- **Terminal UI:** Ink/React-based. Conversation history with message bubbles, tool call groups with collapsible output, streaming markdown rendering, status line at bottom.
+- **Color palette:** Muted dark theme with accent colors for different message types (user, assistant, tool results, errors).
 - **Tool output:** Collapsible tool call groups. Show tool name, brief result, expandable full output. Progress indicators for long-running operations.
 - **Input:** Multi-line editor at bottom. Slash command autocomplete. @-file references. Paste detection.
 - **Diff display:** Inline diffs for file edits with syntax highlighting.
 
-The goal is that a the leading vendor CLI user sits down and feels at home. The interaction patterns, visual hierarchy, and keyboard shortcuts should feel natural. This is clean-room visual design from public references, not code copying.
+The interaction patterns and keyboard shortcuts should feel natural to anyone who's used terminal coding agents. This is clean-room design from public conventions, not imitation of a specific vendor.
 
 ## Design principles
 
@@ -39,18 +39,17 @@ Everything the user sees and touches works well. Terminal input, tool execution,
 
 ### 3. Swappable slots
 
-Each role is an interface, not an implementation. The harness ships with one default implementation per slot. Experiments swap implementations without changing the interface.
+Each automated role is an interface, not an implementation. The harness ships with one default implementation per slot. Experiments swap implementations without changing the interface.
 
 ```
-Perceive:     trait/interface → default: terminal + filesystem + API retry
-Cache:        trait/interface → default: tree-shaped context with compaction
-Filter:       trait/interface → default: validation + policy + eviction + loop detection
-Attend:       trait/interface → default: tool confirmation + plan approval + elicitation
-Remember:     trait/interface → default: SQLite sessions + filesystem + skill store
-Consolidate:  trait/interface → default: two-phase extract + distill from past sessions
+Perceive:     (raw_input) → PerceivedEvent | RetryableError
+Cache:        .append(turn) / .read() / .compact() / .load_context(path) / .token_count()
+Filter:       (subject) → Pass | Reject(reason)
+Remember:     .append(event) / .read(session_id) / .list(filter) / .prune(policy) / .write_skill(skill)
+Consolidate:  .run(sessions) → CandidateSkill[]
 ```
 
-Swapping Cache from tree to flat is a one-line config change. Swapping Consolidate from extract+distill to a neural approach is implementing one interface. Swapping an entire inner tower (e.g., replacing the tool execution subpipe) is composing slot implementations.
+Attend is the human. The harness presents options and records decisions. No autonomous Attend slot.
 
 ### 4. Discard vendor-serving functionality
 
@@ -59,7 +58,7 @@ Strip anything that serves the vendor rather than the user:
 - No telemetry or analytics reporting to a remote server
 - No RLHF data collection or feedback pipelines
 - No anti-distillation defenses or DRM
-- No undercover mode or identity concealment
+- No identity concealment or undercover modes
 - No client attestation or unauthorized-client blocking
 - No usage tracking beyond what the user asks for
 
@@ -71,15 +70,28 @@ The composition spec (07-composition.md) defines four tower levels. Each level's
 
 This means the tower is recursive by construction, not by convention.
 
+## MVP (v0.1)
+
+Cut the first milestone to what one person can ship:
+
+1. Top-level agent loop (prompt → model → tool calls → results → next turn)
+2. Basic TUI (conversation display, input, tool output)
+3. Tool execution (file read/write, shell, grep/glob)
+4. Session persistence (SQLite)
+5. One concrete interface per automated role
+6. Manual Consolidate trigger only (user invokes skill extraction)
+7. Union-find compound cache from day one (hot/cold zones, provenance, incremental graduation). No flat cache — [that's an anti-pattern](https://june.kim/union-find-compaction).
+
+**Defer:** MCP, recursive inner towers, progressive context tree, polished learn-from-history workflows, automatic Consolidate triggers.
+
 ## Experiment targets
 
 Listed in order of impact, informed by the SOAP diagnosis:
 
 1. **Consolidate** — the missing role. Extract patterns from past sessions, distill into skills, fire on a trigger. This is the experiment that matters most.
-2. **Cache** — tree-shaped progressive disclosure vs. flat. Measure token usage per task, context relevance, overflow frequency.
+2. **Cache** — progressive context tree on top of union-find base. Measure token usage per task, context relevance, overflow frequency. Union-find is the baseline, not the experiment.
 3. **Filter @ Remember** — automatic eviction policies. Measure disk growth, startup time, OOM frequency.
-4. **Attend** — active elicitation with pushback tracking. Measure question acceptance rate, task completion quality.
-5. **Inner towers** — swap the tool execution subpipe, measure tool success rate. Swap the streaming subpipe, measure retry frequency.
+4. **Inner towers** — swap the tool execution subpipe, measure tool success rate. Swap the streaming subpipe, measure retry frequency.
 
 ## Success criteria
 
