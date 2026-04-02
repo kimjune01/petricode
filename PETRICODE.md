@@ -1,4 +1,4 @@
-# claude-left
+# petricode
 
 AGPL-3.0 spec for a coding agent harness derived from the Natural Framework.
 
@@ -10,13 +10,15 @@ This spec is NOT derived from any proprietary source code. It follows from:
 - SOAP diagnostic pipeline applied to gemini-cli (Apache 2.0 source)
 - gemini-cli GitHub issues/PRs (public)
 
-Do NOT reference, copy from, or read any proprietary source code (Claude Code, leaked or otherwise). The spec must be independently derivable from the framework.
+Do NOT reference, copy from, or read any proprietary source code (leaked or otherwise). The spec must be independently derivable from the framework.
 
 ## Structure
 
 - `spec/` — nine specification documents, one per role plus architecture, composition, and anti-patterns
 - `LICENSE` — AGPL-3.0
 - `README.md` — provenance, structure, rationale
+- `GOAL.md` — experimental harness goals, design principles, success criteria
+- `reference/` — provenance-clean feature implementations from open-source harnesses
 
 ## Editing
 

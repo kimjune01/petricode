@@ -11,7 +11,7 @@ Transform external signals into structured input the pipeline can process.
 | Filesystem | File paths, directory trees | File contents with metadata |
 | API response | Streaming chunks | Validated response parts |
 | File references | `@path/to/file` in user input | Resolved file contents |
-| Context files | GEMINI.md, .claude/, project instructions | Tiered instruction text |
+| Context files | AGENTS.md, .agents/, project instructions | Tiered instruction text |
 
 ## Contract
 
