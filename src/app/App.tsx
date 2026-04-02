@@ -1,19 +1,25 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import { Box, Text, useApp, useInput } from "ink";
-import type { Turn, Content } from "../core/types.js";
+import type { Turn, ToolCall } from "../core/types.js";
 import type { AppPhase } from "./state.js";
 import { initialState } from "./state.js";
 import { tryCommand } from "../commands/index.js";
+import type { Pipeline } from "../agent/pipeline.js";
 import MessageList from "./components/MessageList.js";
 import Composer from "./components/Composer.js";
 import ToolConfirmation from "./components/ToolConfirmation.js";
 import StatusBar from "./components/StatusBar.js";
 import ReviewerNotes from "./components/ReviewerNotes.js";
 
-export default function App() {
+export interface AppProps {
+  pipeline?: Pipeline;
+}
+
+export default function App({ pipeline }: AppProps) {
   const { exit } = useApp();
   const [state, setState] = useState(initialState);
   const [reviewerFindings, setReviewerFindings] = useState<string[]>([]);
+  const confirmResolveRef = useRef<((allowed: boolean) => void) | null>(null);
 
   useInput((_ch, key) => {
     if (key.ctrl && _ch === "c") {
@@ -36,7 +42,7 @@ export default function App() {
   }, []);
 
   const handleSubmit = useCallback(
-    (input: string) => {
+    async (input: string) => {
       // Check for slash commands first
       const cmdResult = tryCommand(input);
       if (cmdResult) {
@@ -61,31 +67,56 @@ export default function App() {
         turns: [...prev.turns, userTurn],
       }));
 
-      // Placeholder: in a real integration this would call runLoop.
-      // For now, echo back that the agent loop is not wired up yet.
-      const assistantTurn: Turn = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: [
-          {
-            type: "text",
-            text: `[agent loop not connected] Received: "${input}"`,
-          },
-        ],
-        timestamp: Date.now(),
-      };
+      if (!pipeline) {
+        // No pipeline wired — stub response
+        const assistantTurn: Turn = {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: [
+            {
+              type: "text",
+              text: `[agent loop not connected] Received: "${input}"`,
+            },
+          ],
+          timestamp: Date.now(),
+        };
+        setState((prev) => ({
+          ...prev,
+          phase: "composing" as AppPhase,
+          turns: [...prev.turns, assistantTurn],
+        }));
+        return;
+      }
 
-      setState((prev) => ({
-        ...prev,
-        phase: "composing" as AppPhase,
-        turns: [...prev.turns, assistantTurn],
-      }));
+      try {
+        const resultTurn = await pipeline.turn(input);
+        setState((prev) => ({
+          ...prev,
+          phase: "composing" as AppPhase,
+          turns: [...prev.turns, resultTurn],
+          tokenCount: pipeline.tokenCount(),
+        }));
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        setState((prev) => ({
+          ...prev,
+          phase: "composing" as AppPhase,
+          error: errMsg,
+        }));
+      }
     },
-    [addSystemTurn, exit],
+    [addSystemTurn, exit, pipeline],
   );
 
   const handleToolConfirm = useCallback((allowed: boolean) => {
     if (!state.pendingToolCall) return;
+
+    // Resolve the pipeline's ASK_USER promise
+    if (confirmResolveRef.current) {
+      confirmResolveRef.current(allowed);
+      confirmResolveRef.current = null;
+    }
+
     addSystemTurn(
       allowed
         ? `Allowed: ${state.pendingToolCall.name}`
@@ -93,7 +124,7 @@ export default function App() {
     );
     setState((prev) => ({
       ...prev,
-      phase: "composing" as AppPhase,
+      phase: "running" as AppPhase,
       pendingToolCall: null,
     }));
   }, [state.pendingToolCall, addSystemTurn]);
