@@ -81,7 +81,7 @@ Cut the first milestone to what one person can ship:
 5. One concrete interface per automated role
 6. Manual Consolidate trigger only (user invokes skill extraction)
 7. Union-find compound cache from day one (hot/cold zones, provenance, incremental graduation). No flat cache — [that's an anti-pattern](https://june.kim/union-find-compaction).
-8. Two-model support from day one. Primary (SOTA) for the agent loop, secondary (cheap) for internal operations (compaction, cluster merging, loop detection). Anthropic + OpenAI out of the box.
+8. Two-model support from day one. Primary (SOTA) for the agent loop, reviewer (second SOTA, different vendor) for cross-review before every human gate. The codex-sniff pattern built into the pipe. Anthropic + OpenAI out of the box.
 
 **Defer:** MCP, recursive inner towers, polished learn-from-history workflows, automatic Consolidate triggers.
 

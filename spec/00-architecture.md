@@ -47,7 +47,8 @@ The pipe is not inference. Inference is the black box inside the streaming subpi
 The harness operates with any two SOTA models simultaneously — one from each major vendor. This is a design requirement, not a convenience feature:
 
 - **No vendor lock-in.** The pipe works regardless of which model fills the black box. Switching models is a config change, not an architecture change.
-- **Two models, different jobs.** The primary model handles the main conversation. A secondary model handles mechanical work: compaction summaries, union-find cluster merging, convergence detection in Consolidate, loop detection queries. Cheap model for Filter-level work, expensive model for the forward pass.
+- **Two models, different jobs.** The primary model handles the main conversation (the forward pass). The secondary model is the **reviewer** — it reads every artifact before it reaches the human and catches obvious issues so the human only Attends what actually requires judgment. This is the codex-sniff pattern: send the draft to a second SOTA model, apply mechanical fixes, present only ambiguities to the human.
+- **Where the reviewer fires:** before every human gate. Before tool confirmation (did the model propose something dangerous?). Before plan approval (is the plan internally consistent?). Before Consolidate presents skill candidates (are the candidates well-formed?). Before any artifact leaves the pipe (is the output correct?). The reviewer is Filter running on a different model than the one that generated the content.
 - **Provider interface.** A single `Provider` trait abstracts the API boundary:
 
 ```
@@ -58,7 +59,11 @@ Provider:
   .supports_tools() → boolean
 ```
 
-Two providers configured at startup. The harness routes calls by role: primary provider for the agent loop, secondary provider for internal operations. The routing is explicit — the harness never silently falls back from one to the other.
+Two providers configured at startup:
+- **Primary:** the agent's main model. Handles conversation, tool calls, reasoning.
+- **Reviewer:** a second SOTA model from a different vendor. Reviews artifacts before human gates. Applies mechanical fixes. Flags issues the primary model is blind to (its own biases, hallucinations, style tics).
+
+The routing is explicit — the harness never silently falls back from one to the other. The reviewer is always a *different* model than the primary, because self-review catches less than cross-review.
 
 Supported out of the box: Anthropic API, OpenAI API. Any provider implementing the trait works. The harness does not privilege either vendor.
 
