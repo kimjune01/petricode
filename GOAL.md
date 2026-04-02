@@ -82,14 +82,14 @@ Cut the first milestone to what one person can ship:
 6. Manual Consolidate trigger only (user invokes skill extraction)
 7. Union-find compound cache from day one (hot/cold zones, provenance, incremental graduation). No flat cache — [that's an anti-pattern](https://june.kim/union-find-compaction).
 
-**Defer:** MCP, recursive inner towers, progressive context tree, polished learn-from-history workflows, automatic Consolidate triggers.
+**Defer:** MCP, recursive inner towers, polished learn-from-history workflows, automatic Consolidate triggers.
 
 ## Experiment targets
 
 Listed in order of impact, informed by the SOAP diagnosis:
 
 1. **Consolidate** — the missing role. Extract patterns from past sessions, distill into skills, fire on a trigger. This is the experiment that matters most.
-2. **Cache** — progressive context tree on top of union-find base. Measure token usage per task, context relevance, overflow frequency. Union-find is the baseline, not the experiment.
+2. **Cache** — tune union-find parameters (merge threshold, cluster cap, graduation policy). Measure token usage per task, recall, overflow frequency.
 3. **Filter @ Remember** — automatic eviction policies. Measure disk growth, startup time, OOM frequency.
 4. **Inner towers** — swap the tool execution subpipe, measure tool success rate. Swap the streaming subpipe, measure retry frequency.
 

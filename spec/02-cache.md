@@ -41,23 +41,11 @@ Two zones, managed by a [union-find forest](https://june.kim/union-find-compacti
 
 Reference: [union-find compaction](https://june.kim/union-find-compaction) — experiment showed 15–18pp recall advantage over flat summarization at 200 messages with the same token budget.
 
-### Context tree (progressive disclosure)
+### Context as clusters
 
-Context files form a path hierarchy. Load root eagerly, deeper levels on demand.
+Instruction files (AGENTS.md, .agents/) are messages too — they enter the forest on discovery, tagged by source path. The union-find forest handles both conversation history and project context in one structure. No separate trie or tree. Progressive disclosure is just "expand the cluster rooted at this path."
 
-```
-~/.config/petricode/          ← global (always loaded)
-  instructions.md
-project/                      ← level 1 (loaded on session start)
-  AGENTS.md
-  .agents/
-    instructions.md
-project/src/api/              ← level 2+ (loaded when model accesses files in subtree)
-  .agents/
-    instructions.md
-```
-
-**Token budget per level:** root gets N tokens, each deeper level gets N/2 (geometric decay). Total context usage is O(log n) of the project tree, not O(n).
+Global instructions merge into a cluster at forest root. Project instructions form a nearby cluster. Subdirectory instructions stay as singletons until accessed, then merge by semantic similarity with the conversation they're relevant to.
 
 ### UI state
 
