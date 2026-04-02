@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE TABLE IF NOT EXISTS tool_calls (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   message_id TEXT NOT NULL,
+  tool_use_id TEXT,
   name TEXT NOT NULL,
   args_json TEXT NOT NULL DEFAULT '{}',
   result TEXT,

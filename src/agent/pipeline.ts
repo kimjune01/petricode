@@ -115,10 +115,10 @@ export class Pipeline {
     if (activeSkills.length > 0) {
       for (const active of activeSkills) {
         const body = substituteArguments(active.skill.body, active.arguments);
-        // Inject skill body as additional context content
+        // Inject skill body as additional context content (XML format matches context.ts)
         (perceived as PerceivedEvent).content.push({
           type: "text",
-          text: `[skill:${active.skill.name}] ${body}`,
+          text: `<skill name="${active.skill.name}">${body}</skill>`,
         });
       }
     }
@@ -287,6 +287,7 @@ export class Pipeline {
       source: this._sessionId,
       content: userTurn.content,
       timestamp: userTurn.timestamp,
+      role: userTurn.role,
     });
 
     // Persist assistant turn
@@ -295,6 +296,7 @@ export class Pipeline {
       source: this._sessionId,
       content: assistantTurn.content,
       timestamp: assistantTurn.timestamp,
+      role: assistantTurn.role,
     });
   }
 }

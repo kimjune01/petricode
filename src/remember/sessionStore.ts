@@ -71,7 +71,7 @@ export class SessionStore {
 
     this.db.run(
       "INSERT INTO messages (id, session_id, role, content_json, timestamp) VALUES (?, ?, ?, ?, ?)",
-      [messageId, sessionId, "user", JSON.stringify(storedContent), event.timestamp]
+      [messageId, sessionId, event.role ?? "user", JSON.stringify(storedContent), event.timestamp]
     );
   }
 
@@ -93,8 +93,8 @@ export class SessionStore {
           result = `blob:${hash}`;
         }
         this.db.run(
-          "INSERT INTO tool_calls (message_id, name, args_json, result) VALUES (?, ?, ?, ?)",
-          [turn.id, tc.name, JSON.stringify(tc.args), result]
+          "INSERT INTO tool_calls (message_id, tool_use_id, name, args_json, result) VALUES (?, ?, ?, ?, ?)",
+          [turn.id, tc.id, tc.name, JSON.stringify(tc.args), result]
         );
       }
     }
@@ -110,6 +110,7 @@ export class SessionStore {
       source: sessionId,
       content: this.internalizeContent(JSON.parse(row.content_json)),
       timestamp: row.timestamp,
+      role: row.role as "user" | "assistant" | "system",
     }));
   }
 
@@ -150,13 +151,13 @@ export class SessionStore {
 
     const turns: Turn[] = messageRows.map((m) => {
       const toolCallRows = this.db
-        .query("SELECT name, args_json, result FROM tool_calls WHERE message_id = ?")
-        .all(m.id) as { name: string; args_json: string; result: string | null }[];
+        .query("SELECT tool_use_id, name, args_json, result FROM tool_calls WHERE message_id = ?")
+        .all(m.id) as { tool_use_id: string | null; name: string; args_json: string; result: string | null }[];
 
       const toolCalls: ToolCall[] | undefined =
         toolCallRows.length > 0
           ? toolCallRows.map((tc) => ({
-              id: crypto.randomUUID(),
+              id: tc.tool_use_id ?? crypto.randomUUID(),
               name: tc.name,
               args: JSON.parse(tc.args_json),
               ...(tc.result != null

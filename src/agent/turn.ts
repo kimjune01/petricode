@@ -1,10 +1,38 @@
 import type { Content, StreamChunk, Turn, ToolCall } from "../core/types.js";
 
 /**
+ * Flush a single tool entry from the tools map into content + toolCalls arrays.
+ */
+function flushTool(
+  tool: { id: string; name: string; jsonBuf: string },
+  content: Content[],
+  toolCalls: ToolCall[],
+): void {
+  let args: Record<string, unknown>;
+  try {
+    args = tool.jsonBuf
+      ? (JSON.parse(tool.jsonBuf) as Record<string, unknown>)
+      : {};
+  } catch {
+    args = {};
+    content.push({ type: "text", text: `[malformed tool JSON: ${tool.jsonBuf}]` });
+  }
+  content.push({
+    type: "tool_use",
+    id: tool.id,
+    name: tool.name,
+    input: args,
+  });
+  toolCalls.push({ id: tool.id, name: tool.name, args });
+}
+
+/**
  * Assemble a stream of chunks into a Turn.
  *
  * Concatenates content_delta text, parses tool_use_start + tool_use_delta
  * into ToolCall entries, and returns a complete assistant Turn.
+ *
+ * Tracks multiple concurrent tools by index (required for OpenAI multi-tool streaming).
  */
 export async function assembleTurn(
   stream: AsyncGenerator<StreamChunk>,
@@ -13,7 +41,7 @@ export async function assembleTurn(
   const toolCalls: ToolCall[] = [];
 
   let textBuffer = "";
-  let currentTool: { id: string; name: string; jsonBuf: string } | null = null;
+  const toolMap = new Map<number, { id: string; name: string; jsonBuf: string }>();
 
   for await (const chunk of stream) {
     switch (chunk.type) {
@@ -21,62 +49,38 @@ export async function assembleTurn(
         textBuffer += chunk.text;
         break;
 
-      case "tool_use_start":
-        // Flush any in-progress tool before starting a new one (C2)
-        if (currentTool) {
-          let args: Record<string, unknown>;
-          try {
-            args = currentTool.jsonBuf
-              ? (JSON.parse(currentTool.jsonBuf) as Record<string, unknown>)
-              : {};
-          } catch {
-            args = {};
-            content.push({ type: "text", text: `[malformed tool JSON: ${currentTool.jsonBuf}]` });
-          }
-          content.push({
-            type: "tool_use",
-            id: currentTool.id,
-            name: currentTool.name,
-            input: args,
-          });
-          toolCalls.push({ id: currentTool.id, name: currentTool.name, args });
-          currentTool = null;
+      case "tool_use_start": {
+        const idx = chunk.index ?? 0;
+        // Flush any existing tool at this index (shouldn't happen, but be safe)
+        const existing = toolMap.get(idx);
+        if (existing) {
+          flushTool(existing, content, toolCalls);
+          toolMap.delete(idx);
         }
         // Flush any accumulated text before the tool block
         if (textBuffer) {
           content.push({ type: "text", text: textBuffer });
           textBuffer = "";
         }
-        currentTool = { id: chunk.id, name: chunk.name, jsonBuf: "" };
+        toolMap.set(idx, { id: chunk.id, name: chunk.name, jsonBuf: "" });
         break;
+      }
 
-      case "tool_use_delta":
-        if (currentTool) {
-          currentTool.jsonBuf += chunk.input_json;
+      case "tool_use_delta": {
+        const idx = chunk.index ?? 0;
+        const tool = toolMap.get(idx);
+        if (tool) {
+          tool.jsonBuf += chunk.input_json;
         }
         break;
+      }
 
       case "done":
-        // Flush any in-progress tool
-        if (currentTool) {
-          let args: Record<string, unknown>;
-          try {
-            args = currentTool.jsonBuf
-              ? (JSON.parse(currentTool.jsonBuf) as Record<string, unknown>)
-              : {};
-          } catch {
-            args = {};
-            content.push({ type: "text", text: `[malformed tool JSON: ${currentTool.jsonBuf}]` });
-          }
-          content.push({
-            type: "tool_use",
-            id: currentTool.id,
-            name: currentTool.name,
-            input: args,
-          });
-          toolCalls.push({ id: currentTool.id, name: currentTool.name, args });
-          currentTool = null;
+        // Flush all in-progress tools (sorted by index for deterministic order)
+        for (const idx of [...toolMap.keys()].sort((a, b) => a - b)) {
+          flushTool(toolMap.get(idx)!, content, toolCalls);
         }
+        toolMap.clear();
         // Flush trailing text
         if (textBuffer) {
           content.push({ type: "text", text: textBuffer });
@@ -87,24 +91,10 @@ export async function assembleTurn(
   }
 
   // Safety: flush if stream ends without a done chunk
-  if (currentTool) {
-    let args: Record<string, unknown>;
-    try {
-      args = currentTool.jsonBuf
-        ? (JSON.parse(currentTool.jsonBuf) as Record<string, unknown>)
-        : {};
-    } catch {
-      args = {};
-      content.push({ type: "text", text: `[malformed tool JSON: ${currentTool.jsonBuf}]` });
-    }
-    content.push({
-      type: "tool_use",
-      id: currentTool.id,
-      name: currentTool.name,
-      input: args,
-    });
-    toolCalls.push({ id: currentTool.id, name: currentTool.name, args });
+  for (const idx of [...toolMap.keys()].sort((a, b) => a - b)) {
+    flushTool(toolMap.get(idx)!, content, toolCalls);
   }
+  toolMap.clear();
   if (textBuffer) {
     content.push({ type: "text", text: textBuffer });
   }

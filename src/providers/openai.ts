@@ -143,10 +143,10 @@ export class OpenAIProvider implements Provider {
       if (delta.tool_calls) {
         for (const tc of delta.tool_calls) {
           if (tc.id && tc.function?.name) {
-            yield { type: "tool_use_start", id: tc.id, name: tc.function.name };
+            yield { type: "tool_use_start", id: tc.id, name: tc.function.name, index: tc.index };
           }
           if (tc.function?.arguments) {
-            yield { type: "tool_use_delta", input_json: tc.function.arguments };
+            yield { type: "tool_use_delta", input_json: tc.function.arguments, index: tc.index };
           }
         }
       }

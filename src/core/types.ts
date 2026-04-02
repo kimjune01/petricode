@@ -7,8 +7,8 @@ export type Content =
 
 export type StreamChunk =
   | { type: "content_delta"; text: string }
-  | { type: "tool_use_start"; id: string; name: string }
-  | { type: "tool_use_delta"; input_json: string }
+  | { type: "tool_use_start"; id: string; name: string; index?: number }
+  | { type: "tool_use_delta"; input_json: string; index?: number }
   | { type: "done" };
 
 // ── Message (prompt-level wrapper with explicit role) ────────────
@@ -48,6 +48,7 @@ export interface PerceivedEvent {
   source: string;
   content: Content[];
   timestamp: number;
+  role?: "user" | "assistant" | "system";
 }
 
 // ── Filter output ─────────────────────────────────────────────────
