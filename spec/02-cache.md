@@ -36,7 +36,7 @@ Two zones, managed by a [union-find forest](https://june.kim/union-find-compacti
 - **Provenance.** Every summary traces back to source messages through `find()`. Auditable.
 - **Recoverability.** `expand(root_id)` reinflates a cluster. Raw messages stay addressable. Flat summarization destroys them.
 - **Incremental.** Messages graduate one at a time. Each graduation is near-O(1). No batch stall.
-- **Cheaper.** Each `union` feeds 5–20 messages to a cheap summarizer (e.g., Haiku). Smaller prompts, smaller models.
+- **Cheaper.** Each `union` feeds a small cluster to a cheap summarizer (e.g., Haiku). Smaller prompts, smaller models.
 - **Persistent.** The forest serializes as parent pointers (integers). Save it, load it next session, clusters intact.
 
 Reference: [union-find compaction](https://june.kim/union-find-compaction) — experiment showed 15–18pp recall advantage over flat summarization at 200 messages with the same token budget.
@@ -58,12 +58,20 @@ Master state object for interactive rendering: history items, streaming state, p
 
 ## Compaction
 
-Compaction is `VACUUM` with provenance — reorganizes the store without changing how the system processes. The distinction from consolidation: compaction is ops, consolidation is learning.
+Three distinct operations, each with different lossiness:
+
+- **Compact:** lossless, reversible, in-cache restructuring. Graduate old messages from hot to cold (union-find merge). Full data preserved through parent pointers. Reversible via `expand()`.
+- **Suppress:** remove clusters from the active retrieval set without deleting data. Suppressed clusters remain in Remember and can be re-activated. Reclaims context tokens without losing data.
+- **Prune:** actual durable deletion. Only happens in Remember via Filter @ Remember (see 03-filter.md). Cache never prunes.
+
+The distinction from consolidation: compaction is ops, consolidation is learning.
 
 - **Trigger:** token count exceeds threshold (e.g., 50% of model limit)
 - **Order:** compaction MUST run before overflow rejection. Never reject a message without attempting compaction first.
-- **Strategy:** graduate oldest hot messages to cold (union-find merge). If still over budget, evict the oldest/smallest cold clusters.
-- **Guarantee:** full data is always preserved through parent pointers. Compaction is reversible by expanding clusters back to source messages.
+- **Strategy:**
+  1. Compact: graduate oldest hot messages to cold via union-find merge.
+  2. Suppress: exclude oldest/smallest cold clusters from retrieval index. They stay in Remember, recoverable.
+  3. Only if suppression is insufficient: report overflow to the user.
 
 ## Unlocks
 

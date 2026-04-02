@@ -62,28 +62,27 @@ Perceive:     raw → encoded
 
 Cache:        encoded → indexed
               Guarantee: retrievable by key. Atomic under concurrent read/write.
-              .append(turn) → void
-              .read() → Content[]
-              .compact() → CompactionResult
-              .expand(root_id) → Content[]     # union-find: reinflate cluster
-              .find(message_id) → root_id       # union-find: follow parent pointers
+              Minimum: .append(turn) / .read() / .compact() / .token_count()
+              Extensions: .expand(root_id) / .find(message_id) / .load_context(path)
+              See 02-cache.md for full interface.
 
 Filter:       indexed → selected
               Guarantee: strictly smaller. Losers suppressed, winners forwarded.
-              (subject) → Pass | Reject(reason)
+              Minimum: (subject) → Pass | Reject(reason)
+              See 03-filter.md for gate catalog.
 
 Remember:     selected → persisted
               Guarantee: retrievable on next cycle's Perceive. Lossless.
-              .append(event) → void
-              .read(session_id) → Session
-              .list(filter?) → SessionSummary[]
-              .prune(policy) → PruneResult
-              .write_skill(skill) → void
-              .read_skills() → Skill[]
+              Minimum: .append(event) / .read(session_id) / .list(filter?)
+              Extensions: .prune(policy) / .write_skill(skill) / .read_skills() / .delete_skill(name)
+              Extensions: .list_decisions(filter?) → DecisionRecord[]
+              See 05-remember.md for full interface.
 
 Consolidate:  persisted → policy′
               Guarantee: backward pass. Reads from Remember, writes to substrate. Lossy.
-              .run(sessions) → CandidateSkill[]
+              Minimum: .run(sessions) → CandidateSkill[]
+              Extensions: .classify_frame() / .extract_keyframes() / .detect_convergence() / .rank()
+              See 06-consolidate.md for full interface.
 ```
 
 If contracts match, algorithms are swappable. If any contract is broken, the loop dies. Swapping an implementation means satisfying the same postcondition. The harness ships with one default per slot.

@@ -61,9 +61,9 @@ The test: did multiple trajectories independently arrive at the same pattern? If
 
 **What to extract:** problem→approach→outcome triples, not tool→tool→tool sequences. Skills compress strategy, not implementation. "When planning a refactor, default to modifying the fewest files possible" is a skill. "Read→Edit→Edit" is a log entry.
 
-### Inner Attend — rank by compression value
+### Inner Scoring — rank by compression value
 
-Among patterns that pass convergence detection, rank by: **time saved × quality preserved**.
+Among patterns that pass convergence detection, score by: **time saved × quality preserved**. (This is not Attend — it's automated ranking that prepares candidates for human review.)
 
 - High product → promote to skill candidate
 - Low product → evict
@@ -127,12 +127,12 @@ This is the eviction policy for Filter @ Remember, informed by the codec structu
 
 When does Consolidate fire?
 
-- **End of session:** review accumulated decisions
-- **Threshold:** N new I-frames accumulated since last run
-- **Adaptive GOP:** fire when ratio of new I-frames to total episodes exceeds threshold. When the environment changes fast, consolidate often. When it's stable, wait.
-- **Manual:** user invokes consolidation explicitly (MVP default)
+- **Manual:** user invokes consolidation explicitly. **(MVP — implement this first.)**
+- **End of session:** review accumulated decisions. *(post-MVP)*
+- **Threshold:** N new I-frames accumulated since last run. *(post-MVP)*
+- **Adaptive GOP:** fire when ratio of new I-frames to total episodes exceeds threshold. *(post-MVP)*
 
-The trigger is the missing piece in current harnesses. The capability exists. The trigger doesn't.
+The trigger is the missing piece in current harnesses. The capability exists. The trigger doesn't. MVP ships manual-only; automatic triggers are experiments.
 
 ## Input parameters (knobs)
 
@@ -173,7 +173,7 @@ AGPL: improvement stays in the commons
 
 This is the compression tower applied to the harness's own architecture. Level 0: raw experience running the harness. Level 1: skills for using the harness. Level 2: spec improvements that change how the harness works. Level 3: improvements to how spec improvements are generated.
 
-The human approves at every level. The AGPL ensures that forks whose Consolidate generates improvements must share those improvements back. The license is Filter @ Remember for the spec itself.
+The human approves at every level. AGPL increases the chance that improvements from networked forks remain available to the commons — it doesn't guarantee upstreaming, but it keeps the source inspectable.
 
 ## Anti-patterns
 

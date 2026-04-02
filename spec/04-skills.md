@@ -1,6 +1,6 @@
 # 04 — Skills
 
-Procedural memory for the harness. Skills are reusable procedures that change how the agent filters, attends, and responds in future sessions. They are the bridge between Consolidate (writes skills) and Perceive (loads skills).
+Procedural memory for the harness. Skills are reusable procedures that change how the agent filters and responds in future sessions. They are the bridge between Consolidate (writes skills) and Perceive (loads skills).
 
 ## What a skill is
 

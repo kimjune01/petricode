@@ -51,6 +51,30 @@ project/.agents/instructions      ← project-specific instructions
 - **Read:** by Perceive (context discovery)
 - **Contract:** Remember provides CRUD. Consolidate decides what to write.
 
+### Decision records
+
+Structured records of human decisions, persisted for Consolidate to read.
+
+```
+DecisionRecord:
+  session_id: string
+  turn_id: string
+  decision_type: 'approve' | 'reject' | 'modify' | 'ignore'
+  subject_ref: string              # what was decided on (tool call ID, plan ID, etc.)
+  presented_context: string        # what the human saw at decision time
+  problem_frame: string | null     # what problem was being solved
+  outcome_ref: string | null       # what happened after the decision
+  timestamp: string
+```
+
+```
+Remember (extension):
+  .append_decision(record: DecisionRecord) → void
+  .list_decisions(filter?: DecisionFilter) → DecisionRecord[]
+```
+
+Without typed decision records, Consolidate's convergence detection has no structured input to work with.
+
 ## Contract
 
 - **Lossless:** Remember does not discard data. Lossy operations belong to Filter (eviction) or Cache (compaction).
