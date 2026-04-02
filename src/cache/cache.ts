@@ -2,20 +2,18 @@ import type { CacheSlot } from "../core/contracts.js";
 import type { Turn, ContextFragment } from "../core/types.js";
 import { UnionFindForest } from "./unionFind.js";
 import { TfIdfIndex } from "./tfidf.js";
-import { graduate, turn_text, type CompactionConfig } from "./compaction.js";
+import { graduate, enforce_cap, turn_text, type CompactionConfig } from "./compaction.js";
 
 export interface UnionFindCacheConfig {
   hot_capacity: number;      // ring buffer size (default 10)
   max_clusters: number;      // cold zone cluster cap (default 20)
   merge_threshold: number;   // cosine similarity threshold (default 0.5)
-  token_limit: number;       // auto-compact threshold (default 200000)
 }
 
 const DEFAULT_CONFIG: UnionFindCacheConfig = {
   hot_capacity: 10,
   max_clusters: 20,
   merge_threshold: 0.5,
-  token_limit: 200000,
 };
 
 export class UnionFindCache implements CacheSlot {
@@ -39,15 +37,10 @@ export class UnionFindCache implements CacheSlot {
   append(turn: Turn): void {
     this.hot.push(turn);
 
-    // Graduate oldest when hot overflows
+    // Graduate oldest when hot overflows; LRU eviction happens inside graduate()
     while (this.hot.length > this.config.hot_capacity) {
       const oldest = this.hot.shift()!;
       graduate(oldest, this.forest, this.index, this.compaction_config);
-    }
-
-    // Auto-compact when token count exceeds 50% of limit
-    if (this.token_count() > this.config.token_limit * 0.5) {
-      this.compact();
     }
   }
 
@@ -66,6 +59,9 @@ export class UnionFindCache implements CacheSlot {
       const oldest = this.hot.shift()!;
       graduate(oldest, this.forest, this.index, this.compaction_config);
     }
+
+    // Enforce cluster cap via LRU eviction
+    enforce_cap(this.forest, this.config.max_clusters);
   }
 
   token_count(): number {

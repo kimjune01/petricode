@@ -153,21 +153,38 @@ describe("UnionFindCache", () => {
     expect(total_graduated).toBeLessThan(9); // 9 non-hot turns were graduated
   });
 
-  test("compaction runs before overflow (auto-triggered by append)", () => {
-    // Use a very small token limit so compaction triggers quickly
+  test("LRU eviction removes oldest cluster when cap exceeded", () => {
+    // Use totally distinct vocabularies so nothing merges
+    const topics = [
+      "alpha bravo charlie delta echo foxtrot golf hotel",
+      "igloo jacket kite lemon mango noodle orange pepper",
+      "quartz ruby sapphire topaz uranium vanadium wolfram xenon",
+      "asteroid blazer comet dwarf eclipse flare galaxy halo",
+      "insulin jellyfish kelp lobster manatee narwhal octopus plankton",
+      "abacus blueprint caliper drafting easel fixture grout hinge",
+    ];
+
     const cache = new UnionFindCache({
-      hot_capacity: 10,
-      token_limit: 100, // very small — triggers compact at 50 tokens (~200 chars)
+      hot_capacity: 2,
+      max_clusters: 3,
+      merge_threshold: 0.99, // absurdly high so nothing merges
     });
 
-    const long_text = "word ".repeat(100); // ~500 chars = ~125 tokens
-
-    // Adding turns with enough text should trigger auto-compact
-    for (let i = 0; i < 5; i++) {
-      cache.append(unique_turn(`${long_text} ${i}`));
+    // Create distinct turns with ascending timestamps
+    for (let i = 0; i < topics.length; i++) {
+      const t = make_turn(`lru_${i}`, topics[i]!);
+      t.timestamp = 1000 + i;
+      cache.append(t);
     }
 
-    expect(cache.compact_count).toBeGreaterThan(0);
+    // With max_clusters=3, older clusters should have been evicted
+    const result = cache.read();
+    const clusters = result.filter((t) => t.id.startsWith("cluster_"));
+    expect(clusters.length).toBeLessThanOrEqual(3);
+
+    // The earliest turns should have been evicted (LRU)
+    const found_earliest = cache.find("lru_0");
+    expect(found_earliest).toBeUndefined();
   });
 
   test("read() returns hot turns plus cold cluster summaries", () => {

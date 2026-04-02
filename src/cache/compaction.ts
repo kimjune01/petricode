@@ -50,14 +50,27 @@ export function graduate(
   enforce_cap(forest, config.max_clusters);
 }
 
-/** Force-merge closest pairs until under the cap. */
+/** Evict least-recently-used clusters until under the cap. */
 export function enforce_cap(
   forest: UnionFindForest,
   max_clusters: number,
 ): void {
   while (forest.root_count() > max_clusters) {
-    const pair = forest.closest_pair();
-    if (!pair) break;
-    forest.union(pair[0], pair[1]);
+    const roots = forest.roots();
+    if (roots.length === 0) break;
+
+    // Find root with oldest max timestamp (LRU)
+    let lru_root = roots[0]!;
+    let lru_ts = Math.max(...lru_root.turns.map((t) => t.timestamp));
+
+    for (let i = 1; i < roots.length; i++) {
+      const ts = Math.max(...roots[i]!.turns.map((t) => t.timestamp));
+      if (ts < lru_ts) {
+        lru_ts = ts;
+        lru_root = roots[i]!;
+      }
+    }
+
+    forest.remove(lru_root.id);
   }
 }

@@ -134,6 +134,21 @@ export class UnionFindForest {
     return node ? node.turns : [];
   }
 
+  /** Remove a node and all its children from the forest. */
+  remove(id: string): void {
+    const root = this.find(id);
+    // Collect all nodes belonging to this root
+    const to_remove: string[] = [];
+    for (const [nid, node] of this.nodes) {
+      if (this.find(nid) === root) {
+        to_remove.push(nid);
+      }
+    }
+    for (const nid of to_remove) {
+      this.nodes.delete(nid);
+    }
+  }
+
   /** Find which cluster a turn belongs to and return it. */
   find_turn(message_id: string): Turn | undefined {
     for (const node of this.nodes.values()) {
