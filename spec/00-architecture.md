@@ -53,20 +53,37 @@ The pipe is not inference. Inference is the black box inside the streaming subpi
 
 ## Interfaces
 
-Each automated role is a swappable slot with a typed contract:
+Each automated role is a swappable slot. The formal contracts follow from [The Handshake](https://june.kim/the-handshake): each postcondition is the next stage's precondition. Rearrange and the contracts break.
 
 ```
-Perceive:     (raw_input) → PerceivedEvent | RetryableError
-Cache:        .append(turn) → void
+Perceive:     raw → encoded
+              Guarantee: parseable by next stage. Injects new bits.
+              (raw_input) → PerceivedEvent | RetryableError
+
+Cache:        encoded → indexed
+              Guarantee: retrievable by key. Atomic under concurrent read/write.
+              .append(turn) → void
               .read() → Content[]
               .compact() → CompactionResult
-              .expand(root_id) → Content[]
-              .find(message_id) → root_id
-Filter:       (subject) → Pass | Reject(reason)
-Remember:     .append(event) → void
+              .expand(root_id) → Content[]     # union-find: reinflate cluster
+              .find(message_id) → root_id       # union-find: follow parent pointers
+
+Filter:       indexed → selected
+              Guarantee: strictly smaller. Losers suppressed, winners forwarded.
+              (subject) → Pass | Reject(reason)
+
+Remember:     selected → persisted
+              Guarantee: retrievable on next cycle's Perceive. Lossless.
+              .append(event) → void
               .read(session_id) → Session
+              .list(filter?) → SessionSummary[]
               .prune(policy) → PruneResult
-Consolidate:  .run(sessions) → CandidateSkill[]
+              .write_skill(skill) → void
+              .read_skills() → Skill[]
+
+Consolidate:  persisted → policy′
+              Guarantee: backward pass. Reads from Remember, writes to substrate. Lossy.
+              .run(sessions) → CandidateSkill[]
 ```
 
-Swapping an implementation means implementing one interface. The harness ships with one default per slot.
+If contracts match, algorithms are swappable. If any contract is broken, the loop dies. Swapping an implementation means satisfying the same postcondition. The harness ships with one default per slot.

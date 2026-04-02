@@ -20,6 +20,7 @@ spec/
   01-perceive.md       — input: terminal, filesystem, API responses
   02-cache.md          — tree-shaped context with progressive disclosure
   03-filter.md         — validation, policy, eviction, loop detection
+  04-skills.md         — procedural memory: format, discovery, activation, lifecycle
   05-remember.md       — session persistence, filesystem CRUD
   06-consolidate.md    — the backward pass: skill extraction, memory distillation
   07-composition.md    — how roles compose across tower levels
