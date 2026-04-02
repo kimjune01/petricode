@@ -152,6 +152,29 @@ From [harness experiments](https://june.kim/consolidation):
 - Frequency ≠ importance. Intent-first perception (TF-IDF on prompt tokens) beats n-gram frequency.
 - Need problem→approach→outcome triples, not tool→tool→tool sequences. Skills compress strategy, not implementation.
 
+## Self-improvement: PRs against petricode
+
+The spec is procedural memory for the harness. Consolidate writes to procedural memory. Therefore Consolidate can write improvements to the spec itself.
+
+```
+Harness runs → sessions accumulate
+    ↓
+Consolidate extracts patterns about the harness itself
+  "convergence threshold too aggressive — 3 false promotions in 10 runs"
+  "eviction fires too early — users re-request evicted sessions"
+  "codec GOP of 100 is too long for volatile environments"
+    ↓
+Consolidate generates a PR against kimjune01/petricode
+    ↓
+Human reviews → merge or reject
+    ↓
+AGPL: improvement stays in the commons
+```
+
+This is the compression tower applied to the harness's own architecture. Level 0: raw experience running the harness. Level 1: skills for using the harness. Level 2: spec improvements that change how the harness works. Level 3: improvements to how spec improvements are generated.
+
+The human approves at every level. The AGPL ensures that forks whose Consolidate generates improvements must share those improvements back. The license is Filter @ Remember for the spec itself.
+
 ## Anti-patterns
 
 - No trigger (Consolidate exists but never fires)
