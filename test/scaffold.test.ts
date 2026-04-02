@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { spawnSync } from "child_process";
-import { loadConfig } from "../src/config.js";
+import { loadConfig } from "../src/config/index.js";
 import { existsSync, mkdirSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
