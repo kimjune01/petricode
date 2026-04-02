@@ -8,6 +8,7 @@ import { WriteFileTool } from "../src/tools/writeFile.js";
 import { ShellTool } from "../src/tools/shell.js";
 import { GrepTool } from "../src/tools/grep.js";
 import { GlobTool } from "../src/tools/glob.js";
+import { EditTool } from "../src/tools/edit.js";
 import { ToolRegistry, createDefaultRegistry } from "../src/tools/registry.js";
 
 // ── Temp directory ──────────────────────────────────────────────
@@ -128,6 +129,79 @@ describe("Glob", () => {
   });
 });
 
+// ── Edit ───────────────────────────────────────────────────────
+
+describe("Edit", () => {
+  test("replaces a unique string", async () => {
+    const p = join(TMP, "edit-unique.txt");
+    writeFileSync(p, "hello world");
+    const result = await EditTool.execute({
+      path: p,
+      old_string: "hello",
+      new_string: "goodbye",
+    });
+    expect(result).toContain("Replaced 1 occurrence");
+    const { readFileSync } = await import("fs");
+    expect(readFileSync(p, "utf-8")).toBe("goodbye world");
+  });
+
+  test("rejects ambiguous match without replace_all", async () => {
+    const p = join(TMP, "edit-ambiguous.txt");
+    writeFileSync(p, "foo bar foo baz foo");
+    await expect(
+      EditTool.execute({ path: p, old_string: "foo", new_string: "qux" }),
+    ).rejects.toThrow("found 3 times");
+  });
+
+  test("replace_all replaces all occurrences", async () => {
+    const p = join(TMP, "edit-all.txt");
+    writeFileSync(p, "foo bar foo baz foo");
+    const result = await EditTool.execute({
+      path: p,
+      old_string: "foo",
+      new_string: "qux",
+      replace_all: true,
+    });
+    expect(result).toContain("Replaced 3 occurrences");
+    const { readFileSync } = await import("fs");
+    expect(readFileSync(p, "utf-8")).toBe("qux bar qux baz qux");
+  });
+
+  test("throws if old_string not found", async () => {
+    const p = join(TMP, "edit-missing.txt");
+    writeFileSync(p, "hello world");
+    await expect(
+      EditTool.execute({ path: p, old_string: "xyz", new_string: "abc" }),
+    ).rejects.toThrow("not found");
+  });
+
+  test("throws if old_string equals new_string", async () => {
+    const p = join(TMP, "edit-same.txt");
+    writeFileSync(p, "hello");
+    await expect(
+      EditTool.execute({ path: p, old_string: "hello", new_string: "hello" }),
+    ).rejects.toThrow("identical");
+  });
+
+  test("rejects empty old_string", async () => {
+    const p = join(TMP, "edit-empty.txt");
+    writeFileSync(p, "hello");
+    await expect(
+      EditTool.execute({ path: p, old_string: "", new_string: "x" }),
+    ).rejects.toThrow("must not be empty");
+  });
+
+  test("throws for missing file", async () => {
+    await expect(
+      EditTool.execute({
+        path: join(TMP, "nonexistent.txt"),
+        old_string: "a",
+        new_string: "b",
+      }),
+    ).rejects.toThrow("file not found");
+  });
+});
+
 // ── Registry ────────────────────────────────────────────────────
 
 describe("ToolRegistry", () => {
@@ -183,10 +257,10 @@ describe("ToolRegistry", () => {
     expect(result).toBe("type check ok");
   });
 
-  test("createDefaultRegistry has all five tools", () => {
+  test("createDefaultRegistry has all six tools", () => {
     const registry = createDefaultRegistry();
     const names = registry.list().map((t) => t.name).sort();
-    expect(names).toEqual(["file_read", "file_write", "glob", "grep", "shell"]);
+    expect(names).toEqual(["edit", "file_read", "file_write", "glob", "grep", "shell"]);
   });
 
   test("dispatch tool-call block through registry", async () => {

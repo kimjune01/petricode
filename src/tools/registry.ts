@@ -51,11 +51,13 @@ import { WriteFileTool } from "./writeFile.js";
 import { ShellTool } from "./shell.js";
 import { GrepTool } from "./grep.js";
 import { GlobTool } from "./glob.js";
+import { EditTool } from "./edit.js";
 
 export function createDefaultRegistry(): ToolRegistry {
   const registry = new ToolRegistry();
   registry.register(ReadFileTool);
   registry.register(WriteFileTool);
+  registry.register(EditTool);
   registry.register(ShellTool);
   registry.register(GrepTool);
   registry.register(GlobTool);
