@@ -13,10 +13,11 @@ const commands: Record<string, CommandHandler> = {
   help: () => ({
     output: [
       "Available commands:",
-      "  /help     — show this message",
-      "  /exit     — quit petricode",
-      "  /compact  — compact conversation history (stub)",
-      "  /skills   — list available skills",
+      "  /help         — show this message",
+      "  /exit         — quit petricode",
+      "  /compact      — compact conversation history (stub)",
+      "  /skills       — list available skills",
+      "  /consolidate  — extract skills from session history",
     ].join("\n"),
   }),
   compact: () => ({ output: "Compaction not yet implemented." }),
