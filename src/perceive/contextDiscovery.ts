@@ -25,6 +25,15 @@ export async function discoverContext(
     }
   }
 
+  // Project-root instruction files (CLAUDE.md, AGENTS.md, etc.)
+  for (const file of INSTRUCTION_FILES) {
+    const p = join(projectDir, file);
+    const content = await tryRead(p);
+    if (content !== null) {
+      fragments.push({ source: p, content, relevance: 0.5 });
+    }
+  }
+
   // Project-level .agents/
   const projectAgents = join(projectDir, ".agents");
   await collectFromDir(projectAgents, fragments, 0.7);
@@ -40,6 +49,9 @@ export async function discoverContext(
   } catch {
     // projectDir might not exist
   }
+
+  // Sort by relevance ascending (global first, subdirectory last)
+  fragments.sort((a, b) => a.relevance - b.relevance);
 
   return fragments;
 }

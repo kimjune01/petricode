@@ -8,6 +8,7 @@ export interface ClusterNode {
   rank: number;
   vector: SparseVector;
   turns: Turn[];           // original turns in this node
+  last_accessed: number;   // timestamp of last read access (LRU eviction)
 }
 
 export class UnionFindForest {
@@ -20,6 +21,7 @@ export class UnionFindForest {
       rank: 0,
       vector,
       turns,
+      last_accessed: Date.now(),
     });
   }
 
@@ -62,6 +64,7 @@ export class UnionFindForest {
     const w_b = loser.turns.length;
     winner.vector = weighted_average(winner.vector, w_a, loser.vector, w_b);
     winner.turns = [...winner.turns, ...loser.turns];
+    winner.last_accessed = Math.max(winner.last_accessed, loser.last_accessed);
     loser.turns = []; // C4: prevent stale copies from leaking into find_turn
 
     return winner.id;
@@ -131,7 +134,11 @@ export class UnionFindForest {
   expand(root_id: string): Turn[] {
     const root = this.find(root_id);
     const node = this.nodes.get(root);
-    return node ? node.turns : [];
+    if (node) {
+      node.last_accessed = Date.now();
+      return node.turns;
+    }
+    return [];
   }
 
   /** Remove a node and all its children from the forest. */
@@ -154,6 +161,12 @@ export class UnionFindForest {
     for (const node of this.nodes.values()) {
       for (const turn of node.turns) {
         if (turn.id === message_id) {
+          // Update LRU timestamp on the cluster root
+          const root_id = this.find(node.id);
+          const root_node = this.nodes.get(root_id);
+          if (root_node) {
+            root_node.last_accessed = Date.now();
+          }
           return turn;
         }
       }

@@ -59,12 +59,12 @@ export function enforce_cap(
     const roots = forest.roots();
     if (roots.length === 0) break;
 
-    // Find root with oldest max timestamp (LRU)
+    // Find root with oldest last_accessed timestamp (true LRU)
     let lru_root = roots[0]!;
-    let lru_ts = Math.max(...lru_root.turns.map((t) => t.timestamp));
+    let lru_ts = lru_root.last_accessed;
 
     for (let i = 1; i < roots.length; i++) {
-      const ts = Math.max(...roots[i]!.turns.map((t) => t.timestamp));
+      const ts = roots[i]!.last_accessed;
       if (ts < lru_ts) {
         lru_ts = ts;
         lru_root = roots[i]!;

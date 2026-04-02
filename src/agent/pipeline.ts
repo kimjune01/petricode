@@ -123,19 +123,22 @@ export class Pipeline {
       }
     }
 
-    // 2. Cache — append user turn
-    const userTurn: Turn = {
-      id: crypto.randomUUID(),
-      role: "user",
-      content: [{ type: "text", text: input }],
-      timestamp: Date.now(),
-    };
-    this.cache.append(userTurn);
-
-    // Build context from perceived event + cache history
+    // 2. Build context from perceived event + cache history
+    //    (user turn is NOT appended yet — it comes from the perceived event
+    //    via assembleContext, which already has @-refs expanded)
     const contextMessages = assembleContext(perceived as PerceivedEvent);
     const cachedTurns = this.cache.read();
     const conversation = this.buildConversation(contextMessages, cachedTurns);
+
+    // Build the user turn for later cache/persist (using perceived content)
+    const userTurn: Turn = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: (perceived as PerceivedEvent).content.filter(
+        (c) => c.type === "text" && !(c as { text: string }).text.startsWith("<context ") && !(c as { text: string }).text.startsWith("<skill "),
+      ),
+      timestamp: Date.now(),
+    };
 
     // 3. Call primary provider
     const primary = this.router.get("primary");
@@ -146,6 +149,10 @@ export class Pipeline {
 
     // 4. Assemble response
     let assistantTurn = await assembleTurn(stream);
+
+    // 4b. Now append the user turn to cache (after model has responded,
+    //     so it wasn't duplicated in the prompt via cache.read())
+    this.cache.append(userTurn);
 
     // 5. Filter — content validation (skip for tool-use-only turns)
     const hasToolCalls = assistantTurn.tool_calls && assistantTurn.tool_calls.length > 0;
