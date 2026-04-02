@@ -124,11 +124,12 @@ export class Pipeline {
     }
 
     // 2. Build context from perceived event + cache history
-    //    (user turn is NOT appended yet — it comes from the perceived event
-    //    via assembleContext, which already has @-refs expanded)
-    const contextMessages = assembleContext(perceived as PerceivedEvent);
+    //    Split context into system-only (reusable in tool loop) and user message
+    const allContextMessages = assembleContext(perceived as PerceivedEvent);
+    const systemMessages = allContextMessages.filter(m => m.role === "system");
+    const userMessages = allContextMessages.filter(m => m.role !== "system");
     const cachedTurns = this.cache.read();
-    const conversation = this.buildConversation(contextMessages, cachedTurns);
+    const conversation = [...systemMessages, ...cachedTurns.map(t => ({ role: t.role, content: t.content })), ...userMessages];
 
     // Build the user turn for later cache/persist (using perceived content)
     const userTurn: Turn = {
@@ -150,8 +151,9 @@ export class Pipeline {
     // 4. Assemble response
     let assistantTurn = await assembleTurn(stream);
 
-    // 4b. Do NOT append userTurn to cache — it's already in contextMessages
-    //     from assembleContext. The cache holds history (assistant + tool results).
+    // 4b. Append user turn to cache AFTER model responds, so it's available
+    //     for future turns' history but wasn't duplicated in THIS turn's prompt.
+    this.cache.append(userTurn);
 
     // 5. Filter — content validation (skip for tool-use-only turns)
     const hasToolCalls = assistantTurn.tool_calls && assistantTurn.tool_calls.length > 0;
@@ -201,12 +203,13 @@ export class Pipeline {
       };
       this.cache.append(toolResultTurn);
 
-      // Build updated conversation and call provider again
+      // Build updated conversation — system context + cache history only
+      // (user turn is already in cache from step 4b, no duplication)
       const updatedCachedTurns = this.cache.read();
-      const updatedConversation = this.buildConversation(
-        contextMessages,
-        updatedCachedTurns,
-      );
+      const updatedConversation: Message[] = [
+        ...systemMessages,
+        ...updatedCachedTurns.map(t => ({ role: t.role, content: t.content })),
+      ];
       const nextStream = primary.generate(updatedConversation, {
         tools: toolDefs,
       });
