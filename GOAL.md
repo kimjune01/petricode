@@ -1,6 +1,6 @@
 # Goal
 
-Build an **experimental harness** — a coding agent that fills all six Natural Framework roles with clean, swappable interfaces. Not a product. A laboratory.
+🧪 Build an **experimental harness** — a coding agent that fills all six Natural Framework roles with clean, swappable interfaces. Not a product. A laboratory.
 
 ## What this is
 
@@ -13,6 +13,19 @@ The goal is to **experiment our way into a full-6-slotted harness** — one that
 - Not a Claude Code clone. Not feature-parity with any vendor product.
 - Not a product. No telemetry, no analytics, no RLHF reporting, no vendor-serving observability.
 - Not enterprise software. No managed settings, no SSO, no org-wide policy enforcement.
+
+## Look and feel
+
+The harness should feel familiar to anyone who's used a modern terminal coding agent. Emulate the look-and-feel of Claude Code based on publicly available screenshots, demos, and documentation:
+
+- **Logo:** 🧪 (alembic) — an experiment, not a product
+- **Terminal UI:** Ink/React-based, similar layout. Conversation history with message bubbles, tool call groups with collapsible output, streaming markdown rendering, status line at bottom.
+- **Color palette:** Muted dark theme with accent colors for different message types (user, assistant, tool results, errors). Match the general aesthetic visible in public demos and screenshots.
+- **Tool output:** Collapsible tool call groups. Show tool name, brief result, expandable full output. Progress indicators for long-running operations.
+- **Input:** Multi-line editor at bottom. Slash command autocomplete. @-file references. Paste detection.
+- **Diff display:** Inline diffs for file edits with syntax highlighting.
+
+The goal is that a Claude Code user sits down and feels at home. The interaction patterns, visual hierarchy, and keyboard shortcuts should feel natural. This is clean-room visual design from public references, not code copying.
 
 ## Design principles
 
