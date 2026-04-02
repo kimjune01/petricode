@@ -7,6 +7,13 @@ export interface CommandResult {
 
 export type CommandHandler = (args: string) => CommandResult;
 
+// Clear callback — set by App to wire hot zone reset
+let clearCallback: (() => void) | null = null;
+
+export function setClearCallback(cb: () => void): void {
+  clearCallback = cb;
+}
+
 const commands: Record<string, CommandHandler> = {
   exit: () => ({ output: "Goodbye.", exit: true }),
   quit: () => ({ output: "Goodbye.", exit: true }),
@@ -14,12 +21,22 @@ const commands: Record<string, CommandHandler> = {
     output: [
       "Available commands:",
       "  /help         — show this message",
-      "  /exit         — quit petricode",
-      "  /compact      — compact conversation history (stub)",
+      "  /exit, /quit  — quit petricode",
+      "  /clear        — reset conversation (keeps session)",
+      "  /compact      — compact conversation history",
       "  /skills       — list available skills",
       "  /consolidate  — extract skills from session history",
+      "",
+      "Tips:",
+      "  @path/to/file — include file contents in prompt",
+      "  Ctrl+C        — quit immediately",
+      "  q             — quit when input is empty",
     ].join("\n"),
   }),
+  clear: () => {
+    if (clearCallback) clearCallback();
+    return { output: "Conversation cleared." };
+  },
   compact: () => ({ output: "Compaction not yet implemented." }),
   skills: () => ({ output: "No skills loaded." }),
 };

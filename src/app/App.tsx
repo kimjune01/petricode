@@ -10,12 +10,14 @@ import Composer from "./components/Composer.js";
 import ToolConfirmation from "./components/ToolConfirmation.js";
 import StatusBar from "./components/StatusBar.js";
 import ReviewerNotes from "./components/ReviewerNotes.js";
+import ErrorDisplay from "./components/ErrorDisplay.js";
 
 export interface AppProps {
   pipeline?: Pipeline;
+  resumeSessionId?: string;
 }
 
-export default function App({ pipeline }: AppProps) {
+export default function App({ pipeline, resumeSessionId }: AppProps) {
   const { exit } = useApp();
   const [state, setState] = useState(initialState);
   const [reviewerFindings, setReviewerFindings] = useState<string[]>([]);
@@ -46,12 +48,26 @@ export default function App({ pipeline }: AppProps) {
       // Check for slash commands first
       const cmdResult = tryCommand(input);
       if (cmdResult) {
+        // Handle /clear — reset turns and error
+        if (input.trim() === "/clear") {
+          setState((prev) => ({
+            ...prev,
+            turns: [],
+            error: null,
+          }));
+          addSystemTurn(cmdResult.output);
+          return;
+        }
+
         addSystemTurn(cmdResult.output);
         if (cmdResult.exit) {
           exit();
         }
         return;
       }
+
+      // Clear any previous error
+      setState((prev) => ({ ...prev, error: null }));
 
       // Add user turn
       const userTurn: Turn = {
@@ -95,6 +111,7 @@ export default function App({ pipeline }: AppProps) {
           phase: "composing" as AppPhase,
           turns: [...prev.turns, resultTurn],
           tokenCount: pipeline.tokenCount(),
+          error: null,
         }));
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
@@ -139,11 +156,7 @@ export default function App({ pipeline }: AppProps) {
         <ReviewerNotes findings={reviewerFindings} />
       </Box>
 
-      {state.error && (
-        <Box marginBottom={1}>
-          <Text color="red">{state.error}</Text>
-        </Box>
-      )}
+      <ErrorDisplay error={state.error} />
 
       {state.phase === "confirming" && state.pendingToolCall && (
         <ToolConfirmation
