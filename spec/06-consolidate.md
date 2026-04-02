@@ -1,103 +1,162 @@
 # 06 — Consolidate
 
-The backward pass. Read from Remember, write procedures back to the substrate. This is the role that makes the agent learn.
+The backward pass. Read from Remember, write procedures back to the substrate. The role that makes the agent learn. Contains its own inner pipeline (P→C→F→A→Con→R), recursively, bits diminishing at each level until passthrough.
 
-## What Consolidate does
+Reference: [Consolidation Codec](https://june.kim/consolidate-codec), [The Consolidate Pipe](https://june.kim/consolidate-pipe), [The Compression Tower](https://june.kim/compression-tower).
 
-Consolidate reads accumulated experience from Remember (session logs, decision records, tool results) and writes back to procedural memory (skills, instructions, preferences). It changes how the agent processes the *next* session.
-
-```
-Remember (session logs, decisions)
-    ↓ Consolidate reads
-    ↓ Extracts patterns, distills preferences, generates skills
-    ↓ Consolidate writes
-Procedural memory (skills, instructions, preferences)
-    ↓ Perceive reads next session
-Agent behaves differently
-```
-
-## Components
-
-### 1. Event logger (Perceive for Consolidate)
-
-Record user edits, rejections, approvals, and tool outcomes during the session.
-
-- What did the user accept vs. reject?
-- Which tool calls succeeded vs. failed?
-- Where did the user take over manually after the agent's attempt?
-
-### 2. Decision log (Cache for Consolidate)
-
-Structured records of each human decision, stored in Remember.
-
-- Decision type (approve, reject, modify, ignore)
-- Context presented at decision time
-- Outcome (what happened after the decision)
-
-### 3. Pattern extractor (Filter for Consolidate)
-
-Identify recurring patterns in the decision log. Reject noise, surface signal.
-
-- Frequency: how often does this pattern appear?
-- Consistency: does the user always decide the same way?
-- Threshold: only extract patterns above N occurrences with M% consistency
-
-### 4. Skill generator (Attend for Consolidate)
-
-From extracted patterns, generate candidate skills. Present to the human for approval.
-
-- Each candidate: trigger condition, action, expected outcome
-- Human selects which candidates become real skills
-- This is the Attend gate inside Consolidate — the human decides what the agent learns
-
-### 5. Skill writer (Remember for Consolidate)
-
-Write approved skills to procedural memory.
+## Interface
 
 ```
-~/.config/agent/skills/<skill-name>.md
-```
-
-- Skills are markdown files with frontmatter (name, description, trigger)
-- CRUD: create new, update existing, delete stale
-
-### 6. Trigger (the crontab)
-
-When does Consolidate fire?
-
-- **End of session:** review accumulated decisions, extract patterns
-- **Threshold:** N decisions accumulated without consolidation
-- **Idle time:** agent has no pending tasks
-- **Scheduled:** daily/weekly distillation of accumulated experience
-- **Manual:** user invokes consolidation explicitly
-
-The trigger is the missing piece in current harnesses. The capability exists (skill creation works when prompted). The trigger doesn't.
-
-## Distillation
-
-Consolidate compresses episodic memory (session logs) into semantic memory (skills, preferences). This is lossy by design — the goal is to extract reusable procedures, not to preserve every detail.
-
-```
-Episodic: "In session 47, user rejected the 3-file refactor and did it in 1 file"
-Episodic: "In session 52, user rejected the split and kept it in 1 file"
-Episodic: "In session 58, user said 'stop splitting files'"
-    ↓ distillation
-Semantic: "User prefers single-file changes over multi-file refactors"
-    ↓ skill
-Skill: "When planning a refactor, default to modifying the fewest files possible"
+Consolidate:
+  .run(sessions: Session[]) → CandidateSkill[]
+  .classify_frame(episode: Episode) → 'I' | 'P' | 'B'
+  .extract_keyframes(window: Episode[]) → Keyframe[]
+  .detect_convergence(patterns: Pattern[]) → Pattern[]   # independent rediscovery, not frequency
+  .evict(store: EpisodicStore, policy: EvictionPolicy) → EvictResult
+  .rank(candidates: CandidateSkill[]) → CandidateSkill[]  # by time_saved × quality_preserved
 ```
 
 ## Contract
 
-- **Reads from:** Remember (session logs, decision records)
+```
+Consolidate:  persisted → policy′
+              Guarantee: backward pass. Reads from Remember asynchronously,
+              writes to the substrate. Lossy. Reshapes how each stage processes.
+```
+
+- **Reads from:** Remember (session logs, decision records, tool outcomes)
 - **Writes to:** procedural memory (skills, instructions, preferences)
-- **Does not:** modify the current session's behavior. Consolidate affects the *next* session.
-- **Requires Attend:** the human approves what the agent learns. No unsupervised learning.
-- **Convergence:** two iterations of scored feedback are enough to converge (empirical finding from slop-detection).
+- **Does not:** modify the current session. Consolidate affects the *next* session.
+- **Requires human approval:** the human decides what the agent learns. No unsupervised learning.
+- **Offline:** runs asynchronously, with access to the full buffer. Not inline with the forward pass.
+
+## The inner pipe
+
+Consolidate contains its own six roles. Each solves a specific problem:
+
+### Inner Perceive — the codec
+
+Episodes arrive as a stream with high temporal redundancy. Most frames look like the previous frame. Classify into three types ([Consolidation Codec](https://june.kim/consolidate-codec)):
+
+- **I-frame** (keyframe): complete snapshot. Self-contained. Expensive to store. Random-access anchor.
+- **P-frame** (predicted): forward diff from previous reference. Stores only what changed. Cheap.
+- **B-frame** (bidirectional): references both past and future. Most compressed. Only constructible offline with lookahead.
+
+**GOP (group of pictures):** how many P-frames between I-frame extractions. This is the consolidation frequency parameter. Adaptive: fire when the ratio of new I-frames to total stored episodes exceeds a threshold.
+
+### Inner Cache — the decision log
+
+Structured records of each human decision, stored in Remember:
+
+- Decision type (approve, reject, modify, ignore)
+- Context presented at decision time
+- Outcome (what happened after the decision)
+- **Problem frame** — what problem was being solved, not just what tools were used
+
+### Inner Filter — convergence detection
+
+**Not frequency — independent rediscovery.** The harness learned this the hard way: extracting `Read→Edit→Edit` at 35× is Cache-level labor, not Filter-level craft. Frequency promotes habits. Convergence promotes invariants.
+
+The test: did multiple trajectories independently arrive at the same pattern? If so, promote. If only one trajectory, decay.
+
+**What to extract:** problem→approach→outcome triples, not tool→tool→tool sequences. Skills compress strategy, not implementation. "When planning a refactor, default to modifying the fewest files possible" is a skill. "Read→Edit→Edit" is a log entry.
+
+### Inner Attend — rank by compression value
+
+Among patterns that pass convergence detection, rank by: **time saved × quality preserved**.
+
+- High product → promote to skill candidate
+- Low product → evict
+- Time is measurable (clock time per task at each compression level)
+- Quality is measurable (output evaluation against the same standard)
+
+The product separates useful compression from bad macros (time saved, quality lost) and verbose wrappers (quality preserved, no time saved).
+
+### Inner Consolidate — meta-learning
+
+The recursive step. Which *types* of patterns keep earning promotion? Which convergence thresholds are too aggressive or too lenient? This is where the pipe tunes its own parameters. At zero bits, passthrough.
+
+### Inner Remember — write the policy update
+
+Write approved skills to procedural memory. The output isn't a summary of what happened. It's a change to how the forward pass runs next cycle.
+
+```
+~/.config/petricode/skills/<skill-name>.md
+```
+
+See [04-skills.md](04-skills.md) for skill format and lifecycle.
+
+## Six requirements
+
+Consolidation fails when any of these is missing ([The Consolidate Pipe](https://june.kim/consolidate-pipe)):
+
+| # | Requirement | Failure without it |
+|---|---|---|
+| 1 | **Multiple trajectories** | Memorization, no generalization |
+| 2 | **Shared storage outliving any trajectory** | No cross-trajectory comparison |
+| 3 | **Convergence detection** (independent rediscovery, not frequency) | Noise promoted to signal |
+| 4 | **Eviction** | Monotonic rule accumulation |
+| 5 | **Offline execution** with access to full buffer | No B-frame construction |
+| 6 | **Write target that changes the forward pass** | Compression without learning |
+
+## The compression tower
+
+Skills stack into levels ([The Compression Tower](https://june.kim/compression-tower)):
+
+**Level 0: Episodes.** Raw task execution. Twenty minutes of manual work producing twenty episodes.
+
+**Level 1: Skills.** Repeated manual patterns compressed into single invocations. Each skill is a fixed-point operator — running it twice produces the same output. The "a bit" qualifier dampens to idempotency.
+
+**Level 2: Compositions.** Skills compose into higher-order skills. `/copyedit` = `/humanize` → `/tighten` → `/readability` → `/flavor`, run to convergence. A pipeline of fixed-point operators has a fixed point.
+
+**Level 3: Self-improving compositions.** The learning step adds bind: the output of one composition becomes the input context for the next, carrying what was learned. Monoid (levels 1-2) becomes monad (level 3).
+
+The ranking metric across all levels: **time saved × quality preserved**. Each transition compresses time while preserving quality. The compression ratio is the measure of expertise.
+
+## Forgetting as bitrate adaptation
+
+Under memory pressure, drop in order:
+
+1. **B-frames first.** Most dependent, most reconstructible. Losing them costs detail but preserves structure.
+2. **P-frames next.** Reconstruct from nearest I-frame. Losing them costs continuity.
+3. **I-frames last.** Self-contained. Losing one means losing an entire segment with no recovery.
+
+This is the eviction policy for Filter @ Remember, informed by the codec structure.
+
+## Trigger
+
+When does Consolidate fire?
+
+- **End of session:** review accumulated decisions
+- **Threshold:** N new I-frames accumulated since last run
+- **Adaptive GOP:** fire when ratio of new I-frames to total episodes exceeds threshold. When the environment changes fast, consolidate often. When it's stable, wait.
+- **Manual:** user invokes consolidation explicitly (MVP default)
+
+The trigger is the missing piece in current harnesses. The capability exists. The trigger doesn't.
+
+## Input parameters (knobs)
+
+The pipe is fixed. The feed is the lever:
+
+- **Volume:** how many episodes before triggering. Too few → nothing converges. Too many → inner Perceive drowns.
+- **Diversity:** structural (N agents), counterfactual (LLM-generated alternatives), temporal (same agent over time), stochastic (noise-augmented replay). Ordered by signal quality.
+- **Frequency:** how often the cron job fires. Adaptive: fire when new I-frames accumulate.
+- **Granularity:** what counts as an episode. A tool call, a task, a session. Finer = more episodes, less variation each.
+
+## Known weaknesses
+
+From [harness experiments](https://june.kim/consolidation):
+
+- Tool sequences are the wrong extraction target. `Read→Edit→Edit` at 35× is Cache-level labor, not Filter-level craft.
+- Single-word continuations ("yes", "fix") lose intent from previous turn. Need turn chaining.
+- Frequency ≠ importance. Intent-first perception (TF-IDF on prompt tokens) beats n-gram frequency.
+- Need problem→approach→outcome triples, not tool→tool→tool sequences. Skills compress strategy, not implementation.
 
 ## Anti-patterns
 
 - No trigger (Consolidate exists but never fires)
 - Unsupervised learning (agent writes skills without human approval)
 - Consolidate that modifies the current session (that's Cache compaction)
-- Reading from the current context window instead of from Remember (that's Attend, not Consolidate)
+- Reading from the current context window instead of from Remember (that's in-context learning, not Consolidate)
+- Extracting tool sequences instead of decision heuristics (compresses labor, not intellect)
+- Frequency-based promotion (promotes habits, not invariants)
