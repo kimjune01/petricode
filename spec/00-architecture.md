@@ -59,11 +59,13 @@ Provider:
   .supports_tools() → boolean
 ```
 
-Two providers configured at startup:
-- **Primary:** the agent's main model. Handles conversation, tool calls, reasoning.
-- **Reviewer:** a second SOTA model from a different vendor. Reviews artifacts before human gates. Applies mechanical fixes. Flags issues the primary model is blind to (its own biases, hallucinations, style tics).
+Three models configured at startup:
 
-The routing is explicit — the harness never silently falls back from one to the other. The reviewer is always a *different* model than the primary, because self-review catches less than cross-review.
+- **Primary:** SOTA from vendor A. The agent's main model. Handles conversation, tool calls, reasoning.
+- **Reviewer:** SOTA from vendor B. Cross-reviews artifacts before human gates. Applies mechanical fixes. Flags issues the primary is blind to (its own biases, hallucinations, style tics). Always a different model than the primary — self-review catches less than cross-review.
+- **Fast:** cheap model from either vendor. Earns its keep via speed, not depth. Handles high-volume internal ops: compaction summaries, union-find cluster merging, loop detection queries, TF-IDF vectorization, convergence detection scoring. Work that runs many times per session and can't wait for SOTA latency.
+
+The routing is explicit — the harness never silently falls back between tiers. Each call site declares which tier it needs: primary for generation, reviewer for cross-check, fast for throughput.
 
 Supported out of the box: Anthropic API, OpenAI API. Any provider implementing the trait works. The harness does not privilege either vendor.
 
