@@ -61,21 +61,23 @@ export function buildIgnorePredicate(
       }
     }
 
-    // Check gitignore patterns against the full relative path
-    // and against each path segment (for directory patterns)
+    // Check gitignore patterns. Anchored patterns (^...) only match
+    // the full path. Unanchored patterns ((^|/)...) also match individual
+    // segments so that bare names like "dist" match at any depth.
     let ignored = false;
 
     for (const re of positive) {
-      if (re.test(relativePath) || segments.some((seg) => re.test(seg))) {
+      const isAnchored = re.source.startsWith("^") && !re.source.startsWith("(^|/");
+      if (re.test(relativePath) || (!isAnchored && segments.some((seg) => re.test(seg)))) {
         ignored = true;
         break;
       }
     }
 
     if (ignored) {
-      // Check negation patterns
       for (const re of negative) {
-        if (re.test(relativePath) || segments.some((seg) => re.test(seg))) {
+        const isAnchored = re.source.startsWith("^") && !re.source.startsWith("(^|/");
+        if (re.test(relativePath) || (!isAnchored && segments.some((seg) => re.test(seg)))) {
           return false;
         }
       }
