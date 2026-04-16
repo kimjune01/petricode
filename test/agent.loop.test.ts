@@ -86,6 +86,25 @@ describe("assembleTurn", () => {
     expect((turn.content[2] as { text: string }).text).toBe("then ");
     expect((turn.content[3] as { id: string }).id).toBe("t2");
   });
+
+  test("preserves interleaved parallel tool args (OpenAI streams across indices)", async () => {
+    // OpenAI's streaming API may interleave tool argument deltas across
+    // tc.index values. Earlier code flushed the prior tool on the next
+    // tool_use_start, dropping any later deltas for that tool.
+    async function* stream(): AsyncGenerator<StreamChunk> {
+      yield { type: "tool_use_start", id: "a", name: "grep", index: 0 };
+      yield { type: "tool_use_delta", input_json: '{"pattern":"foo', index: 0 };
+      yield { type: "tool_use_start", id: "b", name: "glob", index: 1 };
+      yield { type: "tool_use_delta", input_json: '"}', index: 0 };
+      yield { type: "tool_use_delta", input_json: '{"pattern":"bar"}', index: 1 };
+      yield { type: "done" };
+    }
+    const turn = await assembleTurn(stream());
+    expect(turn.tool_calls).toHaveLength(2);
+    expect(turn.tool_calls![0]!.args).toEqual({ pattern: "foo" });
+    expect(turn.tool_calls![1]!.args).toEqual({ pattern: "bar" });
+    expect(turn.content.find((c) => c.type === "text")).toBeUndefined();
+  });
 });
 
 // ── Agent loop ───────────────────────────────────────────────────

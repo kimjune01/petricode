@@ -113,10 +113,13 @@ export class Pipeline {
       throw new Error("Pipeline.turn: input is empty");
     }
     // Wait for any prior turn to fully drain (including its finally-block
-    // persistence) before starting. Catch swallows the prior turn's error;
-    // the prior caller already received it.
-    const prior = this.inFlight;
-    if (prior) await prior.catch(() => {});
+    // persistence) before starting. Loop, not single-await: when N>2 callers
+    // queue on the same prior, they all wake in the same microtask flush
+    // and a plain `if` would let them race past the gate together. Re-checking
+    // `this.inFlight` after each await ensures the unambiguous successor.
+    while (this.inFlight) {
+      await this.inFlight.catch(() => {});
+    }
 
     const promise = this._runTurn(input, options);
     // Compare against the wrapped promise — `this.inFlight` holds the

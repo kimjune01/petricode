@@ -53,17 +53,18 @@ export async function assembleTurn(
 
       case "tool_use_start": {
         const idx = chunk.index ?? 0;
-        // A new content block means all earlier blocks are complete.
-        // Flush in-flight tools FIRST — they started before the current
-        // textBuffer's content arrived. Then flush textBuffer (which now
-        // sits between the prior tool and this new one). Otherwise text
-        // emitted between two tool_use_starts gets reordered ahead of
-        // the prior tool when it's flushed at done-time.
-        for (const existingIdx of [...toolMap.keys()].sort((a, b) => a - b)) {
-          flushTool(toolMap.get(existingIdx)!, content, toolCalls);
-        }
-        toolMap.clear();
+        // If text accumulated between the prior tool(s) and this one,
+        // those earlier tools are complete (text can only follow a
+        // closed block), so flush them first to preserve ordering.
+        // Otherwise this is a sibling tool in a parallel batch — keep
+        // every in-flight tool open until `done`, because OpenAI may
+        // interleave argument deltas across indices and a premature
+        // flush would drop the rest of the prior tool's args.
         if (textBuffer) {
+          for (const existingIdx of [...toolMap.keys()].sort((a, b) => a - b)) {
+            flushTool(toolMap.get(existingIdx)!, content, toolCalls);
+          }
+          toolMap.clear();
           content.push({ type: "text", text: textBuffer });
           textBuffer = "";
         }
