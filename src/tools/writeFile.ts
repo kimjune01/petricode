@@ -1,5 +1,5 @@
 import { writeFile as fsWriteFile, mkdir } from "fs/promises";
-import { dirname } from "path";
+import { dirname, isAbsolute, resolve } from "path";
 import type { Tool } from "./tool.js";
 
 export const WriteFileTool: Tool = {
@@ -13,15 +13,19 @@ export const WriteFileTool: Tool = {
     required: ["path", "content"],
   },
 
-  async execute(args) {
+  async execute(args, opts) {
     const path = args.path as string;
     const content = args.content as string;
     if (!path) throw new Error("file_write: missing required argument 'path'");
     if (content === undefined || content === null)
       throw new Error("file_write: missing required argument 'content'");
+    // Same hazard as file_read: relative paths must resolve against projectDir
+    // so the validated path and the IO target agree.
+    const cwd = opts?.cwd ?? process.cwd();
+    const resolved = isAbsolute(path) ? path : resolve(cwd, path);
     try {
-      await mkdir(dirname(path), { recursive: true });
-      await fsWriteFile(path, content, "utf-8");
+      await mkdir(dirname(resolved), { recursive: true });
+      await fsWriteFile(resolved, content, "utf-8");
       return `Wrote ${content.length} bytes to ${path}`;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);

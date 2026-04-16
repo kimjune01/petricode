@@ -24,6 +24,7 @@ export class TfIdfIndex {
   private documents: string[][] = [];
   private idf_cache: Map<string, number> = new Map();
   private dirty = true;
+  private live_n = 0;
 
   add_document(text: string): number {
     const tokens = tokenize(text);
@@ -57,21 +58,27 @@ export class TfIdfIndex {
   private recompute_idf(): void {
     if (!this.dirty) return;
     this.idf_cache.clear();
-    const n = this.documents.length;
-    if (n === 0) return;
 
-    // Count how many documents contain each term
+    // Count both n (live docs) and doc_freq from the same scan, skipping
+    // tombstones. Using documents.length (which still counts tombstones)
+    // would inflate n relative to df and over-weight every IDF as evictions
+    // pile up across a long session.
     const doc_freq = new Map<string, number>();
+    let n = 0;
     for (const doc of this.documents) {
+      if (doc.length === 0) continue;
+      n++;
       const seen = new Set(doc);
       for (const term of seen) {
         doc_freq.set(term, (doc_freq.get(term) ?? 0) + 1);
       }
     }
+    if (n === 0) return;
 
     for (const [term, df] of doc_freq) {
       this.idf_cache.set(term, Math.log((n + 1) / (df + 1)) + 1);
     }
+    this.live_n = n;
     this.dirty = false;
   }
 
@@ -82,7 +89,7 @@ export class TfIdfIndex {
     const vec: SparseVector = new Map();
 
     for (const [term, freq] of tf) {
-      const idf = this.idf_cache.get(term) ?? Math.log((this.documents.length + 1) / 1) + 1;
+      const idf = this.idf_cache.get(term) ?? Math.log((this.live_n + 1) / 1) + 1;
       vec.set(term, freq * idf);
     }
 

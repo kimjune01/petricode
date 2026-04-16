@@ -239,6 +239,46 @@ describe("RetryProvider", () => {
     expect(attempt).toBe(1); // No retry after partial yield
     expect(seen).toEqual([{ type: "content_delta", text: "partial" }]);
   });
+
+  test("aborts the backoff sleep instead of waiting it out", async () => {
+    // Regression: previously sleep() between retries ignored the abort
+    // signal, so Ctrl+C during a rate-limit storm could hang for tens of
+    // seconds before the next attempt finally noticed the abort.
+    let attempt = 0;
+    const inner: Provider = {
+      async *generate() {
+        attempt++;
+        throw new ProviderError("rate limited", 429);
+      },
+      model_id: () => "test",
+      token_limit: () => 200_000,
+      supports_tools: () => true,
+    };
+    const retried = new RetryProvider(inner, {
+      maxRetries: 3,
+      baseDelayMs: 60_000, // huge — would hang the test if not abortable
+      maxDelayMs: 60_000,
+    });
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 50);
+
+    const start = Date.now();
+    let err: unknown;
+    try {
+      for await (const _ of retried.generate([], { signal: controller.signal })) {
+        // no-op
+      }
+    } catch (e) {
+      err = e;
+    }
+    const elapsed = Date.now() - start;
+
+    expect(err).toBeDefined();
+    expect((err as Error).name).toBe("AbortError");
+    expect(elapsed).toBeLessThan(2000);
+    // First attempt threw, sleep was aborted before second attempt could run.
+    expect(attempt).toBe(1);
+  });
 });
 
 // ── 2. Circuit breaker ──────────────────────────────────────────

@@ -1,5 +1,5 @@
 import { Glob as BunGlob } from "bun";
-import { join, isAbsolute, relative } from "path";
+import { join, isAbsolute, relative, resolve } from "path";
 import type { Tool } from "./tool.js";
 import { loadIgnorePredicate } from "../filter/gitignore.js";
 
@@ -21,7 +21,13 @@ export const GlobTool: Tool = {
     const pattern = args.pattern as string;
     if (!pattern) throw new Error("glob: missing required argument 'pattern'");
     const projectRoot = opts?.cwd ?? process.cwd();
-    const cwd = (args.path as string) ?? projectRoot;
+    // The model-supplied path is relative to projectRoot, NOT process.cwd().
+    // BunGlob.scan({cwd}) would otherwise resolve "src" against process.cwd(),
+    // bypassing the projectRoot validation done in toolSubpipe.
+    const rawPath = args.path as string | undefined;
+    const cwd = rawPath
+      ? (isAbsolute(rawPath) ? rawPath : resolve(projectRoot, rawPath))
+      : projectRoot;
 
     // Load .gitignore from project root, not from the search subdirectory.
     const isIgnored = await loadIgnorePredicate(projectRoot);

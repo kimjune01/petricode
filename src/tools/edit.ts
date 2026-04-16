@@ -1,4 +1,5 @@
 import { readFile, writeFile } from "fs/promises";
+import { isAbsolute, resolve } from "path";
 import type { Tool } from "./tool.js";
 
 export const EditTool: Tool = {
@@ -19,15 +20,20 @@ export const EditTool: Tool = {
     required: ["path", "old_string", "new_string"],
   },
 
-  async execute(args) {
+  async execute(args, opts) {
     const path = args.path as string;
     const oldStr = args.old_string as string;
     const newStr = args.new_string as string;
     const replaceAll = (args.replace_all as boolean) ?? false;
 
+    // Resolve relative paths against projectDir, not process.cwd(), so the
+    // read and write hit the same file the validator approved.
+    const cwd = opts?.cwd ?? process.cwd();
+    const resolved = isAbsolute(path) ? path : resolve(cwd, path);
+
     let content: string;
     try {
-      content = await readFile(path, "utf-8");
+      content = await readFile(resolved, "utf-8");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes("ENOENT")) {
@@ -64,7 +70,7 @@ export const EditTool: Tool = {
       ? content.replaceAll(oldStr, () => newStr)
       : content.replace(oldStr, () => newStr);
 
-    await writeFile(path, updated, "utf-8");
+    await writeFile(resolved, updated, "utf-8");
 
     const count = replaceAll ? occurrences : 1;
     return `Replaced ${count} occurrence${count > 1 ? "s" : ""} in ${path}`;

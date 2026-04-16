@@ -125,17 +125,25 @@ export class UnionFindCache implements CacheSlot {
   // ── Private ────────────────────────────────────────────────────
 
   private cold_summaries(): Turn[] {
-    return this.forest.roots().map((root) => ({
-      id: `cluster_${root.id}`,
-      role: "system" as const,
-      content: [
-        {
-          type: "text" as const,
-          text: this.summarize_cluster(root.turns),
-        },
-      ],
-      timestamp: Math.max(...root.turns.map((t) => t.timestamp)),
-    }));
+    // Sort by timestamp ascending so the model sees cold summaries in
+    // chronological order. forest.roots() returns Map-insertion order, which
+    // preserves only original add order — once unions happen, that no longer
+    // tracks recency, and read() would prepend cold summaries before hot
+    // turns with no temporal signal across the boundary.
+    return this.forest
+      .roots()
+      .map((root) => ({
+        id: `cluster_${root.id}`,
+        role: "system" as const,
+        content: [
+          {
+            type: "text" as const,
+            text: this.summarize_cluster(root.turns),
+          },
+        ],
+        timestamp: Math.max(...root.turns.map((t) => t.timestamp)),
+      }))
+      .sort((a, b) => a.timestamp - b.timestamp);
   }
 
   private summarize_cluster(turns: Turn[]): string {

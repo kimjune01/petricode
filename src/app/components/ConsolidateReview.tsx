@@ -1,6 +1,6 @@
 // ── TUI component for reviewing consolidation candidates ────────
 
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { Box, Text, useInput, useApp } from "ink";
 import type { CandidateSkill } from "../../core/types.js";
 import { colors } from "../theme.js";
@@ -23,20 +23,29 @@ export default function ConsolidateReview({
   const [decisions, setDecisions] = useState<ReviewDecision[]>([]);
   const { exit } = useApp();
 
+  // Refs hold the authoritative values across rapid keypresses. Without
+  // them, two useInput callbacks fired in the same React commit phase both
+  // close over the same stale `index` / `decisions` and clobber each other:
+  // the first decision is dropped, a candidate is skipped silently.
+  const indexRef = useRef(0);
+  const decisionsRef = useRef<ReviewDecision[]>([]);
+
   const current = candidates[index];
   const isLast = index >= candidates.length;
 
   useInput((input, key) => {
-    if (isLast) return;
+    const i = indexRef.current;
+    if (i >= candidates.length) return;
 
     const decide = (action: ReviewDecision["action"]) => {
-      const next = [...decisions, { candidate: current!, action }];
+      const cand = candidates[i]!;
+      const next = [...decisionsRef.current, { candidate: cand, action }];
+      decisionsRef.current = next;
+      indexRef.current = i + 1;
       setDecisions(next);
-      if (index + 1 >= candidates.length) {
-        setIndex(index + 1);
+      setIndex(i + 1);
+      if (i + 1 >= candidates.length) {
         onComplete(next);
-      } else {
-        setIndex(index + 1);
       }
     };
 
@@ -51,7 +60,7 @@ export default function ConsolidateReview({
         decide("skip");
         break;
       case "d":
-        onComplete(decisions);
+        onComplete(decisionsRef.current);
         break;
     }
   });

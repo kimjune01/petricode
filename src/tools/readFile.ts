@@ -1,4 +1,5 @@
 import { readFile as fsReadFile } from "fs/promises";
+import { isAbsolute, resolve } from "path";
 import type { Tool } from "./tool.js";
 
 export const ReadFileTool: Tool = {
@@ -11,11 +12,17 @@ export const ReadFileTool: Tool = {
     required: ["path"],
   },
 
-  async execute(args) {
+  async execute(args, opts) {
     const path = args.path as string;
     if (!path) throw new Error("file_read: missing required argument 'path'");
+    // Relative paths must resolve against projectDir, not process.cwd().
+    // Otherwise validateFilePath green-lights "src/foo.ts" against projectDir
+    // while readFile opens <process.cwd()>/src/foo.ts — wrong file, possibly
+    // outside the validated tree.
+    const cwd = opts?.cwd ?? process.cwd();
+    const resolved = isAbsolute(path) ? path : resolve(cwd, path);
     try {
-      return await fsReadFile(path, "utf-8");
+      return await fsReadFile(resolved, "utf-8");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error(`file_read: ${msg}`);

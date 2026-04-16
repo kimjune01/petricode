@@ -221,6 +221,90 @@ describe("Edit", () => {
   });
 });
 
+// ── Tool cwd hygiene (round 11 regression) ─────────────────────
+
+describe("file tools resolve relative paths against opts.cwd, not process.cwd()", () => {
+  test("file_read resolves against opts.cwd", async () => {
+    const projectDir = join(TMP, "cwd-read-project");
+    const otherDir = join(TMP, "cwd-read-other");
+    mkdirSync(projectDir, { recursive: true });
+    mkdirSync(otherDir, { recursive: true });
+    writeFileSync(join(projectDir, "x.txt"), "PROJECT");
+    writeFileSync(join(otherDir, "x.txt"), "DECOY");
+
+    const original_cwd = process.cwd();
+    try {
+      process.chdir(otherDir);
+      const result = await ReadFileTool.execute({ path: "x.txt" }, { cwd: projectDir });
+      expect(result).toBe("PROJECT");
+    } finally {
+      process.chdir(original_cwd);
+    }
+  });
+
+  test("file_write resolves against opts.cwd", async () => {
+    const projectDir = join(TMP, "cwd-write-project");
+    const otherDir = join(TMP, "cwd-write-other");
+    mkdirSync(projectDir, { recursive: true });
+    mkdirSync(otherDir, { recursive: true });
+
+    const original_cwd = process.cwd();
+    try {
+      process.chdir(otherDir);
+      await WriteFileTool.execute({ path: "y.txt", content: "hello" }, { cwd: projectDir });
+      expect(existsSync(join(projectDir, "y.txt"))).toBe(true);
+      expect(existsSync(join(otherDir, "y.txt"))).toBe(false);
+    } finally {
+      process.chdir(original_cwd);
+    }
+  });
+
+  test("edit resolves against opts.cwd", async () => {
+    const projectDir = join(TMP, "cwd-edit-project");
+    const otherDir = join(TMP, "cwd-edit-other");
+    mkdirSync(projectDir, { recursive: true });
+    mkdirSync(otherDir, { recursive: true });
+    writeFileSync(join(projectDir, "z.txt"), "alpha");
+    writeFileSync(join(otherDir, "z.txt"), "alpha");
+
+    const original_cwd = process.cwd();
+    try {
+      process.chdir(otherDir);
+      await EditTool.execute(
+        { path: "z.txt", old_string: "alpha", new_string: "beta" },
+        { cwd: projectDir },
+      );
+      const { readFileSync } = await import("fs");
+      expect(readFileSync(join(projectDir, "z.txt"), "utf-8")).toBe("beta");
+      expect(readFileSync(join(otherDir, "z.txt"), "utf-8")).toBe("alpha");
+    } finally {
+      process.chdir(original_cwd);
+    }
+  });
+
+  test("glob resolves args.path against opts.cwd, not process.cwd()", async () => {
+    const projectDir = join(TMP, "cwd-glob-project");
+    const otherDir = join(TMP, "cwd-glob-other");
+    mkdirSync(join(projectDir, "src"), { recursive: true });
+    mkdirSync(join(otherDir, "src"), { recursive: true });
+    writeFileSync(join(projectDir, "src", "in-project.ts"), "");
+    writeFileSync(join(otherDir, "src", "in-other.ts"), "");
+
+    const original_cwd = process.cwd();
+    try {
+      process.chdir(otherDir);
+      const result = await GlobTool.execute(
+        { pattern: "*.ts", path: "src" },
+        { cwd: projectDir },
+      );
+      expect(result).toContain("in-project.ts");
+      expect(result).not.toContain("in-other.ts");
+    } finally {
+      process.chdir(original_cwd);
+    }
+  });
+});
+
 // ── Registry ────────────────────────────────────────────────────
 
 describe("ToolRegistry", () => {

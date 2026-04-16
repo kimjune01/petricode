@@ -63,8 +63,22 @@ function jitteredDelay(attempt: number, config: RetryConfig): number {
   return Math.random() * capped;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException("Aborted", "AbortError"));
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 export class RetryProvider implements Provider {
@@ -80,6 +94,10 @@ export class RetryProvider implements Provider {
     let lastErr: unknown;
 
     for (let attempt = 0; attempt <= this.config.maxRetries; attempt++) {
+      // Bail before re-entering the inner provider if the user already aborted.
+      if (config.signal?.aborted) {
+        throw new DOMException("Aborted", "AbortError");
+      }
       let yieldedAny = false;
       try {
         const stream = this.inner.generate(prompt, config);
@@ -102,7 +120,7 @@ export class RetryProvider implements Provider {
 
         const retryAfter = retryAfterFromError(err);
         const delay = retryAfter ?? jitteredDelay(attempt, this.config);
-        await sleep(delay);
+        await sleep(delay, config.signal);
       }
     }
 
