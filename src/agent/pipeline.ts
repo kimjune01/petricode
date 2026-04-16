@@ -191,11 +191,9 @@ export class Pipeline {
     try {
       assistantTurn = await assembleTurn(stream);
     } catch (err) {
-      // If streaming was aborted, still cache the user turn so the
-      // user's prompt isn't lost from conversation history.
-      if (err instanceof DOMException && err.name === "AbortError") {
-        commitTurn(userTurn);
-      }
+      // Cache the user turn on ANY error (abort, rate limit, network)
+      // so the user's prompt isn't lost from conversation history.
+      commitTurn(userTurn);
       throw err;
     }
 

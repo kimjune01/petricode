@@ -104,13 +104,19 @@ function patternToRegex(pattern: string): RegExp {
   let regex = p.replace(/[.+^${}()|[\]\\]/g, "\\$&");
 
   // Convert glob patterns to regex.
-  // Handle /**/  first (zero or more directories), then standalone **,
-  // then single *, then ?.
+  // Order matters: handle multi-char sequences before single-char ones.
+  //   /**/  → zero or more directories (matches a/b and a/x/b)
+  //   **/   → leading globstar (matches root or any prefix)
+  //   **    → match anything including /
+  //   *     → match anything except /
+  //   ?     → match single char except /
   regex = regex
     .replace(/\/\*\*\//g, "⟨SLASHGLOBSTAR⟩")
+    .replace(/\*\*\//g, "⟨LEADGLOBSTAR⟩")
     .replace(/\*\*/g, "⟨GLOBSTAR⟩")
     .replace(/\*/g, "[^/]*")
     .replace(/⟨SLASHGLOBSTAR⟩/g, "(/.*)?/")
+    .replace(/⟨LEADGLOBSTAR⟩/g, "(.*/)?")
     .replace(/⟨GLOBSTAR⟩/g, ".*")
     .replace(/\?/g, "[^/]");
 
