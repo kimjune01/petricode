@@ -297,6 +297,15 @@ export class Pipeline {
         throw err;
       }
 
+      // Re-check abort after tool execution — a denied confirmation
+      // resolves normally (DENY result) rather than throwing, so we must
+      // check the signal to prevent a concurrent second turn from
+      // corrupting the cache.
+      if (signal?.aborted) {
+        this.commitInterruptedToolCalls(currentTurn, currentTurn.tool_calls, commitTurn);
+        throw new DOMException("Aborted", "AbortError");
+      }
+
       // Append assistant turn and tool results to cache
       commitTurn(currentTurn);
       const toolResultContent = toolResultsToContent(toolResults);

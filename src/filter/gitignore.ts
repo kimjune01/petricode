@@ -103,10 +103,14 @@ function patternToRegex(pattern: string): RegExp {
   // Escape regex special chars except * and ?
   let regex = p.replace(/[.+^${}()|[\]\\]/g, "\\$&");
 
-  // Convert glob patterns to regex
+  // Convert glob patterns to regex.
+  // Handle /**/  first (zero or more directories), then standalone **,
+  // then single *, then ?.
   regex = regex
+    .replace(/\/\*\*\//g, "⟨SLASHGLOBSTAR⟩")
     .replace(/\*\*/g, "⟨GLOBSTAR⟩")
     .replace(/\*/g, "[^/]*")
+    .replace(/⟨SLASHGLOBSTAR⟩/g, "(/.*)?/")
     .replace(/⟨GLOBSTAR⟩/g, ".*")
     .replace(/\?/g, "[^/]");
 
