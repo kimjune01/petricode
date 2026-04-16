@@ -47,6 +47,13 @@ export interface PerceivedEvent {
   kind: "perceived";
   source: string;
   content: Content[];
+  /**
+   * Trusted blocks that should be routed to the system role (context
+   * fragments, skill bodies). Kept separate from `content` so user input
+   * can never be lifted into the system role by spoofing a leading XML
+   * tag — routing is by source field, not by text prefix.
+   */
+  system_content?: Content[];
   timestamp: number;
   role?: "user" | "assistant" | "system";
 }

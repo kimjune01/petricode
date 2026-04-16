@@ -180,7 +180,11 @@ export class OpenAIProvider implements Provider {
         }
       }
 
-      if (choice.finish_reason === "stop" || choice.finish_reason === "tool_calls") {
+      // Emit done on ANY terminal finish_reason. Anthropic and Google
+      // providers emit done unconditionally; consumers like assembleTurn
+      // and any UI awaiting "done" must not hang on length / content_filter
+      // / function_call truncation.
+      if (choice.finish_reason) {
         yield { type: "done" };
       }
     }

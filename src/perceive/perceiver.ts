@@ -45,22 +45,26 @@ export class Perceiver implements PerceiveSlot {
         skills.push(...found);
       }
 
-      // Build content blocks
+      // User-supplied input goes here only — never trusted as system.
       const contentParts: Array<{ type: "text"; text: string }> = [
         { type: "text", text: expanded },
       ];
 
-      // Append context as system-level blocks
+      // Trusted blocks (context + skill metadata) are routed via
+      // system_content. Keeping them out of `content` prevents user
+      // input that happens to start with `<context …>` or `<skill …>`
+      // from being lifted into the system role.
+      const systemContentParts: Array<{ type: "text"; text: string }> = [];
+
       for (const frag of context) {
-        contentParts.push({
+        systemContentParts.push({
           type: "text",
           text: `<context source="${frag.source}" relevance="${frag.relevance}">\n${frag.content}\n</context>`,
         });
       }
 
-      // Append skill summaries
       for (const skill of skills) {
-        contentParts.push({
+        systemContentParts.push({
           type: "text",
           text: `<skill name="${skill.name}" trigger="${skill.trigger}" />`
         });
@@ -70,6 +74,7 @@ export class Perceiver implements PerceiveSlot {
         kind: "perceived",
         source: "perceiver",
         content: contentParts,
+        system_content: systemContentParts,
         timestamp: Date.now(),
       };
     } catch (err) {

@@ -113,9 +113,13 @@ export class Pipeline {
     if (prior) await prior.catch(() => {});
 
     const promise = this._runTurn(input, options);
-    this.inFlight = promise.finally(() => {
-      if (this.inFlight === promise) this.inFlight = null;
+    // Compare against the wrapped promise — `this.inFlight` holds the
+    // wrapped promise, not `promise` itself, so `=== promise` was always
+    // false and the cleanup never ran.
+    const wrapped: Promise<unknown> = promise.finally(() => {
+      if (this.inFlight === wrapped) this.inFlight = null;
     });
+    this.inFlight = wrapped;
     return promise;
   }
 
@@ -170,10 +174,13 @@ export class Pipeline {
     ];
 
     if (activeSkills.length > 0) {
+      const ev = perceived as PerceivedEvent;
+      ev.system_content ??= [];
       for (const active of activeSkills) {
         const body = substituteArguments(active.skill.body, active.arguments);
-        // Inject skill body as additional context content (XML format matches context.ts)
-        (perceived as PerceivedEvent).content.push({
+        // Skill bodies are trusted — route via system_content so they
+        // can't be confused with user-supplied text.
+        ev.system_content.push({
           type: "text",
           text: `<skill name="${active.skill.name}">${body}</skill>`,
         });
@@ -188,13 +195,13 @@ export class Pipeline {
     const cachedTurns = this.cache.read();
     const conversation = [...systemMessages, ...cachedTurns.map(t => ({ role: t.role, content: t.content })), ...userMessages];
 
-    // Build the user turn for later cache/persist (using perceived content)
+    // Build the user turn for later cache/persist. perceived.content
+    // already excludes context/skill blocks (they live in system_content),
+    // so no prefix filtering is needed.
     const userTurn: Turn = {
       id: crypto.randomUUID(),
       role: "user",
-      content: (perceived as PerceivedEvent).content.filter(
-        (c) => c.type === "text" && !(c as { text: string }).text.startsWith("<context ") && !(c as { text: string }).text.startsWith("<skill "),
-      ),
+      content: (perceived as PerceivedEvent).content.filter((c) => c.type === "text"),
       timestamp: Date.now(),
     };
 

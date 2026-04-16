@@ -29,13 +29,24 @@ export default function ConsolidateReview({
   // the first decision is dropped, a candidate is skipped silently.
   const indexRef = useRef(0);
   const decisionsRef = useRef<ReviewDecision[]>([]);
+  // Guard against onComplete double-fire: rapid 'd' double-tap, or a
+  // too-fast last 'a/r/s' followed by 'd', would otherwise call the
+  // parent twice. The component's contract is "complete once".
+  const completedRef = useRef(false);
 
   const current = candidates[index];
   const isLast = index >= candidates.length;
 
   useInput((input, key) => {
+    if (completedRef.current) return;
     const i = indexRef.current;
     if (i >= candidates.length) return;
+
+    const complete = (decisions: ReviewDecision[]) => {
+      if (completedRef.current) return;
+      completedRef.current = true;
+      onComplete(decisions);
+    };
 
     const decide = (action: ReviewDecision["action"]) => {
       const cand = candidates[i]!;
@@ -45,7 +56,7 @@ export default function ConsolidateReview({
       setDecisions(next);
       setIndex(i + 1);
       if (i + 1 >= candidates.length) {
-        onComplete(next);
+        complete(next);
       }
     };
 
@@ -60,7 +71,7 @@ export default function ConsolidateReview({
         decide("skip");
         break;
       case "d":
-        onComplete(decisionsRef.current);
+        complete(decisionsRef.current);
         break;
     }
   });
