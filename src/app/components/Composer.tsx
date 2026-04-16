@@ -1,6 +1,15 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput, useStdin } from "ink";
 import { colors } from "../theme.js";
+
+// Bracketed paste escape sequences
+const PASTE_START = "\x1b[200~";
+const PASTE_END = "\x1b[201~";
+
+interface ComposerState {
+  input: string;
+  cursor: number;
+}
 
 interface ComposerProps {
   onSubmit: (text: string) => void;
@@ -10,131 +19,205 @@ interface ComposerProps {
 }
 
 export default function Composer({ onSubmit, disabled, clearSignal, phase }: ComposerProps) {
-  const [input, setInput] = useState("");
-  const [cursor, setCursor] = useState(0);
+  // Sync ref + async state eliminates stale closures during rapid keypresses.
+  // All mutations go through updateState which writes both synchronously (ref)
+  // and asynchronously (setState for re-render).
+  const stateRef = useRef<ComposerState>({ input: "", cursor: 0 });
+  const [renderState, setRenderState] = useState<ComposerState>(stateRef.current);
+
+  const updateState = (updater: (prev: ComposerState) => ComposerState) => {
+    stateRef.current = updater(stateRef.current);
+    setRenderState(stateRef.current);
+  };
+
   const prevClear = useRef(clearSignal ?? 0);
+  const isPasting = useRef(false);
+
+  // Access Ink's internal event emitter which emits raw stdin chunks.
+  // NOTE: We intentionally use internal_eventEmitter rather than stdin directly
+  // because Ink reads stdin in paused mode ('readable' + read()). Attaching a
+  // 'data' listener would switch to flowing mode and break Ink's own reading.
+  const { internal_eventEmitter } = useStdin() as ReturnType<typeof useStdin> & {
+    internal_eventEmitter?: import("events").EventEmitter;
+  };
+
+  // Enable bracketed paste mode in the terminal
+  useEffect(() => {
+    process.stdout.write("\x1b[?2004h");
+    return () => {
+      process.stdout.write("\x1b[?2004l");
+    };
+  }, []);
 
   useEffect(() => {
     if (clearSignal !== undefined && clearSignal !== prevClear.current) {
       prevClear.current = clearSignal;
-      setInput("");
-      setCursor(0);
+      updateState(() => ({ input: "", cursor: 0 }));
     }
   }, [clearSignal]);
 
+  // Intercept raw stdin chunks (via Ink's internal event emitter) to detect
+  // bracketed paste sequences before useInput's parseKeypress mangles them.
+  // Handles chunk fragmentation (paste split across multiple data events).
+  useEffect(() => {
+    if (disabled || !internal_eventEmitter) return;
+    let pasteBuffer = "";
+
+    const onRawInput = (data: string) => {
+      const s = String(data);
+
+      if (s.includes(PASTE_START)) {
+        isPasting.current = true;
+        pasteBuffer = s.substring(s.indexOf(PASTE_START) + PASTE_START.length);
+      } else if (isPasting.current) {
+        pasteBuffer += s;
+      }
+
+      if (isPasting.current && pasteBuffer.includes(PASTE_END)) {
+        const endIdx = pasteBuffer.indexOf(PASTE_END);
+        const payload = pasteBuffer.substring(0, endIdx);
+        // Preserve any data that arrived after PASTE_END in the same chunk
+        pasteBuffer = pasteBuffer.substring(endIdx + PASTE_END.length);
+
+        updateState((prev) => ({
+          input: prev.input.slice(0, prev.cursor) + payload + prev.input.slice(prev.cursor),
+          cursor: prev.cursor + payload.length,
+        }));
+
+        // Keep isPasting true through the current tick so useInput ignores
+        // the duplicate keypress events that Ink's parseKeypress fires
+        // synchronously from the same stdin chunk.
+        process.nextTick(() => {
+          isPasting.current = false;
+        });
+      }
+    };
+
+    // Prepend so we run before useInput's listener
+    internal_eventEmitter.prependListener("input", onRawInput);
+    return () => {
+      internal_eventEmitter.removeListener("input", onRawInput);
+      isPasting.current = false;
+    };
+  }, [disabled, internal_eventEmitter]);
+
   useInput(
     (ch, key) => {
+      // Mute all input while a bracketed paste is active
+      if (isPasting.current) return;
 
       if (key.return) {
-        const trimmed = input.trim();
+        // Read from sync ref to guarantee latest state even if a character
+        // was inserted in the same event-loop tick
+        const trimmed = stateRef.current.input.trim();
         if (trimmed) {
           onSubmit(trimmed);
-          setInput("");
-          setCursor(0);
+          updateState(() => ({ input: "", cursor: 0 }));
         }
         return;
       }
 
       // Escape — clear input
       if (key.escape) {
-        setInput("");
-        setCursor(0);
+        updateState(() => ({ input: "", cursor: 0 }));
         return;
       }
 
-      // Ctrl+U — kill line backward (cursor to start)
-      if (key.ctrl && ch === "u") {
-        setInput(input.slice(cursor));
-        setCursor(0);
-        return;
-      }
+      updateState((prev) => {
+        let nextInput = prev.input;
+        let nextCursor = prev.cursor;
 
-      // Ctrl+K — kill line forward (cursor to end)
-      if (key.ctrl && ch === "k") {
-        setInput(input.slice(0, cursor));
-        return;
-      }
-
-      // Ctrl+W — delete word backward
-      if (key.ctrl && ch === "w") {
-        const before = input.slice(0, cursor);
-        const trimmed = before.replace(/\S+\s*$/, "");
-        setInput(trimmed + input.slice(cursor));
-        setCursor(trimmed.length);
-        return;
-      }
-
-      // Ctrl+A — cursor to start
-      if (key.ctrl && ch === "a") {
-        setCursor(0);
-        return;
-      }
-
-      // Ctrl+E — cursor to end
-      if (key.ctrl && ch === "e") {
-        setCursor(input.length);
-        return;
-      }
-
-      // Left arrow / Ctrl+B — cursor left
-      if (key.leftArrow || (key.ctrl && ch === "b")) {
-        setCursor((c) => Math.max(0, c - 1));
-        return;
-      }
-
-      // Right arrow / Ctrl+F — cursor right
-      if (key.rightArrow || (key.ctrl && ch === "f")) {
-        setCursor((c) => Math.min(input.length, c + 1));
-        return;
-      }
-
-      // Backspace — delete char before cursor
-      if (key.backspace || key.delete) {
-        if (cursor > 0) {
-          setInput(input.slice(0, cursor - 1) + input.slice(cursor));
-          setCursor((c) => c - 1);
+        // Ctrl+U — kill line backward (cursor to start)
+        if (key.ctrl && ch === "u") {
+          nextInput = prev.input.slice(prev.cursor);
+          nextCursor = 0;
         }
-        return;
-      }
-
-      // Ctrl+D — delete char at cursor (or exit if empty)
-      if (key.ctrl && ch === "d") {
-        if (input.length === 0) return; // let App handle Ctrl+D exit
-        if (cursor < input.length) {
-          setInput(input.slice(0, cursor) + input.slice(cursor + 1));
+        // Ctrl+K — kill line forward (cursor to end)
+        else if (key.ctrl && ch === "k") {
+          nextInput = prev.input.slice(0, prev.cursor);
         }
-        return;
-      }
+        // Ctrl+W — delete word backward
+        else if (key.ctrl && ch === "w") {
+          const before = prev.input.slice(0, prev.cursor);
+          const trimmed = before.replace(/\S+\s*$/, "");
+          nextInput = trimmed + prev.input.slice(prev.cursor);
+          nextCursor = trimmed.length;
+        }
+        // Ctrl+A — cursor to start
+        else if (key.ctrl && ch === "a") {
+          nextCursor = 0;
+        }
+        // Ctrl+E — cursor to end
+        else if (key.ctrl && ch === "e") {
+          nextCursor = prev.input.length;
+        }
+        // Left arrow / Ctrl+B — cursor left
+        else if (key.leftArrow || (key.ctrl && ch === "b")) {
+          nextCursor = Math.max(0, prev.cursor - 1);
+        }
+        // Right arrow / Ctrl+F — cursor right
+        else if (key.rightArrow || (key.ctrl && ch === "f")) {
+          nextCursor = Math.min(prev.input.length, prev.cursor + 1);
+        }
+        // Backspace — delete char before cursor
+        else if (key.backspace) {
+          if (prev.cursor > 0) {
+            nextInput = prev.input.slice(0, prev.cursor - 1) + prev.input.slice(prev.cursor);
+            nextCursor = prev.cursor - 1;
+          }
+        }
+        // Delete / Ctrl+D — delete char at cursor (forward delete)
+        else if (key.delete || (key.ctrl && ch === "d")) {
+          if (prev.input.length === 0) return prev; // let App handle Ctrl+D exit
+          if (prev.cursor < prev.input.length) {
+            nextInput = prev.input.slice(0, prev.cursor) + prev.input.slice(prev.cursor + 1);
+          }
+        }
+        // Ignore other control sequences
+        else if (key.ctrl || key.meta) {
+          return prev;
+        }
+        // Regular character — insert at cursor
+        else if (ch) {
+          nextInput = prev.input.slice(0, prev.cursor) + ch + prev.input.slice(prev.cursor);
+          nextCursor = prev.cursor + 1;
+        }
 
-      // Ignore other control sequences
-      if (key.ctrl || key.meta) return;
-
-      // Regular character — insert at cursor
-      if (ch) {
-        setInput(input.slice(0, cursor) + ch + input.slice(cursor));
-        setCursor((c) => c + 1);
-      }
+        return { input: nextInput, cursor: nextCursor };
+      });
     },
     { isActive: !disabled },
   );
+
+  // ── Render ──
+  const { input, cursor } = renderState;
+  const lines = input.split("\n");
+  const isMultiline = lines.length > 1;
 
   const before = input.slice(0, cursor);
   const at = input[cursor] ?? "";
   const after = input.slice(cursor + 1);
 
   return (
-    <Box>
-      <Text bold color={colors.prompt}>
-        {">"}{" "}
-      </Text>
-      {disabled ? (
-        <Text dimColor>{phase === "running" ? "thinking…" : phase === "confirming" ? "confirm tool call" : "…"}</Text>
-      ) : (
-        <Text>
-          {before}
-          <Text inverse>{at || " "}</Text>
-          {after}
+    <Box flexDirection="column">
+      <Box>
+        <Text bold color={colors.prompt}>
+          {">"}{" "}
         </Text>
+        {disabled ? (
+          <Text dimColor>{phase === "running" ? "thinking…" : phase === "confirming" ? "confirm tool call" : "…"}</Text>
+        ) : (
+          <Text>
+            {before}
+            <Text inverse>{at === "\n" ? " " : (at || " ")}</Text>
+            {after}
+          </Text>
+        )}
+      </Box>
+      {!disabled && isMultiline && (
+        <Box>
+          <Text dimColor>  (pasted {lines.length} lines — Enter to send, Esc to clear)</Text>
+        </Box>
       )}
     </Box>
   );

@@ -7,12 +7,14 @@ import type { PolicyRule } from "../filter/policy.js";
 import { evaluatePolicy } from "../filter/policy.js";
 import { LoopDetector } from "../filter/loopDetection.js";
 import { maskToolOutput } from "../filter/toolMasking.js";
+import { validateToolArgs } from "../filter/pathValidation.js";
 import type { ToolRegistry } from "../tools/registry.js";
 
 export type ConfirmFn = (call: ToolCall) => Promise<boolean>;
 
 export interface ToolSubpipeOptions {
   registry: ToolRegistry;
+  projectDir?: string;
   policyRules?: PolicyRule[];
   loopDetector?: LoopDetector;
   onConfirm?: ConfirmFn;
@@ -35,7 +37,7 @@ export async function runToolSubpipe(
   turn: Turn,
   options: ToolSubpipeOptions,
 ): Promise<ToolResult[]> {
-  const { registry, policyRules = [], loopDetector, onConfirm } = options;
+  const { registry, projectDir, policyRules = [], loopDetector, onConfirm } = options;
   const results: ToolResult[] = [];
 
   if (!turn.tool_calls || turn.tool_calls.length === 0) {
@@ -44,6 +46,20 @@ export async function runToolSubpipe(
 
   for (const tc of turn.tool_calls) {
     const toolUseId = tc.id;
+
+    // Path validation (before policy, before execution)
+    if (projectDir) {
+      const pathError = validateToolArgs(tc.name, tc.args, projectDir);
+      if (pathError) {
+        results.push({
+          toolUseId,
+          name: tc.name,
+          outcome: "DENY",
+          content: `Denied: ${pathError.message}`,
+        });
+        continue;
+      }
+    }
 
     // Loop detection
     if (loopDetector) {

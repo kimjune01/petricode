@@ -1,6 +1,7 @@
 import { readFile, readdir, stat } from "fs/promises";
 import { join } from "path";
 import type { ContextFragment } from "../core/types.js";
+import { isAlwaysExcluded, loadIgnorePredicate } from "../filter/gitignore.js";
 
 const INSTRUCTION_FILES = ["instructions.md", "CLAUDE.md", "AGENTS.md", "README.md"];
 
@@ -38,11 +39,12 @@ export async function discoverContext(
   const projectAgents = join(projectDir, ".agents");
   await collectFromDir(projectAgents, fragments, 0.7);
 
-  // Subdirectory .agents/ — one level deep
+  // Subdirectory .agents/ — one level deep (skip always-excluded dirs)
   try {
     const entries = await readdir(projectDir, { withFileTypes: true });
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+      if (isAlwaysExcluded(entry.name)) continue;
       const subAgents = join(projectDir, entry.name, ".agents");
       await collectFromDir(subAgents, fragments, 0.9);
     }

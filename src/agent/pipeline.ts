@@ -1,7 +1,7 @@
 // ── Forward pipe orchestrator ────────────────────────────────────
 // Perceive → Cache → Provider → Filter → Tool subpipe → Remember
 
-import type { Content, Message, Turn, Skill, PerceivedEvent } from "../core/types.js";
+import type { Content, Message, Turn, ToolCall, Skill, PerceivedEvent } from "../core/types.js";
 import type { FilterSlot, RememberSlot } from "../core/contracts.js";
 import type { Provider, ToolDefinition } from "../providers/provider.js";
 import type { TierRouter } from "../providers/router.js";
@@ -44,6 +44,7 @@ export class Pipeline {
   private remember?: RememberSlot;
   private router!: TierRouter;
   private registry?: ToolRegistry;
+  private projectDir!: string;
   private policyRules: PolicyRule[] = [];
   private loopDetector!: LoopDetector;
   onConfirm?: ConfirmFn;
@@ -52,6 +53,7 @@ export class Pipeline {
   private skills: Skill[] = [];
 
   async init(options: PipelineOptions): Promise<void> {
+    this.projectDir = options.projectDir;
     this.router = options.router;
     this.registry = options.registry;
     this.policyRules = options.policyRules ?? [];
@@ -99,7 +101,39 @@ export class Pipeline {
    */
   async turn(input: string, options?: { signal?: AbortSignal }): Promise<Turn> {
     const signal = options?.signal;
+    // Track all turns produced this invocation so persist covers
+    // intermediate tool rounds and abort-interrupted state.
+    const pendingPersist: Turn[] = [];
 
+    const commitTurn = (t: Turn) => {
+      this.cache.append(t);
+      pendingPersist.push(t);
+    };
+
+    try {
+      return await this._turn(input, signal, commitTurn);
+    } finally {
+      // Persist everything committed to cache — runs on normal return,
+      // break, AND throw (including AbortError).
+      if (this.remember && pendingPersist.length > 0) {
+        for (const t of pendingPersist) {
+          await this.remember.append({
+            kind: "perceived",
+            source: this._sessionId,
+            content: t.content,
+            timestamp: t.timestamp,
+            role: t.role,
+          });
+        }
+      }
+    }
+  }
+
+  private async _turn(
+    input: string,
+    signal: AbortSignal | undefined,
+    commitTurn: (t: Turn) => void,
+  ): Promise<Turn> {
     // 1. Perceive
     const perceived = await this.perceiver.perceive(input);
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
@@ -153,12 +187,34 @@ export class Pipeline {
     });
 
     // 4. Assemble response
-    let assistantTurn = await assembleTurn(stream);
-    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    let assistantTurn: Turn;
+    try {
+      assistantTurn = await assembleTurn(stream);
+    } catch (err) {
+      // If streaming was aborted, still cache the user turn so the
+      // user's prompt isn't lost from conversation history.
+      if (err instanceof DOMException && err.name === "AbortError") {
+        commitTurn(userTurn);
+      }
+      throw err;
+    }
 
     // 4b. Append user turn to cache AFTER model responds, so it's available
     //     for future turns' history but wasn't duplicated in THIS turn's prompt.
-    this.cache.append(userTurn);
+    commitTurn(userTurn);
+
+    // 4c. Abort check — if the signal fired while we were streaming,
+    //     persist the assistant turn (and synthetic results for any
+    //     pending tool calls) before throwing.
+    if (signal?.aborted) {
+      const pendingTools = assistantTurn.tool_calls ?? [];
+      if (pendingTools.length > 0) {
+        this.commitInterruptedToolCalls(assistantTurn, pendingTools, commitTurn);
+      } else {
+        commitTurn(assistantTurn);
+      }
+      throw new DOMException("Aborted", "AbortError");
+    }
 
     // 5. Filter — content validation (skip for tool-use-only turns)
     const hasToolCalls = assistantTurn.tool_calls && assistantTurn.tool_calls.length > 0;
@@ -173,8 +229,7 @@ export class Pipeline {
           ],
           timestamp: Date.now(),
         };
-        this.cache.append(assistantTurn);
-        await this.persist(userTurn, assistantTurn);
+        commitTurn(assistantTurn);
         return assistantTurn;
       }
     }
@@ -198,14 +253,14 @@ export class Pipeline {
           tool_use_id: tc.id,
           content: `Error: max tool rounds (${this.maxToolRounds}) exceeded`,
         }));
-        this.cache.append(currentTurn);
+        commitTurn(currentTurn);
         const syntheticTurn: Turn = {
           id: crypto.randomUUID(),
           role: "user",
           content: syntheticResults,
           timestamp: Date.now(),
         };
-        this.cache.append(syntheticTurn);
+        commitTurn(syntheticTurn);
         // Get a final text response from the provider
         const finalConvo: Message[] = [
           ...systemMessages,
@@ -215,17 +270,35 @@ export class Pipeline {
         break;
       }
 
-      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+      // Abort check — persist partial state before throwing so the
+      // next turn's conversation includes the LLM's intent + the
+      // fact that it was interrupted.
+      if (signal?.aborted) {
+        this.commitInterruptedToolCalls(currentTurn, currentTurn.tool_calls, commitTurn);
+        throw new DOMException("Aborted", "AbortError");
+      }
 
-      const toolResults = await runToolSubpipe(currentTurn, {
-        registry: this.registry,
-        policyRules: this.policyRules,
-        loopDetector: this.loopDetector,
-        onConfirm: this.onConfirm,
-      });
+      let toolResults: Awaited<ReturnType<typeof runToolSubpipe>>;
+      try {
+        toolResults = await runToolSubpipe(currentTurn, {
+          registry: this.registry,
+          projectDir: this.projectDir,
+          policyRules: this.policyRules,
+          loopDetector: this.loopDetector,
+          onConfirm: this.onConfirm,
+        });
+      } catch (err) {
+        // If runToolSubpipe was interrupted (e.g. confirmation rejected
+        // due to abort), persist whatever didn't execute.
+        if (err instanceof DOMException && err.name === "AbortError") {
+          this.commitInterruptedToolCalls(currentTurn, currentTurn.tool_calls, commitTurn);
+          throw err;
+        }
+        throw err;
+      }
 
       // Append assistant turn and tool results to cache
-      this.cache.append(currentTurn);
+      commitTurn(currentTurn);
       const toolResultContent = toolResultsToContent(toolResults);
       const toolResultTurn: Turn = {
         id: crypto.randomUUID(),
@@ -233,7 +306,7 @@ export class Pipeline {
         content: toolResultContent,
         timestamp: Date.now(),
       };
-      this.cache.append(toolResultTurn);
+      commitTurn(toolResultTurn);
 
       // Build updated conversation — system context + cache history only
       // (user turn is already in cache from step 4b, no duplication)
@@ -245,7 +318,17 @@ export class Pipeline {
       const nextStream = primary.generate(updatedConversation, {
         tools: toolDefs,
       });
-      currentTurn = await assembleTurn(nextStream);
+      try {
+        currentTurn = await assembleTurn(nextStream);
+      } catch (err) {
+        // If assembleTurn was aborted mid-stream, the previous round's
+        // tool results are already cached. Nothing more to persist —
+        // the incomplete response is discarded.
+        if (err instanceof DOMException && err.name === "AbortError") {
+          throw err;
+        }
+        throw err;
+      }
 
       // Filter the new turn (skip for tool-use-only turns)
       const nextHasTools = currentTurn.tool_calls && currentTurn.tool_calls.length > 0;
@@ -265,11 +348,8 @@ export class Pipeline {
       }
     }
 
-    // 7. Cache — append final assistant turn
-    this.cache.append(currentTurn);
-
-    // 8. Remember — persist all turns (not just first and last)
-    await this.persist(userTurn, currentTurn);
+    // 7. Cache + persist — append final assistant turn
+    commitTurn(currentTurn);
 
     return currentTurn;
   }
@@ -301,23 +381,35 @@ export class Pipeline {
 
   // ── Private ────────────────────────────────────────────────────
 
-  private buildConversation(
-    contextMessages: Message[],
-    cachedTurns: Turn[],
-  ): Message[] {
-    const conversation: Message[] = [];
+  /**
+   * Commit an interrupted assistant turn so the next conversation
+   * includes the LLM's intent and a record that it was interrupted.
+   * Uses the same synthetic-result pattern as the max-tool-rounds guard.
+   */
+  private commitInterruptedToolCalls(
+    turn: Turn,
+    toolCalls: ToolCall[],
+    commitTurn: (t: Turn) => void,
+  ): void {
+    // Commit the assistant turn with its tool_calls so the LLM can
+    // see what it tried to do.
+    commitTurn(turn);
 
-    // Context messages (system + user from perceiver)
-    for (const msg of contextMessages) {
-      conversation.push(msg);
-    }
-
-    // Cached turns as conversation history
-    for (const t of cachedTurns) {
-      conversation.push({ role: t.role, content: t.content });
-    }
-
-    return conversation;
+    // Synthesize "Interrupted by user" results for each pending tool
+    // call so the conversation stays structurally valid (every
+    // tool_use must have a matching tool_result).
+    const syntheticResults: Content[] = toolCalls.map(tc => ({
+      type: "tool_result" as const,
+      tool_use_id: tc.id,
+      content: "Interrupted by user — tool call was not executed.",
+    }));
+    const syntheticTurn: Turn = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: syntheticResults,
+      timestamp: Date.now(),
+    };
+    commitTurn(syntheticTurn);
   }
 
   private toolDefinitions(): ToolDefinition[] {
@@ -329,25 +421,4 @@ export class Pipeline {
     }));
   }
 
-  private async persist(userTurn: Turn, assistantTurn: Turn): Promise<void> {
-    if (!this.remember) return;
-
-    // Persist user turn
-    await this.remember.append({
-      kind: "perceived",
-      source: this._sessionId,
-      content: userTurn.content,
-      timestamp: userTurn.timestamp,
-      role: userTurn.role,
-    });
-
-    // Persist assistant turn
-    await this.remember.append({
-      kind: "perceived",
-      source: this._sessionId,
-      content: assistantTurn.content,
-      timestamp: assistantTurn.timestamp,
-      role: assistantTurn.role,
-    });
-  }
 }

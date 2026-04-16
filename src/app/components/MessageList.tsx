@@ -12,7 +12,7 @@ function contentToText(content: Content[]): string {
     .join("");
 }
 
-function TurnView({ turn }: { turn: Turn }) {
+const TurnView = React.memo(function TurnView({ turn }: { turn: Turn }) {
   const text = contentToText(turn.content);
 
   if (turn.role === "user") {
@@ -48,7 +48,7 @@ function TurnView({ turn }: { turn: Turn }) {
       <Text dimColor>[system] {text}</Text>
     </Box>
   );
-}
+});
 
 export default function MessageList({ turns }: { turns: Turn[] }) {
   if (turns.length === 0) {

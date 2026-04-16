@@ -1,23 +1,31 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { Text } from "ink";
 import { colors } from "../theme.js";
 
 /**
  * Minimal inline markdown renderer for Ink.
  * Handles: **bold**, `code`, *italic*
- * All output stays inside a single <Text> to satisfy Ink's constraints.
+ *
+ * Splits text into lines so that during streaming only the last
+ * (actively growing) line re-parses — completed lines are memoized.
+ * This keeps rendering O(n) instead of O(n^2) over the full response.
  */
-export default function Markdown({ text }: { text: string }) {
+
+// Restrict `.+?` to `[^\n]+?` so unclosed tags don't scan across lines
+const INLINE_RE = /(\*\*([^\n]+?)\*\*|`([^`\n]+)`|\*([^\n]+?)\*)/g;
+
+const MarkdownLine = React.memo(function MarkdownLine({ line }: { line: string }) {
+  if (!line) return null;
+
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
 
-  // Match **bold**, `code`, *italic* — order matters (** before *)
-  const re = /(\*\*(.+?)\*\*|`([^`]+)`|\*(.+?)\*)/g;
+  INLINE_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
 
-  while ((match = re.exec(text)) !== null) {
+  while ((match = INLINE_RE.exec(line)) !== null) {
     if (match.index > lastIndex) {
-      parts.push(text.slice(lastIndex, match.index));
+      parts.push(line.slice(lastIndex, match.index));
     }
 
     if (match[2] !== undefined) {
@@ -31,13 +39,30 @@ export default function Markdown({ text }: { text: string }) {
     lastIndex = match.index + match[0].length;
   }
 
-  if (lastIndex < text.length) {
-    parts.push(text.slice(lastIndex));
+  if (lastIndex < line.length) {
+    parts.push(line.slice(lastIndex));
   }
 
-  if (parts.length === 0) {
-    return <Text>{text}</Text>;
+  return <Text>{parts.length === 0 ? line : parts}</Text>;
+});
+
+function Markdown({ text }: { text: string }) {
+  const lines = useMemo(() => text.split("\n"), [text]);
+
+  if (lines.length === 1) {
+    return <MarkdownLine line={lines[0]!} />;
   }
 
-  return <Text>{parts}</Text>;
+  return (
+    <Text>
+      {lines.map((line, i) => (
+        <React.Fragment key={i}>
+          <MarkdownLine line={line} />
+          {i < lines.length - 1 ? "\n" : null}
+        </React.Fragment>
+      ))}
+    </Text>
+  );
 }
+
+export default React.memo(Markdown);
