@@ -87,7 +87,11 @@ function matchesGlob(input: string, glob: string): boolean {
   // Step 2: re-introduce wildcard meaning for * and ** (they were escaped
   // to \* in step 1, so we look for the escaped form).
   const hasSlash = glob.includes("/");
-  const escaped = glob.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  // Include `*` in the escape class so step 2's `\*\*` / `\*` lookups
+  // actually find their targets — without this, `*` characters survived
+  // unescaped and either threw on `**/*.ts` or matched the wrong shape
+  // on `src/*.ts` (degenerate `0+ /` quantifier).
+  const escaped = glob.replace(/[.+^${}()|[\]\\*]/g, "\\$&");
   const regexStr = escaped
     .replace(/\\\*\\\*/g, "{{DOUBLESTAR}}")
     .replace(/\\\*/g, "[^/]*")

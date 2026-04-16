@@ -137,25 +137,46 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
       // Guard against double-submit while a turn is in flight
       if (abortRef.current) return;
 
-      // Check for slash commands first
-      const cmdResult = tryCommand(input);
-      if (cmdResult) {
-        // Handle /clear — reset turns and error
-        if (input.trim() === "/clear") {
-          setState((prev) => ({
-            ...prev,
-            turns: [],
-            error: null,
-          }));
+      // Check for slash commands first — but skip the built-in registry if
+      // the input matches a loaded slash_command skill, so user-authored
+      // skills don't get intercepted as "Unknown command" before the
+      // pipeline ever sees them. The pipeline's matchSlashCommand handles
+      // activation and $ARGUMENTS substitution downstream.
+      const trimmedInput = input.trim();
+      const skillCmdName = trimmedInput.startsWith("/")
+        ? (() => {
+            const spaceIdx = trimmedInput.indexOf(" ");
+            return spaceIdx === -1
+              ? trimmedInput.slice(1)
+              : trimmedInput.slice(1, spaceIdx);
+          })()
+        : null;
+      const matchedSlashSkill =
+        skillCmdName !== null &&
+        !!pipeline?.loadedSkills().some(
+          (s) => s.trigger === "slash_command" && s.name === skillCmdName,
+        );
+
+      if (!matchedSlashSkill) {
+        const cmdResult = tryCommand(input);
+        if (cmdResult) {
+          // Handle /clear — reset turns and error
+          if (input.trim() === "/clear") {
+            setState((prev) => ({
+              ...prev,
+              turns: [],
+              error: null,
+            }));
+            addSystemTurn(cmdResult.output);
+            return;
+          }
+
           addSystemTurn(cmdResult.output);
+          if (cmdResult.exit) {
+            exit();
+          }
           return;
         }
-
-        addSystemTurn(cmdResult.output);
-        if (cmdResult.exit) {
-          exit();
-        }
-        return;
       }
 
       // Clear any previous error

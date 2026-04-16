@@ -119,6 +119,43 @@ Run tests before committing.`,
     const matches = matchAutoTriggers("edit src/cache.ts please", skills);
     expect(matches).toHaveLength(0);
   });
+
+  test("**/*.ext glob matches nested paths and doesn't throw", async () => {
+    writeSkill(
+      globalDir,
+      "ts-helper.md",
+      `---
+name: ts-helper
+trigger: auto
+paths: "**/*.ts"
+---
+Help with TS.`,
+    );
+    const skills = await loadSkillsFromDirs(globalDir, projectDir);
+    // Pre-fix bug: this regex was `^**/*\.ts$` (invalid), threw silently,
+    // returned false for every input. Now nested .ts paths match.
+    expect(matchAutoTriggers("touching deep/nested/file.ts now", skills)).toHaveLength(1);
+    expect(matchAutoTriggers("touching deep/nested/file.js now", skills)).toHaveLength(0);
+  });
+
+  test("dir/*.ext glob matches a path segment, not the directory itself", async () => {
+    writeSkill(
+      globalDir,
+      "src-helper.md",
+      `---
+name: src-helper
+trigger: auto
+paths: "src/*.ts"
+---
+Help with src TS files.`,
+    );
+    const skills = await loadSkillsFromDirs(globalDir, projectDir);
+    expect(matchAutoTriggers("editing src/cache.ts here", skills)).toHaveLength(1);
+    // Pre-fix bug: the degenerate `0+ /` quantifier matched `src.ts` (no slash).
+    expect(matchAutoTriggers("editing src.ts here", skills)).toHaveLength(0);
+    // `*` is single-segment — should not cross slash boundaries.
+    expect(matchAutoTriggers("editing src/sub/cache.ts here", skills)).toHaveLength(0);
+  });
 });
 
 // ── /skills command ─────────────────────────────────────────────
