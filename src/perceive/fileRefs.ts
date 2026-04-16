@@ -1,6 +1,6 @@
 import { readFile } from "fs/promises";
 
-const FILE_REF_PATTERN = /@(\/[^\s]+)/g;
+const FILE_REF_PATTERN = /@([^\s]+)/g;
 
 /**
  * Expand @path references in input text by inlining file contents.
@@ -20,7 +20,7 @@ export async function expandFileRefs(input: string): Promise<string> {
       const contents = await readFile(filePath, "utf-8");
       replacements.set(fullMatch, `\n<file path="${filePath}">\n${contents}\n</file>`);
     } catch {
-      replacements.set(fullMatch, `[file not found: ${filePath}]`);
+      // Do nothing, leave as-is
     }
   }
 
