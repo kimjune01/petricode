@@ -209,7 +209,7 @@ export default function Composer({ onSubmit, disabled, clearSignal, phase }: Com
         ) : (
           <Text>
             {before}
-            <Text inverse>{at === "\n" ? " " : (at || " ")}</Text>
+            <Text inverse>{at === "\n" ? " " : (at || " ")}</Text>{at === "\n" ? "\n" : null}
             {after}
           </Text>
         )}
