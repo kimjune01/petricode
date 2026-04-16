@@ -21,7 +21,9 @@ export async function expandFileRefs(input: string, projectDir: string): Promise
     const fullMatch = match[0]!;
     if (replacements.has(fullMatch)) continue;
     const rawPath = match[1]!;
-    const filePath = rawPath.replace(/[.,;:!?]+$/, "");
+    const trailingMatch = rawPath.match(/[.,;:!?]+$/);
+    const trailing = trailingMatch ? trailingMatch[0] : "";
+    const filePath = trailing ? rawPath.slice(0, -trailing.length) : rawPath;
     if (validateFilePath(filePath, projectDir)) continue;
     // validateFilePath confirms projectDir-relative resolution stays inside
     // projectDir, but readFile resolves relative paths against process.cwd().
@@ -30,7 +32,13 @@ export async function expandFileRefs(input: string, projectDir: string): Promise
     const absPath = isAbsolute(filePath) ? filePath : resolve(projectDir, filePath);
     try {
       const contents = await readFile(absPath, "utf-8");
-      replacements.set(fullMatch, `\n<file path="${filePath}">\n${contents}\n</file>`);
+      // Reattach the trailing punctuation we stripped from the path —
+      // otherwise `What about @README.md, @LICENSE?` would lose the
+      // comma and the question mark from the user's prose.
+      replacements.set(
+        fullMatch,
+        `\n<file path="${filePath}">\n${contents}\n</file>${trailing}`,
+      );
     } catch {
       // Do nothing, leave as-is
     }

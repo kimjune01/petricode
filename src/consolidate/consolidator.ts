@@ -61,11 +61,16 @@ export function groupTriples(triples: Triple[]): Triple[][] {
  * Generate a candidate skill from a group of triples.
  */
 function groupToCandidate(group: Triple[]): CandidateSkill {
-  // Name: derived from the most common problem words
+  // Name: derived from the most common problem words. Sanitize each
+  // word to [a-z0-9-] before joining so traversal tokens like "../foo"
+  // or path separators can never reach SkillStore.write().
   const wordCounts = new Map<string, number>();
   for (const t of group) {
-    for (const w of t.problem.toLowerCase().split(/\s+/).filter((w) => w.length > 3)) {
-      wordCounts.set(w, (wordCounts.get(w) ?? 0) + 1);
+    for (const raw of t.problem.toLowerCase().split(/\s+/)) {
+      const cleaned = raw.replace(/[^a-z0-9-]/g, "");
+      if (cleaned.length > 3) {
+        wordCounts.set(cleaned, (wordCounts.get(cleaned) ?? 0) + 1);
+      }
     }
   }
   const topWords = [...wordCounts.entries()]

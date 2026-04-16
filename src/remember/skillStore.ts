@@ -1,6 +1,20 @@
 import type { Skill } from "../core/types.js";
 import { mkdirSync, existsSync, writeFileSync, readFileSync, readdirSync, unlinkSync } from "fs";
-import { join } from "path";
+import { join, resolve, sep } from "path";
+
+// Skill names map to filenames inside skillsDir. They must be opaque
+// identifiers, NOT paths — a name like "../foo" would otherwise escape
+// the skills directory via path.join's `..` collapsing. Allow only
+// letters/digits/underscore/hyphen.
+const SAFE_SKILL_NAME = /^[A-Za-z0-9_\-]+$/;
+
+function assertSafeSkillName(name: string): void {
+  if (!SAFE_SKILL_NAME.test(name)) {
+    throw new Error(
+      `SkillStore: invalid skill name '${name}' — must match ${SAFE_SKILL_NAME}`,
+    );
+  }
+}
 
 export class SkillStore {
   private skillsDir: string;
@@ -13,7 +27,15 @@ export class SkillStore {
   }
 
   private skillPath(name: string): string {
-    return join(this.skillsDir, `${name}.md`);
+    assertSafeSkillName(name);
+    const candidate = resolve(this.skillsDir, `${name}.md`);
+    const root = resolve(this.skillsDir);
+    // Defense in depth: even after the regex check, verify the resolved
+    // path stays inside skillsDir.
+    if (candidate !== root && !candidate.startsWith(root + sep)) {
+      throw new Error(`SkillStore: name '${name}' escapes skills directory`);
+    }
+    return candidate;
   }
 
   private serializeSkill(skill: Skill): string {

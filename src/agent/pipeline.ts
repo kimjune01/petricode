@@ -106,6 +106,12 @@ export class Pipeline {
    * 9. Return the final assistant turn
    */
   async turn(input: string, options?: { signal?: AbortSignal }): Promise<Turn> {
+    // Reject empty/whitespace input at the boundary so headless callers
+    // get a clear error rather than an Anthropic 400 about empty text
+    // blocks (or a polluted history on lenient providers).
+    if (!input || input.trim().length === 0) {
+      throw new Error("Pipeline.turn: input is empty");
+    }
     // Wait for any prior turn to fully drain (including its finally-block
     // persistence) before starting. Catch swallows the prior turn's error;
     // the prior caller already received it.
@@ -138,16 +144,27 @@ export class Pipeline {
       return await this._turn(input, signal, commitTurn);
     } finally {
       // Persist everything committed to cache — runs on normal return,
-      // break, AND throw (including AbortError).
+      // break, AND throw (including AbortError). Errors here must NOT
+      // override the protected block's outcome (a throw in finally
+      // replaces the pending return/throw per ECMAScript semantics),
+      // and one failing turn must not block subsequent turns from
+      // attempting to persist.
       if (this.remember && pendingPersist.length > 0) {
         for (const t of pendingPersist) {
-          await this.remember.append({
-            kind: "perceived",
-            source: this._sessionId,
-            content: t.content,
-            timestamp: t.timestamp,
-            role: t.role,
-          });
+          try {
+            await this.remember.append({
+              kind: "perceived",
+              source: this._sessionId,
+              content: t.content,
+              timestamp: t.timestamp,
+              role: t.role,
+            });
+          } catch (persistErr) {
+            console.error(
+              `pipeline: failed to persist turn ${t.id}:`,
+              persistErr,
+            );
+          }
         }
       }
     }
@@ -293,6 +310,20 @@ export class Pipeline {
           ...this.cache.read().map(t => ({ role: t.role, content: t.content })),
         ];
         currentTurn = await assembleTurn(primary.generate(finalConvo, { signal }), signal);
+        // Defensive: the cleanup turn was generated WITHOUT toolDefs,
+        // so it shouldn't carry tool_calls — but providers occasionally
+        // emit unsolicited ones. Strip them, and ensure non-empty content
+        // so downstream prompt assembly (especially OpenAI which rejects
+        // empty assistant messages) doesn't choke on the next user submit.
+        if (currentTurn.tool_calls && currentTurn.tool_calls.length > 0) {
+          currentTurn = { ...currentTurn, tool_calls: undefined };
+        }
+        if (currentTurn.content.length === 0) {
+          currentTurn = {
+            ...currentTurn,
+            content: [{ type: "text", text: "[max tool rounds reached]" }],
+          };
+        }
         break;
       }
 

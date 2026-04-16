@@ -27,29 +27,36 @@ function toOpenAIMessages(
       continue;
     }
 
-    // Check if turn has tool_result blocks — those become tool messages
+    // Walk content in order so a turn like [text, tool_result, text]
+    // emits messages in the original sequence — silently moving text
+    // past tool_results would invert semantic order.
     const toolResults = turn.filter((b) => b.type === "tool_result");
     if (toolResults.length > 0) {
-      for (const tr of toolResults) {
-        if (tr.type === "tool_result") {
-          messages.push({
-            role: "tool",
-            tool_call_id: tr.tool_use_id,
-            content: tr.content,
-          });
-        }
-      }
-      // Also include any non-tool-result content in the turn
-      const rest = turn.filter((b) => b.type !== "tool_result");
-      if (rest.length > 0) {
+      let restAcc: typeof turn = [];
+      const flushRest = () => {
+        if (restAcc.length === 0) return;
         messages.push({
           role: role as "user",
-          content: rest.map((b) => {
+          content: restAcc.map((b) => {
             if (b.type === "text") return { type: "text" as const, text: b.text };
             return { type: "text" as const, text: JSON.stringify(b) };
           }),
         });
+        restAcc = [];
+      };
+      for (const b of turn) {
+        if (b.type === "tool_result") {
+          flushRest();
+          messages.push({
+            role: "tool",
+            tool_call_id: b.tool_use_id,
+            content: b.content,
+          });
+        } else {
+          restAcc.push(b);
+        }
       }
+      flushRest();
       continue;
     }
 
@@ -57,6 +64,13 @@ function toOpenAIMessages(
       // Check for tool_use blocks
       const toolUses = turn.filter((b) => b.type === "tool_use");
       const textBlocks = turn.filter((b) => b.type === "text");
+      // OpenAI rejects assistant messages with both `content: null` AND
+      // no `tool_calls`. An empty turn (e.g., committed by an interrupted
+      // tool round) carries no information; skip it entirely so the next
+      // user submit doesn't fail with `must contain content or tool_calls`.
+      if (textBlocks.length === 0 && toolUses.length === 0) {
+        continue;
+      }
       const msg: OpenAI.Chat.ChatCompletionAssistantMessageParam = {
         role: "assistant",
         content: textBlocks.length > 0
@@ -185,6 +199,21 @@ export class OpenAIProvider implements Provider {
       // and any UI awaiting "done" must not hang on length / content_filter
       // / function_call truncation.
       if (choice.finish_reason) {
+        // Recover any tool_use whose id+name didn't both arrive before
+        // truncation. If at least the name is present, synthesize an id
+        // and flush the buffered args so the call survives instead of
+        // being silently dropped. This mirrors Anthropic's atomic
+        // tool_use start, which doesn't have this multi-chunk hazard.
+        for (const [idx, entry] of pending) {
+          if (entry.started || !entry.name) continue;
+          const id = entry.id ?? `synth_${idx}_${Date.now()}`;
+          yield { type: "tool_use_start", id, name: entry.name, index: idx };
+          entry.started = true;
+          if (entry.argsBuffer) {
+            yield { type: "tool_use_delta", input_json: entry.argsBuffer, index: idx };
+            entry.argsBuffer = "";
+          }
+        }
         yield { type: "done" };
       }
     }
