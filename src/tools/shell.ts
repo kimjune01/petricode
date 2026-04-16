@@ -17,10 +17,13 @@ export const ShellTool: Tool = {
     required: ["command"],
   },
 
-  async execute(args) {
+  async execute(args, opts) {
     const command = args.command as string;
     if (!command) throw new Error("shell: missing required argument 'command'");
     const timeout = (args.timeout as number) ?? DEFAULT_TIMEOUT;
+    const signal = opts?.signal;
+
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
 
     return new Promise<string>((resolve, reject) => {
       const proc = spawn("sh", ["-c", command], {
@@ -38,8 +41,16 @@ export const ShellTool: Tool = {
         reject(new Error(`shell: command timed out after ${timeout}ms`));
       }, timeout);
 
+      const onAbort = () => {
+        proc.kill("SIGTERM");
+        clearTimeout(timer);
+        reject(new DOMException("Aborted", "AbortError"));
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+
       proc.on("close", (code) => {
         clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
         const output = (stdout + stderr).trimEnd();
         if (code !== 0) {
           resolve(`[exit ${code}]\n${output}`);
@@ -50,6 +61,7 @@ export const ShellTool: Tool = {
 
       proc.on("error", (err) => {
         clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
         reject(new Error(`shell: ${err.message}`));
       });
     });

@@ -36,6 +36,7 @@ function flushTool(
  */
 export async function assembleTurn(
   stream: AsyncGenerator<StreamChunk>,
+  signal?: AbortSignal,
 ): Promise<Turn> {
   const content: Content[] = [];
   const toolCalls: ToolCall[] = [];
@@ -44,6 +45,7 @@ export async function assembleTurn(
   const toolMap = new Map<number, { id: string; name: string; jsonBuf: string }>();
 
   for await (const chunk of stream) {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     switch (chunk.type) {
       case "content_delta":
         textBuffer += chunk.text;

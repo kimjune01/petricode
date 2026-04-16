@@ -39,17 +39,14 @@ export async function parseGitignore(projectDir: string): Promise<string[]> {
 export function buildIgnorePredicate(
   patterns: string[],
 ): (relativePath: string) => boolean {
-  // Split into positive and negative patterns
-  const positive: RegExp[] = [];
-  const negative: RegExp[] = [];
-
-  for (const pat of patterns) {
-    if (pat.startsWith("!")) {
-      negative.push(patternToRegex(pat.slice(1)));
-    } else {
-      positive.push(patternToRegex(pat));
-    }
-  }
+  // Per gitignore semantics, patterns are evaluated in source order and the
+  // LAST matching pattern decides — a later negation overrides an earlier
+  // ignore, and a later ignore re-overrides that negation. Splitting into
+  // positive/negative arrays loses this ordering.
+  const compiled = patterns.map((pat) => {
+    const negate = pat.startsWith("!");
+    return { negate, re: patternToRegex(negate ? pat.slice(1) : pat) };
+  });
 
   return (relativePath: string): boolean => {
     const segments = relativePath.split("/");
@@ -61,28 +58,16 @@ export function buildIgnorePredicate(
       }
     }
 
-    // Check gitignore patterns. Anchored patterns (^...) only match
-    // the full path. Unanchored patterns ((^|/)...) also match individual
-    // segments so that bare names like "dist" match at any depth.
+    // Walk patterns in source order. Anchored patterns (^...) only match the
+    // full path; unanchored patterns ((^|/)...) also match individual segments
+    // so bare names like "dist" match at any depth.
     let ignored = false;
-
-    for (const re of positive) {
+    for (const { negate, re } of compiled) {
       const isAnchored = re.source.startsWith("^") && !re.source.startsWith("(^|/");
       if (re.test(relativePath) || (!isAnchored && segments.some((seg) => re.test(seg)))) {
-        ignored = true;
-        break;
+        ignored = !negate;
       }
     }
-
-    if (ignored) {
-      for (const re of negative) {
-        const isAnchored = re.source.startsWith("^") && !re.source.startsWith("(^|/");
-        if (re.test(relativePath) || (!isAnchored && segments.some((seg) => re.test(seg)))) {
-          return false;
-        }
-      }
-    }
-
     return ignored;
   };
 }

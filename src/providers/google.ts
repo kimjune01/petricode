@@ -160,6 +160,7 @@ export class GoogleProvider implements Provider {
     let toolIndex = 0;
 
     for await (const chunk of response) {
+      if (config.signal?.aborted) throw new DOMException("Aborted", "AbortError");
       if (!chunk.candidates?.[0]?.content?.parts) continue;
 
       for (const part of chunk.candidates[0].content.parts) {

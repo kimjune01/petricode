@@ -19,11 +19,14 @@ export const GrepTool: Tool = {
     required: ["pattern"],
   },
 
-  async execute(args) {
+  async execute(args, opts) {
     const pattern = args.pattern as string;
     if (!pattern) throw new Error("grep: missing required argument 'pattern'");
     const searchPath = (args.path as string) ?? ".";
     const glob = args.glob as string | undefined;
+    const signal = opts?.signal;
+
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
 
     return new Promise<string>((resolve, reject) => {
       const grepArgs = [
@@ -44,7 +47,14 @@ export const GrepTool: Tool = {
       proc.stdout.on("data", (d: Buffer) => (output += d.toString()));
       proc.stderr.on("data", (d: Buffer) => (output += d.toString()));
 
+      const onAbort = () => {
+        proc.kill("SIGTERM");
+        reject(new DOMException("Aborted", "AbortError"));
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+
       proc.on("close", (code) => {
+        signal?.removeEventListener("abort", onAbort);
         // grep exits 1 when no matches found — not an error
         if (code !== null && code > 1) {
           resolve(`[exit ${code}]\n${output.trimEnd()}`);
@@ -54,6 +64,7 @@ export const GrepTool: Tool = {
       });
 
       proc.on("error", (err) => {
+        signal?.removeEventListener("abort", onAbort);
         reject(new Error(`grep: ${err.message}`));
       });
     });

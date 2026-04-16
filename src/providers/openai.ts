@@ -127,10 +127,14 @@ export class OpenAIProvider implements Provider {
       }));
     }
 
-    const stream = await this.client.chat.completions.create(params);
+    const stream = await this.client.chat.completions.create(
+      params,
+      config.signal ? { signal: config.signal } : undefined,
+    );
 
     // stream is an async iterable of ChatCompletionChunk
     for await (const chunk of stream as AsyncIterable<OpenAI.Chat.ChatCompletionChunk>) {
+      if (config.signal?.aborted) throw new DOMException("Aborted", "AbortError");
       const choice = chunk.choices[0];
       if (!choice) continue;
 

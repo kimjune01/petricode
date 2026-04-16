@@ -66,7 +66,7 @@ export function validateToolArgs(
  *   3. Symlink: for existing files, use realpathSync to resolve symlinks
  *      and re-check containment
  */
-function validateFilePath(
+export function validateFilePath(
   path: string,
   projectDir: string,
 ): PathValidationError | null {

@@ -18,6 +18,7 @@ export interface ToolSubpipeOptions {
   policyRules?: PolicyRule[];
   loopDetector?: LoopDetector;
   onConfirm?: ConfirmFn;
+  signal?: AbortSignal;
 }
 
 export type ToolOutcome = "ALLOW" | "DENY";
@@ -37,7 +38,7 @@ export async function runToolSubpipe(
   turn: Turn,
   options: ToolSubpipeOptions,
 ): Promise<ToolResult[]> {
-  const { registry, projectDir, policyRules = [], loopDetector, onConfirm } = options;
+  const { registry, projectDir, policyRules = [], loopDetector, onConfirm, signal } = options;
   const results: ToolResult[] = [];
 
   if (!turn.tool_calls || turn.tool_calls.length === 0) {
@@ -45,6 +46,7 @@ export async function runToolSubpipe(
   }
 
   for (const tc of turn.tool_calls) {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     const toolUseId = tc.id;
 
     // Path validation (before policy, before execution)
@@ -106,7 +108,7 @@ export async function runToolSubpipe(
 
     // Execute the tool
     try {
-      const rawResult = await registry.execute(tc.name, tc.args);
+      const rawResult = await registry.execute(tc.name, tc.args, { signal });
       const masked = maskToolOutput(rawResult);
       tc.result = masked.content;
       results.push({
@@ -116,6 +118,10 @@ export async function runToolSubpipe(
         content: masked.content,
       });
     } catch (err) {
+      // Propagate abort so the pipeline can synthesize "Interrupted" results
+      // for this tool AND the rest. Otherwise it'd be swallowed as a regular
+      // tool error and the loop would continue executing remaining tools.
+      if (err instanceof DOMException && err.name === "AbortError") throw err;
       const errMsg = err instanceof Error ? err.message : String(err);
       tc.result = `Error: ${errMsg}`;
       results.push({

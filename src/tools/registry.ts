@@ -1,4 +1,4 @@
-import type { Tool } from "./tool.js";
+import type { Tool, ToolExecuteOptions } from "./tool.js";
 
 export class ToolRegistry {
   private tools = new Map<string, Tool>();
@@ -15,7 +15,11 @@ export class ToolRegistry {
     return Array.from(this.tools.values());
   }
 
-  async execute(name: string, args: Record<string, unknown>): Promise<string> {
+  async execute(
+    name: string,
+    args: Record<string, unknown>,
+    opts?: ToolExecuteOptions,
+  ): Promise<string> {
     const tool = this.tools.get(name);
     if (!tool) throw new Error(`Unknown tool: "${name}"`);
 
@@ -40,7 +44,7 @@ export class ToolRegistry {
       }
     }
 
-    return tool.execute(args);
+    return tool.execute(args, opts);
   }
 }
 

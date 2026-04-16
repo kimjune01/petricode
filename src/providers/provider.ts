@@ -4,6 +4,7 @@ export interface ModelConfig {
   temperature?: number;
   max_tokens?: number;
   tools?: ToolDefinition[];
+  signal?: AbortSignal;
 }
 
 export interface ToolDefinition {

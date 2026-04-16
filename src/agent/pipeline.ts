@@ -184,12 +184,13 @@ export class Pipeline {
     const toolDefs = this.registry ? this.toolDefinitions() : undefined;
     const stream = primary.generate(conversation, {
       tools: toolDefs,
+      signal,
     });
 
     // 4. Assemble response
     let assistantTurn: Turn;
     try {
-      assistantTurn = await assembleTurn(stream);
+      assistantTurn = await assembleTurn(stream, signal);
     } catch (err) {
       // Cache the user turn on ANY error (abort, rate limit, network)
       // so the user's prompt isn't lost from conversation history.
@@ -264,7 +265,7 @@ export class Pipeline {
           ...systemMessages,
           ...this.cache.read().map(t => ({ role: t.role, content: t.content })),
         ];
-        currentTurn = await assembleTurn(primary.generate(finalConvo, {}));
+        currentTurn = await assembleTurn(primary.generate(finalConvo, { signal }), signal);
         break;
       }
 
@@ -284,6 +285,7 @@ export class Pipeline {
           policyRules: this.policyRules,
           loopDetector: this.loopDetector,
           onConfirm: this.onConfirm,
+          signal,
         });
       } catch (err) {
         // If runToolSubpipe was interrupted (e.g. confirmation rejected
@@ -324,9 +326,10 @@ export class Pipeline {
       ];
       const nextStream = primary.generate(updatedConversation, {
         tools: toolDefs,
+        signal,
       });
       try {
-        currentTurn = await assembleTurn(nextStream);
+        currentTurn = await assembleTurn(nextStream, signal);
       } catch (err) {
         // If assembleTurn was aborted mid-stream, the previous round's
         // tool results are already cached. Nothing more to persist —

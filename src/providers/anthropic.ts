@@ -109,9 +109,10 @@ export class AnthropicProvider implements Provider {
       }));
     }
 
-    const stream = this.client.messages.stream(params);
+    const stream = this.client.messages.stream(params, config.signal ? { signal: config.signal } : undefined);
 
     for await (const event of stream) {
+      if (config.signal?.aborted) throw new DOMException("Aborted", "AbortError");
       if (event.type === "content_block_start") {
         const block = event.content_block;
         if (block.type === "tool_use") {

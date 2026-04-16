@@ -75,6 +75,13 @@ describe("Shell", () => {
       ShellTool.execute({ command: "sleep 10", timeout: 200 })
     ).rejects.toThrow("timed out");
   });
+
+  test("abort signal kills running process and rejects with AbortError", async () => {
+    const controller = new AbortController();
+    const exec = ShellTool.execute({ command: "sleep 10" }, { signal: controller.signal });
+    setTimeout(() => controller.abort(), 50);
+    await expect(exec).rejects.toMatchObject({ name: "AbortError" });
+  });
 });
 
 // ── Grep ────────────────────────────────────────────────────────

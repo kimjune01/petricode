@@ -5,9 +5,13 @@ export interface ToolSchema {
   required: string[];
 }
 
+export interface ToolExecuteOptions {
+  signal?: AbortSignal;
+}
+
 export interface Tool {
   name: string;
   description: string;
   input_schema: ToolSchema;
-  execute(args: Record<string, unknown>): Promise<string>;
+  execute(args: Record<string, unknown>, opts?: ToolExecuteOptions): Promise<string>;
 }

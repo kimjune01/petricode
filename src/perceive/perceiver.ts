@@ -33,7 +33,7 @@ export class Perceiver implements PerceiveSlot {
 
     try {
       // 1. Expand @file references
-      const expanded = await expandFileRefs(input);
+      const expanded = await expandFileRefs(input, this.projectDir);
 
       // 2. Discover context fragments
       const context = await discoverContext(this.projectDir, this.globalConfigDir);

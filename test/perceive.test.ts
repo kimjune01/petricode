@@ -25,18 +25,26 @@ describe("fileRefs", () => {
   test("@file reference expands to file contents", async () => {
     const filePath = join(tmp, "hello.txt");
     writeFileSync(filePath, "world");
-    const result = await expandFileRefs(`check @${filePath} please`);
+    const result = await expandFileRefs(`check @${filePath} please`, tmp);
     expect(result).toContain("world");
     expect(result).toContain(filePath);
   });
 
-  test("missing @file produces error marker", async () => {
-    const result = await expandFileRefs(`look at @${tmp}/nope.txt`);
-    expect(result).toContain("[file not found");
+  test("missing @file inside project is left as-is (silent)", async () => {
+    const input = `look at @${tmp}/nope.txt`;
+    const result = await expandFileRefs(input, tmp);
+    expect(result).toBe(input);
+  });
+
+  test("@file outside project is silently dropped (no exfiltration)", async () => {
+    const input = "see @/etc/passwd and @/etc/hosts";
+    const result = await expandFileRefs(input, tmp);
+    expect(result).toBe(input);
+    expect(result).not.toContain("root:");
   });
 
   test("no @file refs returns input unchanged", async () => {
-    const result = await expandFileRefs("plain text no refs");
+    const result = await expandFileRefs("plain text no refs", tmp);
     expect(result).toBe("plain text no refs");
   });
 });
