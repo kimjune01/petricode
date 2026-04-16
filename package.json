@@ -2,11 +2,13 @@
   "name": "petricode",
   "type": "module",
   "scripts": {
-    "dev": "bun run src/cli.ts",
+    "dev": "GOOGLE_GENAI_USE_VERTEXAI=true GOOGLE_CLOUD_PROJECT=qvs-atom-gcp-research GOOGLE_CLOUD_LOCATION=global bun run src/cli.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",
+    "@anthropic-ai/vertex-sdk": "^0.16.0",
+    "@google/genai": "^1.50.1",
     "ink": "5.2.1",
     "openai": "^6.33.0",
     "react": "18.3.1"

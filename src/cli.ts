@@ -1,6 +1,37 @@
 import { render } from "ink";
 import React from "react";
+import { appendFileSync, mkdirSync, existsSync } from "fs";
+import { join } from "path";
 import App from "./app/App.js";
+
+// ── Crash log ────────────────────────────────────────────────────
+const logDir = join(process.cwd(), ".petricode");
+const crashLog = join(logDir, "crash.log");
+
+function writeCrash(err: unknown): void {
+  try {
+    if (!existsSync(logDir)) mkdirSync(logDir, { recursive: true });
+    const ts = new Date().toISOString();
+    const msg = err instanceof Error
+      ? `${err.message}\n${err.stack}`
+      : String(err);
+    appendFileSync(crashLog, `\n--- ${ts} ---\n${msg}\n`);
+  } catch {
+    // Last resort — don't crash the crash handler
+  }
+}
+
+process.on("uncaughtException", (err) => {
+  writeCrash(err);
+  console.error(`\nCrash logged to ${crashLog}`);
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason) => {
+  writeCrash(reason);
+  console.error(`\nCrash logged to ${crashLog}`);
+  process.exit(1);
+});
 
 const args = process.argv.slice(2);
 
@@ -58,10 +89,22 @@ if (resumeIdx !== -1) {
   }
 }
 
+// Bootstrap the pipeline
+const { bootstrap } = await import("./session/bootstrap.js");
+const { pipeline, sessionId, resumed, mode } = await bootstrap({
+  projectDir: process.cwd(),
+  resumeSessionId,
+  // onConfirm wired by App.tsx after mount
+});
+
+if (resumed) {
+  console.log(`Resumed session ${sessionId}`);
+}
+
 // Workaround for Bun stdin bug with Ink's useInput
 process.stdin.resume();
 
 const { waitUntilExit } = render(
-  React.createElement(App, { resumeSessionId }),
+  React.createElement(App, { pipeline, resumeSessionId, mode }),
 );
 await waitUntilExit();

@@ -3,6 +3,7 @@
 
 import React from "react";
 import { Box, Text } from "ink";
+import { colors, spacing } from "../theme.js";
 
 export type ErrorKind =
   | "provider"
@@ -87,6 +88,7 @@ function classify(error: string): DisplayError {
   return {
     kind: "unknown",
     message: error,
+    suggestion: "Try again. If this persists, check the crash log at .petricode/crash.log.",
   };
 }
 
@@ -104,13 +106,13 @@ export default function ErrorDisplay({ error }: ErrorDisplayProps) {
   const classified = classify(error);
 
   return (
-    <Box flexDirection="column" marginBottom={1}>
-      <Text color="red" bold>
-        {classified.kind === "unknown" ? "Error" : classified.kind}: {classified.message}
+    <Box flexDirection="column" marginBottom={spacing.sm}>
+      <Text color={colors.error} bold>
+        !! {classified.kind === "unknown" ? "Error" : classified.kind}: {classified.message}
       </Text>
       {classified.suggestion && (
-        <Text color="yellow" dimColor>
-          Suggestion: {classified.suggestion}
+        <Text color={colors.hint}>
+          → {classified.suggestion}
         </Text>
       )}
     </Box>

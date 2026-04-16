@@ -94,10 +94,13 @@ export async function volley(
       };
     }
 
-    // Primary revises with accumulated context
+    // Primary revises with only the latest feedback (not accumulated).
+    // Feeding all historical findings causes regression — the model tries
+    // to fix issues that were already resolved in earlier rounds.
+    const latestFinding = findings[findings.length - 1]!;
     const revisePrompt = userMessage(
-      `Revise the following artifact based on all reviewer feedback so far.\n\n` +
-      `Reviewer feedback:\n${findings.join("\n")}\n\n` +
+      `Revise the following artifact based on the reviewer feedback.\n\n` +
+      `Reviewer feedback:\n${latestFinding}\n\n` +
       `Current artifact:\n---\n${current}\n---\n\n` +
       `Produce the revised artifact only, no commentary.`,
     );

@@ -4,7 +4,7 @@
 import { join } from "path";
 import { homedir } from "os";
 import { existsSync, readFileSync } from "fs";
-import type { TiersConfig } from "../config/models.js";
+import type { TiersConfig, ConfirmMode } from "../config/models.js";
 import { DEFAULT_TIERS, validateTiers } from "../config/models.js";
 import { TierRouter } from "../providers/router.js";
 import { RetryProvider } from "../providers/retry.js";
@@ -26,6 +26,7 @@ export interface BootstrapResult {
   pipeline: Pipeline;
   sessionId: string;
   resumed: boolean;
+  mode: ConfirmMode;
 }
 
 function loadTiersConfig(projectDir: string): TiersConfig {
@@ -61,6 +62,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<BootstrapR
   const router = new TierRouter(tiersConfig, (providerName, model) => {
     const { AnthropicProvider } = require("../providers/anthropic.js");
     const { OpenAIProvider } = require("../providers/openai.js");
+    const { GoogleProvider } = require("../providers/google.js");
 
     let provider;
     switch (providerName) {
@@ -69,6 +71,13 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<BootstrapR
         break;
       case "openai":
         provider = new OpenAIProvider(model);
+        break;
+      case "google":
+        provider = new GoogleProvider(model, {
+          vertexai: process.env.GOOGLE_GENAI_USE_VERTEXAI === "true",
+          project: process.env.GOOGLE_CLOUD_PROJECT,
+          location: process.env.GOOGLE_CLOUD_LOCATION,
+        });
         break;
       default:
         throw new Error(`Unknown provider '${providerName}'`);
@@ -111,5 +120,6 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<BootstrapR
     }
   }
 
-  return { pipeline, sessionId, resumed };
+  const mode: ConfirmMode = tiersConfig.mode ?? "cautious";
+  return { pipeline, sessionId, resumed, mode };
 }

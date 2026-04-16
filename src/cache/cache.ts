@@ -47,11 +47,9 @@ export class UnionFindCache implements CacheSlot {
   read(): Turn[] {
     const hot_turns = [...this.hot];
     const cold_summaries = this.cold_summaries();
-    // Update last_accessed on all roots that contributed to read()
-    const now = Date.now();
-    for (const root of this.forest.roots()) {
-      root.last_accessed = now;
-    }
+    // Do NOT update last_accessed here — read() is called every turn,
+    // which would give all clusters the same timestamp and defeat LRU.
+    // Timestamps are updated only on explicit access via find() or expand().
     return [...cold_summaries, ...hot_turns];
   }
 

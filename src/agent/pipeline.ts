@@ -46,7 +46,7 @@ export class Pipeline {
   private registry?: ToolRegistry;
   private policyRules: PolicyRule[] = [];
   private loopDetector!: LoopDetector;
-  private onConfirm?: ConfirmFn;
+  onConfirm?: ConfirmFn;
   private maxToolRounds: number = 10;
   private _sessionId!: string;
   private skills: Skill[] = [];
@@ -97,9 +97,12 @@ export class Pipeline {
    * 8. Remember — persist
    * 9. Return the final assistant turn
    */
-  async turn(input: string): Promise<Turn> {
+  async turn(input: string, options?: { signal?: AbortSignal }): Promise<Turn> {
+    const signal = options?.signal;
+
     // 1. Perceive
     const perceived = await this.perceiver.perceive(input);
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     if (perceived.kind === "retryable") {
       throw new Error(`Perceive failed: ${perceived.message}`);
     }
@@ -142,6 +145,7 @@ export class Pipeline {
     };
 
     // 3. Call primary provider
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     const primary = this.router.get("primary");
     const toolDefs = this.registry ? this.toolDefinitions() : undefined;
     const stream = primary.generate(conversation, {
@@ -150,6 +154,7 @@ export class Pipeline {
 
     // 4. Assemble response
     let assistantTurn = await assembleTurn(stream);
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
 
     // 4b. Append user turn to cache AFTER model responds, so it's available
     //     for future turns' history but wasn't duplicated in THIS turn's prompt.
@@ -184,6 +189,33 @@ export class Pipeline {
       if (!this.registry) {
         break; // No tools registered, nothing to execute
       }
+
+      // Guard: if this is the last round and we still have tool calls,
+      // synthesize error results so the conversation stays structurally valid.
+      if (round === this.maxToolRounds - 1) {
+        const syntheticResults: Content[] = currentTurn.tool_calls.map(tc => ({
+          type: "tool_result" as const,
+          tool_use_id: tc.id,
+          content: `Error: max tool rounds (${this.maxToolRounds}) exceeded`,
+        }));
+        this.cache.append(currentTurn);
+        const syntheticTurn: Turn = {
+          id: crypto.randomUUID(),
+          role: "user",
+          content: syntheticResults,
+          timestamp: Date.now(),
+        };
+        this.cache.append(syntheticTurn);
+        // Get a final text response from the provider
+        const finalConvo: Message[] = [
+          ...systemMessages,
+          ...this.cache.read().map(t => ({ role: t.role, content: t.content })),
+        ];
+        currentTurn = await assembleTurn(primary.generate(finalConvo, {}));
+        break;
+      }
+
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
 
       const toolResults = await runToolSubpipe(currentTurn, {
         registry: this.registry,
@@ -236,7 +268,7 @@ export class Pipeline {
     // 7. Cache — append final assistant turn
     this.cache.append(currentTurn);
 
-    // 8. Remember — persist
+    // 8. Remember — persist all turns (not just first and last)
     await this.persist(userTurn, currentTurn);
 
     return currentTurn;
@@ -250,6 +282,11 @@ export class Pipeline {
   /** Current session ID. */
   sessionId(): string {
     return this._sessionId;
+  }
+
+  /** Primary model ID for display. */
+  modelId(): string {
+    return this.router.get("primary").model_id();
   }
 
   /** Loaded skills for command registration. */

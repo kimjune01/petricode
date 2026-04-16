@@ -66,7 +66,8 @@ export function matchAutoTriggers(
  * Substitute $ARGUMENTS in skill body with the provided arguments string.
  */
 export function substituteArguments(body: string, args: string): string {
-  return body.replace(/\$ARGUMENTS/g, args);
+  // Use split/join instead of replace to prevent $-token evaluation in args
+  return body.split("$ARGUMENTS").join(args);
 }
 
 /**

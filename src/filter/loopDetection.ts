@@ -26,6 +26,11 @@ export class LoopDetector {
     }
     this.history.push(key);
 
+    // Prevent unbounded growth — only need threshold entries to detect loops
+    if (this.history.length > this.threshold * 2) {
+      this.history = this.history.slice(-this.threshold);
+    }
+
     // Count consecutive identical calls from the end
     let count = 0;
     for (let i = this.history.length - 1; i >= 0; i--) {

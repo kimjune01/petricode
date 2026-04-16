@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { Box, Text, useInput, useApp } from "ink";
 import type { CandidateSkill } from "../../core/types.js";
+import { colors } from "../theme.js";
 
 export interface ReviewDecision {
   candidate: CandidateSkill;
@@ -59,7 +60,7 @@ export default function ConsolidateReview({
     const approved = decisions.filter((d) => d.action === "approve").length;
     return (
       <Box flexDirection="column" padding={1}>
-        <Text bold color="green">
+        <Text bold color={colors.prompt}>
           Review complete. {approved} skill{approved !== 1 ? "s" : ""} approved.
         </Text>
       </Box>
@@ -75,7 +76,7 @@ export default function ConsolidateReview({
       </Box>
 
       <Box flexDirection="column" marginBottom={1}>
-        <Text bold color="cyan">
+        <Text bold color={colors.user}>
           {current!.name}
         </Text>
         <Text dimColor>

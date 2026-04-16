@@ -19,13 +19,11 @@ export class SessionStore {
   }
 
   private ensureSession(sessionId: string): void {
-    const existing = this.db.query("SELECT id FROM sessions WHERE id = ?").get(sessionId);
-    if (!existing) {
-      this.db.run(
-        "INSERT INTO sessions (id, created_at, metadata_json) VALUES (?, ?, ?)",
-        [sessionId, Date.now(), "{}"]
-      );
-    }
+    // Atomic upsert — avoids race condition on concurrent appends
+    this.db.run(
+      "INSERT OR IGNORE INTO sessions (id, created_at, metadata_json) VALUES (?, ?, ?)",
+      [sessionId, Date.now(), "{}"]
+    );
   }
 
   private storeBlob(data: string): string {
@@ -42,11 +40,13 @@ export class SessionStore {
     return readFileSync(path, "utf-8");
   }
 
+  private static readonly BLOB_PREFIX = "petricode_blob:";
+
   private externalizeContent(content: Content[]): Content[] {
     return content.map((c) => {
       if (c.type === "tool_result" && c.content.length > BLOB_THRESHOLD) {
         const hash = this.storeBlob(c.content);
-        return { ...c, content: `blob:${hash}` };
+        return { ...c, content: `${SessionStore.BLOB_PREFIX}${hash}` };
       }
       return c;
     });
@@ -54,8 +54,8 @@ export class SessionStore {
 
   private internalizeContent(content: Content[]): Content[] {
     return content.map((c) => {
-      if (c.type === "tool_result" && c.content.startsWith("blob:")) {
-        const hash = c.content.slice(5);
+      if (c.type === "tool_result" && c.content.startsWith(SessionStore.BLOB_PREFIX)) {
+        const hash = c.content.slice(SessionStore.BLOB_PREFIX.length);
         return { ...c, content: this.readBlob(hash) };
       }
       return c;
@@ -90,7 +90,7 @@ export class SessionStore {
         let result = tc.result ?? null;
         if (result && result.length > BLOB_THRESHOLD) {
           const hash = this.storeBlob(result);
-          result = `blob:${hash}`;
+          result = `${SessionStore.BLOB_PREFIX}${hash}`;
         }
         this.db.run(
           "INSERT INTO tool_calls (message_id, tool_use_id, name, args_json, result) VALUES (?, ?, ?, ?, ?)",
@@ -161,7 +161,7 @@ export class SessionStore {
               name: tc.name,
               args: JSON.parse(tc.args_json),
               ...(tc.result != null
-                ? { result: tc.result.startsWith("blob:") ? this.readBlob(tc.result.slice(5)) : tc.result }
+                ? { result: tc.result.startsWith(SessionStore.BLOB_PREFIX) ? this.readBlob(tc.result.slice(SessionStore.BLOB_PREFIX.length)) : tc.result }
                 : {}),
             }))
           : undefined;

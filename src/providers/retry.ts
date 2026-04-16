@@ -33,6 +33,8 @@ function isTransient(err: unknown): boolean {
   if (err instanceof ProviderError && err.statusCode !== undefined) {
     return TRANSIENT_CODES.has(err.statusCode);
   }
+  // Guard against null/primitive errors before property access
+  if (!err || typeof err !== "object") return false;
   // Duck-type: many SDK errors expose .status or .statusCode
   const e = err as Record<string, unknown>;
   const code = (e.status ?? e.statusCode) as number | undefined;

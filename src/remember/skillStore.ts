@@ -31,7 +31,7 @@ export class SkillStore {
   }
 
   private parseSkill(name: string, raw: string): Skill {
-    const fmMatch = raw.match(/^---\n([\s\S]*?)\n---\n\n?([\s\S]*)$/);
+    const fmMatch = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n\r?\n?([\s\S]*)$/);
     if (!fmMatch) {
       return { name, body: raw, frontmatter: {}, trigger: "manual" };
     }

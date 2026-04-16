@@ -40,9 +40,10 @@ export function groupTriples(triples: Triple[]): Triple[][] {
     for (let j = i + 1; j < triples.length; j++) {
       if (assigned.has(j)) continue;
 
-      const wordsJ = triples[j]!.problem.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
-      const overlap = wordsJ.filter((w) => wordsI.has(w)).length;
-      const similarity = overlap / Math.max(wordsI.size, wordsJ.length, 1);
+      const wordsJ = new Set(triples[j]!.problem.toLowerCase().split(/\s+/).filter((w) => w.length > 3));
+      let overlap = 0;
+      for (const w of wordsJ) { if (wordsI.has(w)) overlap++; }
+      const similarity = overlap / Math.max(wordsI.size, wordsJ.size, 1);
 
       if (similarity >= 0.3) {
         group.push(triples[j]!);

@@ -32,6 +32,19 @@ export class TfIdfIndex {
     return this.documents.length - 1;
   }
 
+  /** Remove a document by index. Prevents unbounded growth when clusters are evicted. */
+  remove_document(index: number): void {
+    if (index >= 0 && index < this.documents.length) {
+      this.documents[index] = []; // tombstone — preserves index stability
+      this.dirty = true;
+    }
+  }
+
+  /** Current document count for bookkeeping. */
+  document_count(): number {
+    return this.documents.length;
+  }
+
   private recompute_idf(): void {
     if (!this.dirty) return;
     this.idf_cache.clear();

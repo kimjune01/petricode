@@ -70,6 +70,16 @@ The composition spec (07-composition.md) defines four tower levels. Each level's
 
 This means the tower is recursive by construction, not by convention.
 
+### 6. Protect from bit loss, not embarrassment
+
+Classify operations by recoverability, not by permission level:
+
+- **Locally undoable** (file delete → move to trash, branch delete → reflog): execute without prompting.
+- **Remotely undoable** (git push, publish to staging): execute, log for Consolidate, don't prompt.
+- **Irreversible** (push --force to shared branch, DROP TABLE, rm with no trash): prompt the human.
+
+Social cost — pushing before tests pass, publishing a draft, breaking CI — is not the harness's problem. That's a lesson, not a disaster. Consolidate extracts it as a problem/approach/outcome triple and future sessions get the benefit. Filter only guards against unrecoverable bit loss.
+
 ## MVP (v0.1)
 
 Cut the first milestone to what one person can ship:
@@ -83,7 +93,9 @@ Cut the first milestone to what one person can ship:
 7. Union-find compound cache from day one (hot/cold zones, provenance, incremental graduation). No flat cache — [that's an anti-pattern](https://june.kim/union-find-compaction).
 8. Three-model tiers from day one. Primary (SOTA vendor A) for the agent loop. Reviewer (SOTA vendor B) for cross-review before every human gate. Fast (cheap, either vendor) for high-volume internal ops — compaction, cluster merging, loop detection. Anthropic + OpenAI out of the box.
 
-**Defer:** MCP, recursive inner towers, polished learn-from-history workflows, automatic Consolidate triggers.
+**Defer:** Recursive inner towers, polished learn-from-history workflows, automatic Consolidate triggers.
+
+**Won't do:** MCP. The harness connects to models directly. Tool servers add a layer of indirection that serves protocol vendors, not experiments.
 
 ## Experiment targets
 

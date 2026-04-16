@@ -2,6 +2,8 @@ import React from "react";
 import { Box, Text } from "ink";
 import type { Turn, Content } from "../../core/types.js";
 import ToolGroup from "./ToolGroup.js";
+import Markdown from "./Markdown.js";
+import { colors, spacing } from "../theme.js";
 
 function contentToText(content: Content[]): string {
   return content
@@ -15,8 +17,8 @@ function TurnView({ turn }: { turn: Turn }) {
 
   if (turn.role === "user") {
     return (
-      <Box marginBottom={1}>
-        <Text bold color="cyan">
+      <Box marginBottom={spacing.sm}>
+        <Text bold color={colors.user}>
           {">"}{" "}
         </Text>
         <Text>{text}</Text>
@@ -26,8 +28,13 @@ function TurnView({ turn }: { turn: Turn }) {
 
   if (turn.role === "assistant") {
     return (
-      <Box flexDirection="column" marginBottom={1}>
-        {text ? <Text>{text}</Text> : null}
+      <Box flexDirection="column" marginBottom={spacing.sm}>
+        {text ? (
+          <Box>
+            <Text bold color={colors.assistant}>◆ </Text>
+            <Markdown text={text} />
+          </Box>
+        ) : null}
         {turn.tool_calls?.map((tc, i) => (
           <ToolGroup key={i} toolCall={tc} />
         ))}
@@ -37,13 +44,21 @@ function TurnView({ turn }: { turn: Turn }) {
 
   // system
   return (
-    <Box marginBottom={1}>
+    <Box marginBottom={spacing.sm}>
       <Text dimColor>[system] {text}</Text>
     </Box>
   );
 }
 
 export default function MessageList({ turns }: { turns: Turn[] }) {
+  if (turns.length === 0) {
+    return (
+      <Box flexDirection="column">
+        <Text dimColor>Type a message to get started, or /help for commands.</Text>
+      </Box>
+    );
+  }
+
   return (
     <Box flexDirection="column">
       {turns.map((turn) => (

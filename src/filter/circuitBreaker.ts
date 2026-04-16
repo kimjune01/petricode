@@ -56,6 +56,8 @@ export class CircuitBreaker {
 
     if (circuit.state === "open" && circuit.lastFailure !== null) {
       if (now - circuit.lastFailure >= this.config.cooldownMs) {
+        // Transition to half-open and immediately claim the probe slot.
+        // This prevents thundering herd: only the first caller gets through.
         circuit.state = "half-open";
         this.onStateChange?.(tier, "half-open");
         return true;
@@ -63,8 +65,12 @@ export class CircuitBreaker {
       return false;
     }
 
-    // half-open: allow one probe
-    return circuit.state === "half-open";
+    if (circuit.state === "half-open") {
+      // A probe is already in flight — block concurrent callers
+      return false;
+    }
+
+    return false;
   }
 
   /** Record a successful call. Resets circuit to closed. */

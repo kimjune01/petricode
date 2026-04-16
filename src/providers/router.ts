@@ -2,6 +2,7 @@ import type { Provider } from "./provider.js";
 import type { TierName, TiersConfig } from "../config/models.js";
 import { AnthropicProvider } from "./anthropic.js";
 import { OpenAIProvider } from "./openai.js";
+import { GoogleProvider } from "./google.js";
 
 export type ProviderFactory = (providerName: string, model: string) => Provider;
 
@@ -13,6 +14,12 @@ function defaultFactory(providerName: string, model: string): Provider {
       return new AnthropicProvider(model);
     case "openai":
       return new OpenAIProvider(model);
+    case "google":
+      return new GoogleProvider(model, {
+        vertexai: process.env.GOOGLE_GENAI_USE_VERTEXAI === "true",
+        project: process.env.GOOGLE_CLOUD_PROJECT,
+        location: process.env.GOOGLE_CLOUD_LOCATION,
+      });
     default:
       throw new Error(`Unknown provider '${providerName}'`);
   }

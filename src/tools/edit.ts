@@ -59,9 +59,10 @@ export const EditTool: Tool = {
       );
     }
 
+    // Use function replacer to prevent $-token evaluation in newStr
     const updated = replaceAll
-      ? content.replaceAll(oldStr, newStr)
-      : content.replace(oldStr, newStr);
+      ? content.replaceAll(oldStr, () => newStr)
+      : content.replace(oldStr, () => newStr);
 
     await writeFile(path, updated, "utf-8");
 
