@@ -5,6 +5,15 @@ import type { FilterResult, ToolCall } from "../core/types.js";
 
 const DEFAULT_THRESHOLD = 5;
 
+/** Stable JSON: recursively sort object keys so `{a,b}` and `{b,a}` collide. */
+function canonicalStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalStringify).join(",")}]`;
+  const obj = value as Record<string, unknown>;
+  const keys = Object.keys(obj).sort();
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalStringify(obj[k])}`).join(",")}}`;
+}
+
 export class LoopDetector {
   private history: string[] = [];
   private threshold: number;
@@ -20,7 +29,10 @@ export class LoopDetector {
   check(call: ToolCall): FilterResult {
     let key: string;
     try {
-      key = JSON.stringify({ name: call.name, args: call.args });
+      // Canonical (key-sorted) JSON so reordered args still hash the same.
+      // Models often retry with the same logical args but different JSON
+      // key insertion order — without sorting, the loop slips past.
+      key = `${call.name}:${canonicalStringify(call.args)}`;
     } catch {
       key = `${call.name}:unserializable`;
     }

@@ -82,6 +82,18 @@ describe("Shell", () => {
     setTimeout(() => controller.abort(), 50);
     await expect(exec).rejects.toMatchObject({ name: "AbortError" });
   });
+
+  test("respects opts.cwd instead of process.cwd()", async () => {
+    // Regression: previously shell ran with no `cwd`, so commands executed
+    // wherever the user launched petricode from — easy to leak adjacent
+    // project files when launched from $HOME. On macOS, /var symlinks to
+    // /private/var, so compare via realpath rather than literal string.
+    const { realpathSync } = await import("fs");
+    const result = await ShellTool.execute({ command: "pwd" }, { cwd: TMP });
+    expect(realpathSync(result.trim())).toBe(realpathSync(TMP));
+    // And explicitly: not process.cwd()
+    expect(realpathSync(result.trim())).not.toBe(realpathSync(process.cwd()));
+  });
 });
 
 // ── Grep ────────────────────────────────────────────────────────

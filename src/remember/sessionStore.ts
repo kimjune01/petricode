@@ -52,11 +52,27 @@ export class SessionStore {
     });
   }
 
+  private resolveResult(stored: string): string {
+    if (!stored.startsWith(SessionStore.BLOB_PREFIX)) return stored;
+    const hash = stored.slice(SessionStore.BLOB_PREFIX.length);
+    try {
+      return this.readBlob(hash);
+    } catch {
+      return `[blob missing: ${hash}]`;
+    }
+  }
+
   private internalizeContent(content: Content[]): Content[] {
     return content.map((c) => {
       if (c.type === "tool_result" && c.content.startsWith(SessionStore.BLOB_PREFIX)) {
         const hash = c.content.slice(SessionStore.BLOB_PREFIX.length);
-        return { ...c, content: this.readBlob(hash) };
+        try {
+          return { ...c, content: this.readBlob(hash) };
+        } catch {
+          // One missing blob (manual cleanup, partial restore, fs corruption)
+          // shouldn't poison the entire session resume.
+          return { ...c, content: `[blob missing: ${hash}]` };
+        }
       }
       return c;
     });
@@ -161,7 +177,7 @@ export class SessionStore {
               name: tc.name,
               args: JSON.parse(tc.args_json),
               ...(tc.result != null
-                ? { result: tc.result.startsWith(SessionStore.BLOB_PREFIX) ? this.readBlob(tc.result.slice(SessionStore.BLOB_PREFIX.length)) : tc.result }
+                ? { result: this.resolveResult(tc.result) }
                 : {}),
             }))
           : undefined;

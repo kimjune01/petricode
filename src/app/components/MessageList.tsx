@@ -35,8 +35,8 @@ const TurnView = React.memo(function TurnView({ turn }: { turn: Turn }) {
             <Markdown text={text} />
           </Box>
         ) : null}
-        {turn.tool_calls?.map((tc, i) => (
-          <ToolGroup key={i} toolCall={tc} />
+        {turn.tool_calls?.map((tc) => (
+          <ToolGroup key={tc.id} toolCall={tc} />
         ))}
       </Box>
     );

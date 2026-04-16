@@ -12,11 +12,27 @@ const DEFAULT_CONFIG: CompactionConfig = {
   max_clusters: 20,
 };
 
-/** Extract text content from a turn. */
+/**
+ * Extract text content from a turn, including condensed renderings of
+ * tool_use and tool_result blocks. Without these, an assistant turn
+ * containing only a tool_use produces an empty cluster summary, which
+ * leaves the model blind to what was attempted.
+ */
 export function turn_text(turn: Turn): string {
   return turn.content
-    .filter((c): c is { type: "text"; text: string } => c.type === "text")
-    .map((c) => c.text)
+    .map((c) => {
+      if (c.type === "text") return c.text;
+      if (c.type === "tool_use") {
+        const argsStr = JSON.stringify(c.input ?? {});
+        return `[tool_use ${c.name}(${argsStr.length > 200 ? argsStr.slice(0, 200) + "…" : argsStr})]`;
+      }
+      if (c.type === "tool_result") {
+        const r = c.content;
+        return `[tool_result ${r.length > 200 ? r.slice(0, 200) + "…" : r}]`;
+      }
+      return "";
+    })
+    .filter((s) => s.length > 0)
     .join(" ");
 }
 

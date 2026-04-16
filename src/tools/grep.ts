@@ -1,6 +1,9 @@
 import { spawn } from "child_process";
 import type { Tool } from "./tool.js";
 
+const DEFAULT_TIMEOUT = 30_000;
+const MAX_OUTPUT_BYTES = 1_048_576;
+
 export const GrepTool: Tool = {
   name: "grep",
   description: "Search for a regex pattern in files. Returns matching lines.",
@@ -15,6 +18,10 @@ export const GrepTool: Tool = {
         type: "string",
         description: "File glob filter (e.g. '*.ts')",
       },
+      timeout: {
+        type: "number",
+        description: "Timeout in milliseconds (default 30000)",
+      },
     },
     required: ["pattern"],
   },
@@ -22,8 +29,10 @@ export const GrepTool: Tool = {
   async execute(args, opts) {
     const pattern = args.pattern as string;
     if (!pattern) throw new Error("grep: missing required argument 'pattern'");
+    const projectRoot = opts?.cwd ?? process.cwd();
     const searchPath = (args.path as string) ?? ".";
     const glob = args.glob as string | undefined;
+    const timeout = (args.timeout as number) ?? DEFAULT_TIMEOUT;
     const signal = opts?.signal;
 
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
@@ -37,34 +46,58 @@ export const GrepTool: Tool = {
         ...(glob ? ["--include", glob] : []),
         "--",
         pattern,
-        searchPath
+        searchPath,
       ];
       const proc = spawn("grep", grepArgs, {
         stdio: ["ignore", "pipe", "pipe"],
+        cwd: projectRoot,
       });
 
       let output = "";
-      proc.stdout.on("data", (d: Buffer) => (output += d.toString()));
-      proc.stderr.on("data", (d: Buffer) => (output += d.toString()));
+      let outputBytes = 0;
+      let truncated = false;
+      const collect = (d: Buffer) => {
+        if (truncated) return;
+        outputBytes += d.length;
+        if (outputBytes > MAX_OUTPUT_BYTES) {
+          truncated = true;
+          proc.kill("SIGTERM");
+          return;
+        }
+        output += d.toString();
+      };
+      proc.stdout.on("data", collect);
+      proc.stderr.on("data", collect);
 
+      const cleanup = () => {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
+      };
+      const timer = setTimeout(() => {
+        proc.kill("SIGKILL");
+        cleanup();
+        reject(new Error(`grep: command timed out after ${timeout}ms`));
+      }, timeout);
       const onAbort = () => {
         proc.kill("SIGTERM");
+        cleanup();
         reject(new DOMException("Aborted", "AbortError"));
       };
       signal?.addEventListener("abort", onAbort, { once: true });
 
       proc.on("close", (code) => {
-        signal?.removeEventListener("abort", onAbort);
+        cleanup();
+        const suffix = truncated ? "\n[output truncated — exceeded 1MB]" : "";
         // grep exits 1 when no matches found — not an error
-        if (code !== null && code > 1) {
-          resolve(`[exit ${code}]\n${output.trimEnd()}`);
+        if (code !== null && code > 1 && !truncated) {
+          resolve(`[exit ${code}]\n${output.trimEnd()}${suffix}`);
         } else {
-          resolve(output.trimEnd() || "(no matches)");
+          resolve((output.trimEnd() || "(no matches)") + suffix);
         }
       });
 
       proc.on("error", (err) => {
-        signal?.removeEventListener("abort", onAbort);
+        cleanup();
         reject(new Error(`grep: ${err.message}`));
       });
     });

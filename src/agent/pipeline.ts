@@ -51,6 +51,12 @@ export class Pipeline {
   private maxToolRounds: number = 10;
   private _sessionId!: string;
   private skills: Skill[] = [];
+  // Serializes turn() invocations. The TUI layer can clear its abortRef
+  // synchronously when the user hits Ctrl+C, but the prior pipeline call
+  // may still be inside its `finally` draining persistence. Without this,
+  // a quick second submit would interleave cache writes with the
+  // outgoing tool_result chain.
+  private inFlight: Promise<unknown> | null = null;
 
   async init(options: PipelineOptions): Promise<void> {
     this.projectDir = options.projectDir;
@@ -100,6 +106,20 @@ export class Pipeline {
    * 9. Return the final assistant turn
    */
   async turn(input: string, options?: { signal?: AbortSignal }): Promise<Turn> {
+    // Wait for any prior turn to fully drain (including its finally-block
+    // persistence) before starting. Catch swallows the prior turn's error;
+    // the prior caller already received it.
+    const prior = this.inFlight;
+    if (prior) await prior.catch(() => {});
+
+    const promise = this._runTurn(input, options);
+    this.inFlight = promise.finally(() => {
+      if (this.inFlight === promise) this.inFlight = null;
+    });
+    return promise;
+  }
+
+  private async _runTurn(input: string, options?: { signal?: AbortSignal }): Promise<Turn> {
     const signal = options?.signal;
     // Track all turns produced this invocation so persist covers
     // intermediate tool rounds and abort-interrupted state.

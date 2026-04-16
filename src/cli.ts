@@ -21,14 +21,31 @@ function writeCrash(err: unknown): void {
   }
 }
 
+// Bracketed paste mode is enabled by Composer's mount effect. On a normal
+// React unmount the cleanup effect disables it, but uncaught exceptions
+// and signals skip cleanup — leaving the user's terminal echoing literal
+// ESC[200~/ESC[201~ around any paste in subsequent shell sessions.
+function disableBracketedPaste(): void {
+  try {
+    if (process.stdout.isTTY) process.stdout.write("\x1b[?2004l");
+  } catch {
+    // Stdout may already be closed.
+  }
+}
+process.on("exit", disableBracketedPaste);
+process.on("SIGINT", () => { disableBracketedPaste(); process.exit(130); });
+process.on("SIGTERM", () => { disableBracketedPaste(); process.exit(143); });
+
 process.on("uncaughtException", (err) => {
   writeCrash(err);
+  disableBracketedPaste();
   console.error(`\nCrash logged to ${crashLog}`);
   process.exit(1);
 });
 
 process.on("unhandledRejection", (reason) => {
   writeCrash(reason);
+  disableBracketedPaste();
   console.error(`\nCrash logged to ${crashLog}`);
   process.exit(1);
 });

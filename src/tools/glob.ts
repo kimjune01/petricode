@@ -17,11 +17,11 @@ export const GlobTool: Tool = {
     required: ["pattern"],
   },
 
-  async execute(args) {
+  async execute(args, opts) {
     const pattern = args.pattern as string;
     if (!pattern) throw new Error("glob: missing required argument 'pattern'");
-    const cwd = (args.path as string) ?? ".";
-    const projectRoot = process.cwd();
+    const projectRoot = opts?.cwd ?? process.cwd();
+    const cwd = (args.path as string) ?? projectRoot;
 
     // Load .gitignore from project root, not from the search subdirectory.
     const isIgnored = await loadIgnorePredicate(projectRoot);

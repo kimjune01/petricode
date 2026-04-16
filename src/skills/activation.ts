@@ -79,17 +79,29 @@ function matchesGlob(input: string, glob: string): boolean {
   // Extract path-like tokens from input
   const tokens = input.split(/\s+/).filter((t) => t.includes("/") || t.includes("."));
 
-  // Convert glob to regex
-  // If glob has no path separator, match against basename (end of token)
+  // Convert glob to regex.
+  // Step 1: escape ALL regex metacharacters so a skill author writing
+  //   paths: "src/(foo|bar)/**.ts"
+  // doesn't end up with live alternation (or worse, an invalid regex
+  // that throws and breaks auto-trigger for ALL skills).
+  // Step 2: re-introduce wildcard meaning for * and ** (they were escaped
+  // to \* in step 1, so we look for the escaped form).
   const hasSlash = glob.includes("/");
-  const regexStr = glob
-    .replace(/\./g, "\\.")
-    .replace(/\*\*/g, "{{DOUBLESTAR}}")
-    .replace(/\*/g, "[^/]*")
+  const escaped = glob.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  const regexStr = escaped
+    .replace(/\\\*\\\*/g, "{{DOUBLESTAR}}")
+    .replace(/\\\*/g, "[^/]*")
     .replace(/\{\{DOUBLESTAR\}\}/g, ".*");
   // Basename globs like *.ts match any path ending with that pattern
   const pattern = hasSlash ? `^${regexStr}$` : `(?:^|/)${regexStr}$`;
-  const regex = new RegExp(pattern);
+  let regex: RegExp;
+  try {
+    regex = new RegExp(pattern);
+  } catch {
+    // Should be impossible after escaping, but a single bad pattern
+    // mustn't take out auto-trigger for the whole skill registry.
+    return false;
+  }
 
   return tokens.some((token) => regex.test(token));
 }

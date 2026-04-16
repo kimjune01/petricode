@@ -22,12 +22,14 @@ export const ShellTool: Tool = {
     if (!command) throw new Error("shell: missing required argument 'command'");
     const timeout = (args.timeout as number) ?? DEFAULT_TIMEOUT;
     const signal = opts?.signal;
+    const cwd = opts?.cwd ?? process.cwd();
 
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
 
     return new Promise<string>((resolve, reject) => {
       const proc = spawn("sh", ["-c", command], {
         stdio: ["ignore", "pipe", "pipe"],
+        cwd,
       });
 
       let stdout = "";
@@ -36,21 +38,28 @@ export const ShellTool: Tool = {
       proc.stdout.on("data", (d: Buffer) => (stdout += d.toString()));
       proc.stderr.on("data", (d: Buffer) => (stderr += d.toString()));
 
+      // Single cleanup so timeout / abort / close / error all fully detach.
+      // Without this the abort listener leaks past timeout fires.
+      const cleanup = () => {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
+      };
+
       const timer = setTimeout(() => {
         proc.kill("SIGKILL");
+        cleanup();
         reject(new Error(`shell: command timed out after ${timeout}ms`));
       }, timeout);
 
       const onAbort = () => {
         proc.kill("SIGTERM");
-        clearTimeout(timer);
+        cleanup();
         reject(new DOMException("Aborted", "AbortError"));
       };
       signal?.addEventListener("abort", onAbort, { once: true });
 
       proc.on("close", (code) => {
-        clearTimeout(timer);
-        signal?.removeEventListener("abort", onAbort);
+        cleanup();
         const output = (stdout + stderr).trimEnd();
         if (code !== 0) {
           resolve(`[exit ${code}]\n${output}`);
@@ -60,8 +69,7 @@ export const ShellTool: Tool = {
       });
 
       proc.on("error", (err) => {
-        clearTimeout(timer);
-        signal?.removeEventListener("abort", onAbort);
+        cleanup();
         reject(new Error(`shell: ${err.message}`));
       });
     });

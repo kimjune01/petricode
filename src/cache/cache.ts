@@ -41,6 +41,25 @@ export class UnionFindCache implements CacheSlot {
     while (this.hot.length > this.config.hot_capacity) {
       const oldest = this.hot.shift()!;
       graduate(oldest, this.forest, this.index, this.compaction_config);
+
+      // If the graduated turn declared tool_use blocks, the matching
+      // tool_result lives in the very next hot turn (Pipeline always
+      // appends the assistant + tool_result pair atomically). Pull
+      // that one into cold too — otherwise Anthropic rejects the next
+      // call with "tool_result without preceding tool_use".
+      const toolUseIds = oldest.content
+        .filter((c) => c.type === "tool_use")
+        .map((c) => (c as { type: "tool_use"; id: string }).id);
+      while (toolUseIds.length > 0 && this.hot[0]) {
+        const next = this.hot[0];
+        const matchedIds = next.content
+          .filter((c) => c.type === "tool_result")
+          .map((c) => (c as { type: "tool_result"; tool_use_id: string }).tool_use_id);
+        const overlap = matchedIds.some((id) => toolUseIds.includes(id));
+        if (!overlap) break;
+        this.hot.shift();
+        graduate(next, this.forest, this.index, this.compaction_config);
+      }
     }
   }
 

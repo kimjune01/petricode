@@ -143,6 +143,22 @@ describe("Loop detection", () => {
     detector.reset();
     expect(detector.check(call).pass).toBe(true);
   });
+
+  test("treats arg key reordering as the same call (canonical JSON)", () => {
+    // Regression: JSON.stringify is insertion-order sensitive, so the same
+    // logical call could slip past detection if the model rebuilt args
+    // with different key order on retry.
+    const detector = new LoopDetector(3);
+    const calls: ToolCall[] = [
+      { id: "tc1", name: "edit", args: { path: "x", new_string: "a", old_string: "b" } },
+      { id: "tc2", name: "edit", args: { new_string: "a", path: "x", old_string: "b" } },
+      { id: "tc3", name: "edit", args: { old_string: "b", path: "x", new_string: "a" } },
+    ];
+    detector.check(calls[0]!);
+    detector.check(calls[1]!);
+    const result = detector.check(calls[2]!);
+    expect(result.pass).toBe(false);
+  });
 });
 
 // ── Filter chain ───────────────────────────────────────────────

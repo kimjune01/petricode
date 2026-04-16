@@ -181,6 +181,64 @@ describe("RetryProvider", () => {
     expect(retried.token_limit()).toBe(200_000);
     expect(retried.supports_tools()).toBe(true);
   });
+
+  test("yields chunks as they arrive (does not buffer the whole stream)", async () => {
+    // Regression: previously the wrapper drained the inner stream into an
+    // array before yielding, defeating streaming UX in production. Verify
+    // that consumers can observe an early chunk before later ones produce.
+    let secondChunkProduced = false;
+    const inner: Provider = {
+      async *generate() {
+        yield { type: "content_delta" as const, text: "first" };
+        // Simulate slow second chunk; if RetryProvider is buffering, the
+        // consumer wouldn't see "first" until after this resolves.
+        await new Promise((r) => setTimeout(r, 30));
+        secondChunkProduced = true;
+        yield { type: "content_delta" as const, text: "second" };
+        yield { type: "done" as const };
+      },
+      model_id: () => "test",
+      token_limit: () => 200_000,
+      supports_tools: () => true,
+    };
+
+    const retried = new RetryProvider(inner);
+    const iter = retried.generate([], {});
+    const first = await iter.next();
+    expect(first.value).toEqual({ type: "content_delta", text: "first" });
+    // Crucially, observed BEFORE the second chunk has even been produced.
+    expect(secondChunkProduced).toBe(false);
+    // Drain the rest so we don't leak the generator.
+    for await (const _c of iter) { /* consume */ }
+  });
+
+  test("does not retry once a chunk has been yielded", async () => {
+    // Regression: retry must bail if the consumer has already observed a
+    // chunk — otherwise the assembleTurn downstream would see duplicate
+    // partial output.
+    let attempt = 0;
+    const inner: Provider = {
+      async *generate() {
+        attempt++;
+        yield { type: "content_delta" as const, text: "partial" };
+        throw new ProviderError("Mid-stream failure", 500);
+      },
+      model_id: () => "test",
+      token_limit: () => 200_000,
+      supports_tools: () => true,
+    };
+    const retried = new RetryProvider(inner, { maxRetries: 3, baseDelayMs: 1, maxDelayMs: 10 });
+    const seen: StreamChunk[] = [];
+    let threw = false;
+    try {
+      for await (const c of retried.generate([], {})) seen.push(c);
+    } catch {
+      threw = true;
+    }
+    expect(threw).toBe(true);
+    expect(attempt).toBe(1); // No retry after partial yield
+    expect(seen).toEqual([{ type: "content_delta", text: "partial" }]);
+  });
 });
 
 // ── 2. Circuit breaker ──────────────────────────────────────────

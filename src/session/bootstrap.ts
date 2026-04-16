@@ -41,8 +41,14 @@ function loadTiersConfig(projectDir: string): TiersConfig {
         if (raw.tiers) {
           return validateTiers(raw);
         }
-      } catch {
-        // Fall through to defaults
+        // Present but missing 'tiers' is almost certainly a misconfig —
+        // surface it so the user doesn't silently get DEFAULT_TIERS.
+        console.warn(`petricode: ${path} present but missing 'tiers' key — using defaults.`);
+      } catch (err) {
+        // A present-but-invalid file is a bug; silently falling through
+        // means the user wonders why their model selection is ignored.
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`petricode: failed to parse ${path}: ${msg} — using defaults.`);
       }
     }
   }

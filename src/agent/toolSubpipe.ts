@@ -108,7 +108,7 @@ export async function runToolSubpipe(
 
     // Execute the tool
     try {
-      const rawResult = await registry.execute(tc.name, tc.args, { signal });
+      const rawResult = await registry.execute(tc.name, tc.args, { signal, cwd: projectDir });
       const masked = maskToolOutput(rawResult);
       tc.result = masked.content;
       results.push({

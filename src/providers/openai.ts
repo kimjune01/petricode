@@ -132,6 +132,11 @@ export class OpenAIProvider implements Provider {
       config.signal ? { signal: config.signal } : undefined,
     );
 
+    // OpenAI may split a single tool call's id, name, and arguments across
+    // multiple chunks. Buffer per index so we only emit `tool_use_start`
+    // once BOTH id and name are known, and queue arg fragments until then.
+    const pending = new Map<number, { id?: string; name?: string; argsBuffer: string; started: boolean }>();
+
     // stream is an async iterable of ChatCompletionChunk
     for await (const chunk of stream as AsyncIterable<OpenAI.Chat.ChatCompletionChunk>) {
       if (config.signal?.aborted) throw new DOMException("Aborted", "AbortError");
@@ -146,11 +151,31 @@ export class OpenAIProvider implements Provider {
 
       if (delta.tool_calls) {
         for (const tc of delta.tool_calls) {
-          if (tc.id && tc.function?.name) {
-            yield { type: "tool_use_start", id: tc.id, name: tc.function.name, index: tc.index };
+          const idx = tc.index;
+          let entry = pending.get(idx);
+          if (!entry) {
+            entry = { argsBuffer: "", started: false };
+            pending.set(idx, entry);
           }
+          if (tc.id) entry.id = tc.id;
+          if (tc.function?.name) entry.name = tc.function.name;
+
+          if (!entry.started && entry.id && entry.name) {
+            yield { type: "tool_use_start", id: entry.id, name: entry.name, index: idx };
+            entry.started = true;
+            // Flush any args that arrived before id/name completed
+            if (entry.argsBuffer) {
+              yield { type: "tool_use_delta", input_json: entry.argsBuffer, index: idx };
+              entry.argsBuffer = "";
+            }
+          }
+
           if (tc.function?.arguments) {
-            yield { type: "tool_use_delta", input_json: tc.function.arguments, index: tc.index };
+            if (entry.started) {
+              yield { type: "tool_use_delta", input_json: tc.function.arguments, index: idx };
+            } else {
+              entry.argsBuffer += tc.function.arguments;
+            }
           }
         }
       }

@@ -215,4 +215,42 @@ describe("UnionFindCache", () => {
     expect(count).toBeGreaterThan(0);
     expect(count).toBeLessThan(20); // Should be ~3, definitely under 20
   });
+
+  test("graduating an assistant tool_use turn co-graduates the matching tool_result", () => {
+    // Regression: previously the assistant turn (with tool_use block X) could
+    // graduate to cold while the user turn carrying tool_result(X) stayed
+    // hot — leaving an orphan tool_result that any provider call rejects.
+    const cache = new UnionFindCache({ hot_capacity: 3 });
+
+    cache.append({
+      id: "asst-1",
+      role: "assistant",
+      content: [{ type: "tool_use", id: "tool-X", name: "shell", input: { command: "ls" } }],
+      timestamp: 1,
+    });
+    cache.append({
+      id: "user-1",
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: "tool-X", content: "a\nb\nc" }],
+      timestamp: 2,
+    });
+    // Push enough new turns to overflow hot_capacity and force graduation
+    for (let i = 0; i < 5; i++) {
+      cache.append(make_turn(`pad-${i}`, `padding ${i}`));
+    }
+
+    const all = cache.read();
+    const orphanedToolResult = all.some((t) =>
+      t.content.some(
+        (c) => c.type === "tool_result" && c.tool_use_id === "tool-X",
+      ),
+    );
+    const orphanedToolUse = all.some((t) =>
+      t.content.some(
+        (c) => c.type === "tool_use" && c.id === "tool-X",
+      ),
+    );
+    // Either both stayed in hot, or both graduated together. Never a split.
+    expect(orphanedToolResult).toBe(orphanedToolUse);
+  });
 });

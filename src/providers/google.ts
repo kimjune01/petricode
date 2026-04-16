@@ -154,6 +154,10 @@ export class GoogleProvider implements Provider {
         ...generateConfig,
         ...(systemInstruction ? { systemInstruction } : {}),
         ...(tools ? { tools } : {}),
+        // Cancels the in-flight HTTP request when the user hits Ctrl+C
+        // before any chunk arrives. The for-await poll below covers
+        // the during-stream case.
+        ...(config.signal ? { abortSignal: config.signal } : {}),
       },
     });
 

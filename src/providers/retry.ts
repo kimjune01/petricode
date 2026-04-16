@@ -80,19 +80,21 @@ export class RetryProvider implements Provider {
     let lastErr: unknown;
 
     for (let attempt = 0; attempt <= this.config.maxRetries; attempt++) {
+      let yieldedAny = false;
       try {
         const stream = this.inner.generate(prompt, config);
-        // Buffer all chunks so a mid-stream failure doesn't yield partial data
-        const chunks: StreamChunk[] = [];
         for await (const chunk of stream) {
-          chunks.push(chunk);
-        }
-        for (const chunk of chunks) {
+          yieldedAny = true;
           yield chunk;
         }
         return;
       } catch (err) {
         lastErr = err;
+
+        // Once we've yielded ANY chunk, retrying would emit a duplicate
+        // partial response. The consumer (assembleTurn) cannot recover
+        // from a mid-stream failure, so propagate.
+        if (yieldedAny) throw err;
 
         if (attempt === this.config.maxRetries || !isTransient(err)) {
           throw err;
