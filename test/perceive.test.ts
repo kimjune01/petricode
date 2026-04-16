@@ -47,6 +47,23 @@ describe("fileRefs", () => {
     const result = await expandFileRefs("plain text no refs", tmp);
     expect(result).toBe("plain text no refs");
   });
+
+  test("relative @ref resolves against projectDir, not process.cwd()", async () => {
+    // Create a "decoy" file in another tmp dir, then chdir into it.
+    // expandFileRefs("@x.txt", projectDir) must not splice the decoy contents
+    // even though readFile() would otherwise resolve "x.txt" against the cwd.
+    const otherDir = mkdtempSync(join(tmpdir(), "petricode-cwd-"));
+    writeFileSync(join(otherDir, "x.txt"), "DECOY-CONTENTS");
+    const original_cwd = process.cwd();
+    try {
+      process.chdir(otherDir);
+      const result = await expandFileRefs("look at @x.txt", tmp);
+      expect(result).not.toContain("DECOY-CONTENTS");
+    } finally {
+      process.chdir(original_cwd);
+      rmSync(otherDir, { recursive: true, force: true });
+    }
+  });
 });
 
 // ── contextDiscovery ────────────────────────────────────────────

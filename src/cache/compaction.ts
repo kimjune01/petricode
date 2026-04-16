@@ -47,7 +47,7 @@ export function graduate(
   config: CompactionConfig = DEFAULT_CONFIG,
 ): void {
   const text = turn_text(turn);
-  index.add_document(text);
+  const docIdx = index.add_document(text);
   const vector = index.vectorize(text);
 
   const nearest = forest.nearest_root(vector);
@@ -55,21 +55,28 @@ export function graduate(
   if (nearest && nearest[1] >= config.merge_threshold) {
     // Merge into existing cluster
     const temp_id = `grad_${turn.id}`;
-    forest.add(temp_id, vector, [turn]);
+    forest.add(temp_id, vector, [turn], [docIdx]);
     forest.union(nearest[0], temp_id);
   } else {
     // New singleton cluster
-    forest.add(turn.id, vector, [turn]);
+    forest.add(turn.id, vector, [turn], [docIdx]);
   }
 
   // Enforce hard cap
-  enforce_cap(forest, config.max_clusters);
+  enforce_cap(forest, config.max_clusters, index);
 }
 
-/** Evict least-recently-used clusters until under the cap. */
+/**
+ * Evict least-recently-used clusters until under the cap.
+ *
+ * If `index` is provided, also tombstones the evicted documents so
+ * TfIdfIndex doesn't grow unbounded across long sessions and IDF
+ * weights stay aligned with the live corpus.
+ */
 export function enforce_cap(
   forest: UnionFindForest,
   max_clusters: number,
+  index?: TfIdfIndex,
 ): void {
   while (forest.root_count() > max_clusters) {
     const roots = forest.roots();
@@ -87,6 +94,9 @@ export function enforce_cap(
       }
     }
 
-    forest.remove(lru_root.id);
+    const evicted = forest.remove(lru_root.id);
+    if (index) {
+      for (const di of evicted) index.remove_document(di);
+    }
   }
 }

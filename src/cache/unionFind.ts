@@ -9,12 +9,19 @@ export interface ClusterNode {
   vector: SparseVector;
   turns: Turn[];           // original turns in this node
   last_accessed: number;   // timestamp of last read access (LRU eviction)
+  /**
+   * TF-IDF document indices for the turns merged into this node. Carried
+   * here so eviction can free them from the index — without this the
+   * TfIdfIndex.documents array grows unboundedly and IDF skews because
+   * evicted docs continue to inflate the corpus count.
+   */
+  doc_indices: number[];
 }
 
 export class UnionFindForest {
   private nodes = new Map<string, ClusterNode>();
 
-  add(id: string, vector: SparseVector, turns: Turn[]): void {
+  add(id: string, vector: SparseVector, turns: Turn[], doc_indices: number[] = []): void {
     this.nodes.set(id, {
       id,
       parent: id,
@@ -22,6 +29,7 @@ export class UnionFindForest {
       vector,
       turns,
       last_accessed: Date.now(),
+      doc_indices,
     });
   }
 
@@ -64,8 +72,10 @@ export class UnionFindForest {
     const w_b = loser.turns.length;
     winner.vector = weighted_average(winner.vector, w_a, loser.vector, w_b);
     winner.turns = [...winner.turns, ...loser.turns];
+    winner.doc_indices = [...winner.doc_indices, ...loser.doc_indices];
     winner.last_accessed = Math.max(winner.last_accessed, loser.last_accessed);
     loser.turns = []; // C4: prevent stale copies from leaking into find_turn
+    loser.doc_indices = [];
 
     return winner.id;
   }
@@ -141,19 +151,26 @@ export class UnionFindForest {
     return [];
   }
 
-  /** Remove a node and all its children from the forest. */
-  remove(id: string): void {
+  /**
+   * Remove a node and all its children from the forest. Returns the
+   * collected doc_indices so the caller can evict them from any
+   * associated TF-IDF index.
+   */
+  remove(id: string): number[] {
     const root = this.find(id);
     // Collect all nodes belonging to this root
     const to_remove: string[] = [];
+    const doc_indices: number[] = [];
     for (const [nid, node] of this.nodes) {
       if (this.find(nid) === root) {
         to_remove.push(nid);
+        for (const di of node.doc_indices) doc_indices.push(di);
       }
     }
     for (const nid of to_remove) {
       this.nodes.delete(nid);
     }
+    return doc_indices;
   }
 
   /** Find which cluster a turn belongs to and return it. */

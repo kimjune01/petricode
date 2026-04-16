@@ -1,4 +1,5 @@
 import { readFile } from "fs/promises";
+import { isAbsolute, resolve } from "path";
 import { validateFilePath } from "../filter/pathValidation.js";
 
 const FILE_REF_PATTERN = /@([^\s]+)/g;
@@ -22,8 +23,13 @@ export async function expandFileRefs(input: string, projectDir: string): Promise
     const rawPath = match[1]!;
     const filePath = rawPath.replace(/[.,;:!?]+$/, "");
     if (validateFilePath(filePath, projectDir)) continue;
+    // validateFilePath confirms projectDir-relative resolution stays inside
+    // projectDir, but readFile resolves relative paths against process.cwd().
+    // If petricode was launched from outside projectDir, that mismatch would
+    // splice the wrong file's contents under a misleading <file path="..."> tag.
+    const absPath = isAbsolute(filePath) ? filePath : resolve(projectDir, filePath);
     try {
-      const contents = await readFile(filePath, "utf-8");
+      const contents = await readFile(absPath, "utf-8");
       replacements.set(fullMatch, `\n<file path="${filePath}">\n${contents}\n</file>`);
     } catch {
       // Do nothing, leave as-is

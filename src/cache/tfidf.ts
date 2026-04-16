@@ -45,6 +45,15 @@ export class TfIdfIndex {
     return this.documents.length;
   }
 
+  /** Count of documents that haven't been tombstoned. */
+  live_document_count(): number {
+    let n = 0;
+    for (const doc of this.documents) {
+      if (doc.length > 0) n++;
+    }
+    return n;
+  }
+
   private recompute_idf(): void {
     if (!this.dirty) return;
     this.idf_cache.clear();

@@ -83,7 +83,7 @@ export class UnionFindCache implements CacheSlot {
     }
 
     // Enforce cluster cap via LRU eviction
-    enforce_cap(this.forest, this.config.max_clusters);
+    enforce_cap(this.forest, this.config.max_clusters, this.index);
   }
 
   token_count(): number {

@@ -1,5 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { UnionFindCache } from "../src/cache/cache.js";
+import { TfIdfIndex } from "../src/cache/tfidf.js";
 import type { Turn } from "../src/core/types.js";
 
 // ── Helpers ─────────────────────────────────────────────────────
@@ -214,6 +215,41 @@ describe("UnionFindCache", () => {
 
     expect(count).toBeGreaterThan(0);
     expect(count).toBeLessThan(20); // Should be ~3, definitely under 20
+  });
+
+  test("LRU eviction also tombstones evicted clusters' TF-IDF documents", () => {
+    // Regression: previously enforce_cap removed clusters from the forest
+    // but never called index.remove_document, so TfIdfIndex.documents grew
+    // unboundedly across long sessions and IDF skewed.
+    const topics = [
+      "alpha bravo charlie delta echo foxtrot golf hotel",
+      "igloo jacket kite lemon mango noodle orange pepper",
+      "quartz ruby sapphire topaz uranium vanadium wolfram xenon",
+      "asteroid blazer comet dwarf eclipse flare galaxy halo",
+      "insulin jellyfish kelp lobster manatee narwhal octopus plankton",
+      "abacus blueprint caliper drafting easel fixture grout hinge",
+      "papaya quince raspberry strawberry tangerine ugli vanilla watermelon",
+      "yogurt zucchini artichoke broccoli cauliflower dill eggplant fennel",
+    ];
+    const cache = new UnionFindCache({
+      hot_capacity: 2,
+      max_clusters: 3,
+      merge_threshold: 0.99, // disable merging
+    });
+
+    for (let i = 0; i < topics.length; i++) {
+      const t = make_turn(`tfidf_${i}`, topics[i]!);
+      t.timestamp = 1000 + i;
+      cache.append(t);
+    }
+
+    const index = (cache as unknown as { index: TfIdfIndex }).index;
+    // After eviction, only live clusters' member docs should remain.
+    // Each topic graduates as a singleton, so live count == cluster count.
+    const result = cache.read();
+    const live_clusters = result.filter((t) => t.id.startsWith("cluster_")).length;
+    expect(live_clusters).toBeLessThanOrEqual(3);
+    expect(index.live_document_count()).toBe(live_clusters);
   });
 
   test("graduating an assistant tool_use turn co-graduates the matching tool_result", () => {
