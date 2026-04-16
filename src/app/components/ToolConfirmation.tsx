@@ -1,10 +1,8 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useEffect, useRef } from "react";
 import { Box, Text, useInput } from "ink";
 import type { ToolCall } from "../../core/types.js";
 import type { ConfirmMode } from "../../config/models.js";
 import { colors, spacing } from "../theme.js";
-
-const TIMEOUT_SECONDS = 60;
 
 const SHELL_PATTERNS = /shell|bash|command|run|exec|terminal|eval|system|script|process/i;
 const FILE_PATTERNS = /file|edit|write|create|read|patch|replace|delete|remove/i;
@@ -59,47 +57,31 @@ interface ToolConfirmationProps {
 export default function ToolConfirmation({
   toolCall,
   onConfirm,
-  mode = "cautious",
+  mode: _mode = "cautious",
 }: ToolConfirmationProps) {
-  const [remaining, setRemaining] = useState(TIMEOUT_SECONDS);
   const resolvedRef = useRef(false);
 
-  useInput((ch) => {
+  // Reset the resolved flag when a new tool confirmation appears so the next
+  // y/n/enter actually fires. Without this, a rapid second confirmation would
+  // be ignored because resolvedRef is still true from the prior one.
+  useEffect(() => {
+    resolvedRef.current = false;
+  }, [toolCall.id]);
+
+  useInput((ch, key) => {
     if (resolvedRef.current) return;
     if (ch === "y" || ch === "Y") {
       resolvedRef.current = true;
       onConfirm(true);
-    } else if (ch === "n" || ch === "N") {
+    } else if (ch === "n" || ch === "N" || key.return) {
+      // Enter defaults to deny — safer than auto-allow if a user hits it
+      // by reflex, and matches the spec ("Enter without letter defaults
+      // to safe action").
       resolvedRef.current = true;
       onConfirm(false);
     }
   });
 
-  // Reset timer and resolved flag when a new tool confirmation appears
-  useEffect(() => {
-    resolvedRef.current = false;
-    setRemaining(TIMEOUT_SECONDS);
-    const timer = setInterval(() => {
-      setRemaining((r) => {
-        if (r <= 1) {
-          clearInterval(timer);
-          return 0;
-        }
-        return r - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [toolCall.id]);
-
-  // Auto-resolve on timeout — guarded by resolvedRef to prevent double-fire
-  useEffect(() => {
-    if (remaining === 0 && !resolvedRef.current) {
-      resolvedRef.current = true;
-      onConfirm(mode === "yolo");
-    }
-  }, [remaining, mode, onConfirm]);
-
-  const autoAction = mode === "yolo" ? "auto-allow" : "auto-deny";
   const kind = classifyTool(toolCall.name);
   const preview = toolPreview(kind, toolCall.args);
   const borderColor = kind === "shell" ? colors.error : colors.tool;
@@ -146,7 +128,7 @@ export default function ToolConfirmation({
 
       <Text>
         Allow? <Text bold color={colors.prompt}>✓ [y] allow</Text> / <Text bold color={colors.tool}>✗ [n] deny</Text>
-        <Text color={colors.muted}>  {remaining}s to {autoAction}</Text>
+        <Text color={colors.muted}>  (enter = deny)</Text>
       </Text>
     </Box>
   );

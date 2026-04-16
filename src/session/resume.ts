@@ -29,7 +29,7 @@ export async function resumeSession(
   for (const event of events) {
     const turn: Turn = {
       id: crypto.randomUUID(),
-      role: "user", // events don't store role, infer from position
+      role: event.role ?? "user",
       content: event.content,
       timestamp: event.timestamp,
     };

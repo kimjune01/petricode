@@ -113,10 +113,9 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
       }
     }
 
-    // Ctrl+D — exit (standard EOF)
-    if (key.ctrl && _ch === "d" && state.phase === "composing") {
-      exit();
-    }
+    // Ctrl+D EOF is owned by Composer (only triggers when its input is empty)
+    // so a user mid-typing isn't ejected by the parallel handler.
+
     // Quick quit when idle
     if (_ch === "q" && state.phase === "idle") {
       exit();
@@ -272,7 +271,7 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
         />
       )}
 
-      <Composer onSubmit={handleSubmit} disabled={!isComposing} clearSignal={clearCount} phase={state.phase} />
+      <Composer onSubmit={handleSubmit} disabled={!isComposing} clearSignal={clearCount} phase={state.phase} onEofExit={exit} />
       <StatusBar
         model={state.model}
         tokenCount={state.tokenCount}

@@ -61,6 +61,31 @@ describe("assembleTurn", () => {
     expect(turn.tool_calls![0]!.name).toBe("read_file");
     expect(turn.tool_calls![0]!.args).toEqual({ path: "/foo.ts" });
   });
+
+  test("preserves text/tool/text/tool order across multi-tool streams", async () => {
+    // Model intent: text0, tool1, text1, tool2 — common when model narrates
+    // between calls ("First I'll read the file… now let me edit it…").
+    async function* stream(): AsyncGenerator<StreamChunk> {
+      yield { type: "content_delta", text: "first " };
+      yield { type: "tool_use_start", id: "t1", name: "read_file", index: 0 };
+      yield { type: "tool_use_delta", input_json: '{"path":"/a"}', index: 0 };
+      yield { type: "content_delta", text: "then " };
+      yield { type: "tool_use_start", id: "t2", name: "edit", index: 1 };
+      yield { type: "tool_use_delta", input_json: '{"path":"/b"}', index: 1 };
+      yield { type: "done" };
+    }
+    const turn = await assembleTurn(stream());
+    expect(turn.content.map((c) => c.type)).toEqual([
+      "text",
+      "tool_use",
+      "text",
+      "tool_use",
+    ]);
+    expect((turn.content[0] as { text: string }).text).toBe("first ");
+    expect((turn.content[1] as { id: string }).id).toBe("t1");
+    expect((turn.content[2] as { text: string }).text).toBe("then ");
+    expect((turn.content[3] as { id: string }).id).toBe("t2");
+  });
 });
 
 // ── Agent loop ───────────────────────────────────────────────────

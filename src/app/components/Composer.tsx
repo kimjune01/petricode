@@ -16,9 +16,11 @@ interface ComposerProps {
   disabled: boolean;
   clearSignal?: number;
   phase?: string;
+  /** Called when Ctrl+D is pressed and the input is empty (EOF). */
+  onEofExit?: () => void;
 }
 
-export default function Composer({ onSubmit, disabled, clearSignal, phase }: ComposerProps) {
+export default function Composer({ onSubmit, disabled, clearSignal, phase, onEofExit }: ComposerProps) {
   // Sync ref + async state eliminates stale closures during rapid keypresses.
   // All mutations go through updateState which writes both synchronously (ref)
   // and asynchronously (setState for re-render).
@@ -76,12 +78,20 @@ export default function Composer({ onSubmit, disabled, clearSignal, phase }: Com
       if (isPasting.current && pasteBuffer.includes(PASTE_END)) {
         const endIdx = pasteBuffer.indexOf(PASTE_END);
         const payload = pasteBuffer.substring(0, endIdx);
-        // Preserve any data that arrived after PASTE_END in the same chunk
-        pasteBuffer = pasteBuffer.substring(endIdx + PASTE_END.length);
+        // Append any printable bytes that arrived in the same stdin chunk
+        // after PASTE_END. Ink's parseKeypress will emit keypress events
+        // for them synchronously, but our useInput drops those (isPasting
+        // stays true through the current tick) — so we'd otherwise lose
+        // them entirely. Strip ANSI escapes and most control chars; keep
+        // tab and newline.
+        const tail = pasteBuffer.substring(endIdx + PASTE_END.length);
+        const tailPrintable = tail.replace(/\x1b\[[0-9;]*[a-zA-Z]|[\x00-\x08\x0b-\x1f\x7f]/g, "");
+        const combined = payload + tailPrintable;
+        pasteBuffer = "";
 
         updateState((prev) => ({
-          input: prev.input.slice(0, prev.cursor) + payload + prev.input.slice(prev.cursor),
-          cursor: prev.cursor + payload.length,
+          input: prev.input.slice(0, prev.cursor) + combined + prev.input.slice(prev.cursor),
+          cursor: prev.cursor + combined.length,
         }));
 
         // Keep isPasting true through the current tick so useInput ignores
@@ -166,9 +176,13 @@ export default function Composer({ onSubmit, disabled, clearSignal, phase }: Com
             nextCursor = prev.cursor - 1;
           }
         }
-        // Delete / Ctrl+D — delete char at cursor (forward delete)
+        // Delete / Ctrl+D — delete char at cursor (forward delete);
+        // empty input + Ctrl+D = EOF exit (standard shell behavior).
         else if (key.delete || (key.ctrl && ch === "d")) {
-          if (prev.input.length === 0) return prev; // let App handle Ctrl+D exit
+          if (prev.input.length === 0 && key.ctrl && ch === "d") {
+            onEofExit?.();
+            return prev;
+          }
           if (prev.cursor < prev.input.length) {
             nextInput = prev.input.slice(0, prev.cursor) + prev.input.slice(prev.cursor + 1);
           }

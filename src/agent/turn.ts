@@ -53,13 +53,16 @@ export async function assembleTurn(
 
       case "tool_use_start": {
         const idx = chunk.index ?? 0;
-        // Flush any existing tool at this index (shouldn't happen, but be safe)
-        const existing = toolMap.get(idx);
-        if (existing) {
-          flushTool(existing, content, toolCalls);
-          toolMap.delete(idx);
+        // A new content block means all earlier blocks are complete.
+        // Flush in-flight tools FIRST — they started before the current
+        // textBuffer's content arrived. Then flush textBuffer (which now
+        // sits between the prior tool and this new one). Otherwise text
+        // emitted between two tool_use_starts gets reordered ahead of
+        // the prior tool when it's flushed at done-time.
+        for (const existingIdx of [...toolMap.keys()].sort((a, b) => a - b)) {
+          flushTool(toolMap.get(existingIdx)!, content, toolCalls);
         }
-        // Flush any accumulated text before the tool block
+        toolMap.clear();
         if (textBuffer) {
           content.push({ type: "text", text: textBuffer });
           textBuffer = "";

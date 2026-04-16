@@ -365,6 +365,31 @@ describe("Session resume", () => {
     }
   });
 
+  test("preserves persisted role across resume", async () => {
+    const dataDir = join(tmpDir, "data");
+    const remember = createSqliteRemember({ dataDir });
+    const sessionId = "resume-role-test";
+    await remember.append({
+      kind: "perceived",
+      source: sessionId,
+      content: [{ type: "text", text: "user prompt" }],
+      timestamp: 1000,
+      role: "user",
+    });
+    await remember.append({
+      kind: "perceived",
+      source: sessionId,
+      content: [{ type: "text", text: "assistant reply" }],
+      timestamp: 2000,
+      role: "assistant",
+    });
+
+    const cache = new UnionFindCache();
+    await resumeSession(sessionId, remember, cache);
+    const turns = cache.read();
+    expect(turns.map((t) => t.role)).toEqual(["user", "assistant"]);
+  });
+
   test("list sessions returns seeded sessions", async () => {
     const dataDir = join(tmpDir, "data");
     const remember = createSqliteRemember({ dataDir });
