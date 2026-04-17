@@ -1,6 +1,7 @@
 // ── /consolidate command ─────────────────────────────────────────
 
 import type { RememberSlot, ConsolidateSlot } from "../core/contracts.js";
+import type { Session, Turn } from "../core/types.js";
 import type { CommandResult } from "./index.js";
 import type { ReviewDecision } from "../app/components/ConsolidateReview.js";
 
@@ -16,10 +17,27 @@ export interface ConsolidateCommandDeps {
 export async function runConsolidate(
   deps: ConsolidateCommandDeps,
 ): Promise<CommandResult> {
-  const sessions = await deps.remember.list();
-  if (sessions.length === 0) {
+  const summaries = await deps.remember.list();
+  if (summaries.length === 0) {
     return { output: "No sessions to consolidate." };
   }
+
+  // `remember.list()` returns metadata only — `turns: []`. Hydrate each
+  // session via `read()` so the extractor builds a non-empty transcript;
+  // otherwise the fast model gets EXTRACTION_PROMPT + "" and returns no
+  // triples for every session.
+  const sessions: Session[] = await Promise.all(
+    summaries.map(async (s) => {
+      const events = await deps.remember.read(s.id);
+      const turns: Turn[] = events.map((ev) => ({
+        id: crypto.randomUUID(),
+        role: ev.role ?? "user",
+        content: ev.content,
+        timestamp: ev.timestamp,
+      }));
+      return { ...s, turns };
+    }),
+  );
 
   const candidates = await deps.consolidator.run(sessions);
   if (candidates.length === 0) {

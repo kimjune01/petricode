@@ -166,6 +166,39 @@ describe("ConsolidateCommand", () => {
     expect(result.output).toContain("No sessions");
   });
 
+  test("runConsolidate hydrates session turns from remember.read", async () => {
+    // remember.list() returns metadata only (turns: []). runConsolidate
+    // must hydrate via remember.read so the extractor sees the actual
+    // transcript instead of an empty string.
+    await remember.append({
+      kind: "perceived",
+      source: "sess-A",
+      content: [{ type: "text", text: "DISTINCTIVE_USER_PHRASE_xyz" }],
+      timestamp: Date.now(),
+      role: "user",
+    });
+
+    const seenPrompts: string[] = [];
+    const capturingFast: Provider = {
+      model_id: () => "capturing-fast",
+      token_limit: () => 100_000,
+      supports_tools: () => false,
+      async *generate(prompt: Message[]): AsyncGenerator<StreamChunk> {
+        seenPrompts.push(JSON.stringify(prompt));
+        yield { type: "content_delta", text: "" };
+        yield { type: "done" };
+      },
+    };
+    const primary = mockProvider([""], "primary");
+    const reviewer = mockProvider(["NO_ISSUES"], "reviewer");
+    const consolidator = createConsolidator({ fast: capturingFast, primary, reviewer });
+
+    await runConsolidate({ remember, consolidator });
+
+    expect(seenPrompts.length).toBeGreaterThan(0);
+    expect(seenPrompts.some((p) => p.includes("DISTINCTIVE_USER_PHRASE_xyz"))).toBe(true);
+  });
+
   test("writeApproved writes skill to disk", async () => {
     const candidate: CandidateSkill = {
       name: "error-handling",
