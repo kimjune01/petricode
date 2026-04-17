@@ -256,3 +256,124 @@ Project greeting.`,
     expect(skills[0]!.body).toBe("Project greeting.");
   });
 });
+
+// ── Claude Code skill compatibility ─────────────────────────────
+
+describe("Claude SKILL.md compatibility", () => {
+  test("discovers <dir>/<name>/SKILL.md layout", async () => {
+    const skillDir = join(globalDir, "bug-hunt");
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(
+      join(skillDir, "SKILL.md"),
+      `---
+name: bug-hunt
+description: Adversarial review loop
+---
+Review the code carefully.`,
+    );
+
+    const skills = await loadSkillsFromDirs(globalDir, projectDir);
+    expect(skills).toHaveLength(1);
+    expect(skills[0]!.name).toBe("bug-hunt");
+    expect(skills[0]!.body).toBe("Review the code carefully.");
+  });
+
+  test("missing trigger defaults to manual", async () => {
+    const skillDir = join(globalDir, "claude-style");
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(
+      join(skillDir, "SKILL.md"),
+      `---
+name: claude-style
+description: A skill without a trigger field
+---
+Do the thing.`,
+    );
+
+    const skills = await loadSkillsFromDirs(globalDir, projectDir);
+    expect(skills).toHaveLength(1);
+    expect(skills[0]!.trigger).toBe("manual");
+  });
+
+  test("infers name from directory when frontmatter omits it", async () => {
+    const skillDir = join(globalDir, "inferred-name");
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(
+      join(skillDir, "SKILL.md"),
+      `---
+description: Name comes from the dir
+---
+Body.`,
+    );
+
+    const skills = await loadSkillsFromDirs(globalDir, projectDir);
+    expect(skills).toHaveLength(1);
+    expect(skills[0]!.name).toBe("inferred-name");
+  });
+
+  test("flat .md and SKILL.md coexist in the same dir", async () => {
+    writeSkill(
+      globalDir,
+      "flat.md",
+      `---
+name: flat
+trigger: manual
+---
+Flat skill body.`,
+    );
+    const subDir = join(globalDir, "nested");
+    mkdirSync(subDir, { recursive: true });
+    writeFileSync(
+      join(subDir, "SKILL.md"),
+      `---
+name: nested
+---
+Nested skill body.`,
+    );
+
+    const skills = await loadSkillsFromDirs(globalDir, projectDir);
+    expect(skills).toHaveLength(2);
+    const names = skills.map((s) => s.name).sort();
+    expect(names).toEqual(["flat", "nested"]);
+  });
+});
+
+// ── Skill tool ──────────────────────────────────────────────────
+
+describe("Skill tool", () => {
+  test("returns body with $ARGUMENTS substituted", async () => {
+    const { createSkillTool } = await import("../src/tools/skill.js");
+    const tool = createSkillTool([
+      {
+        name: "greet",
+        body: "Say hello to $ARGUMENTS.",
+        frontmatter: {},
+        trigger: "manual",
+      },
+    ]);
+
+    const result = await tool.execute({ name: "greet", arguments: "Alice" });
+    expect(result).toBe("Say hello to Alice.");
+  });
+
+  test("errors on unknown skill name", async () => {
+    const { createSkillTool } = await import("../src/tools/skill.js");
+    const tool = createSkillTool([
+      { name: "known", body: "ok", frontmatter: {}, trigger: "manual" },
+    ]);
+
+    const result = await tool.execute({ name: "missing" });
+    expect(result).toContain("unknown skill");
+    expect(result).toContain("known");
+  });
+
+  test("works without arguments", async () => {
+    const { createSkillTool } = await import("../src/tools/skill.js");
+    const tool = createSkillTool([
+      { name: "static", body: "no substitution here", frontmatter: {}, trigger: "manual" },
+    ]);
+
+    const result = await tool.execute({ name: "static" });
+    expect(result).toBe("no substitution here");
+  });
+});

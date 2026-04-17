@@ -189,19 +189,21 @@ This has no closing fence so it's malformed.`
     expect(skills).toHaveLength(0);
   });
 
-  test("skill without required fields rejected", async () => {
+  test("missing name infers from filename, missing trigger defaults to manual", async () => {
     const skillDir = join(tmp, "skills");
     mkdirSync(skillDir);
     writeFileSync(
-      join(skillDir, "noname.md"),
+      join(skillDir, "inferred.md"),
       `---
-trigger: auto
+description: no name, no trigger
 ---
 Body here.`
     );
 
     const skills = await discoverSkills(skillDir);
-    expect(skills).toHaveLength(0);
+    expect(skills).toHaveLength(1);
+    expect(skills[0]!.name).toBe("inferred");
+    expect(skills[0]!.trigger).toBe("manual");
   });
 
   test("empty skill directory returns empty array", async () => {

@@ -1,5 +1,7 @@
 // ── Skill loader ────────────────────────────────────────────────
-// Discovers skills from global + project dirs. Project wins on name collision.
+// Discovers skills from claude + global + project dirs.
+// Project wins over global; global wins over claude. Claude provides
+// the largest pool, so it sits at the bottom of the override stack.
 
 import { join } from "path";
 import { homedir } from "os";
@@ -7,46 +9,41 @@ import { discoverSkills } from "../perceive/skillDiscovery.js";
 import type { Skill } from "../core/types.js";
 
 const GLOBAL_SKILLS_DIR = join(homedir(), ".config", "petricode", "skills");
+const CLAUDE_SKILLS_DIR = join(homedir(), ".claude", "skills");
 
 /**
- * Load skills from global and project directories.
- * Project skills override global skills with the same name.
+ * Load skills from claude + global + project directories.
+ * Claude < global < project on name collision.
  */
 export async function loadSkills(projectDir: string): Promise<Skill[]> {
   const projectSkillsDir = join(projectDir, ".petricode", "skills");
 
-  const globalSkills = await discoverSkills(GLOBAL_SKILLS_DIR);
-  const projectSkills = await discoverSkills(projectSkillsDir);
+  const [claudeSkills, globalSkills, projectSkills] = await Promise.all([
+    discoverSkills(CLAUDE_SKILLS_DIR),
+    discoverSkills(GLOBAL_SKILLS_DIR),
+    discoverSkills(projectSkillsDir),
+  ]);
 
-  // Project overrides global — index by name
-  const byName = new Map<string, Skill>();
-  for (const s of globalSkills) {
-    byName.set(s.name, s);
-  }
-  for (const s of projectSkills) {
-    byName.set(s.name, s);
-  }
-
-  return Array.from(byName.values());
+  return mergeByName(claudeSkills, globalSkills, projectSkills);
 }
 
 /**
  * Load from explicit directories (for testing).
+ * Order: lowest precedence first, highest last.
  */
 export async function loadSkillsFromDirs(
-  globalDir: string,
-  projectDir: string,
+  ...dirs: string[]
 ): Promise<Skill[]> {
-  const globalSkills = await discoverSkills(globalDir);
-  const projectSkills = await discoverSkills(projectDir);
+  const sets = await Promise.all(dirs.map((d) => discoverSkills(d)));
+  return mergeByName(...sets);
+}
 
+function mergeByName(...sets: Skill[][]): Skill[] {
   const byName = new Map<string, Skill>();
-  for (const s of globalSkills) {
-    byName.set(s.name, s);
+  for (const set of sets) {
+    for (const s of set) {
+      byName.set(s.name, s);
+    }
   }
-  for (const s of projectSkills) {
-    byName.set(s.name, s);
-  }
-
   return Array.from(byName.values());
 }

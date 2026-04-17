@@ -1,50 +1,84 @@
 import { readFile, readdir } from "fs/promises";
+import type { Dirent } from "fs";
 import { join } from "path";
 import type { Skill } from "../core/types.js";
 
 const VALID_TRIGGERS = new Set(["slash_command", "auto", "manual"]);
 
 /**
- * Scan a directory for markdown files with YAML frontmatter.
- * Parse frontmatter with regex (no YAML library).
+ * Scan a directory for skills. Two layouts are supported:
+ *   1. Petricode flat:  <dir>/<name>.md
+ *   2. Claude per-skill: <dir>/<name>/SKILL.md
+ * Frontmatter without a `trigger:` field defaults to "manual" — Claude
+ * skills don't carry triggers, so this is what makes them invocable.
  */
 export async function discoverSkills(skillDir: string): Promise<Skill[]> {
   const skills: Skill[] = [];
 
-  let entries: string[];
+  let entries: Dirent[];
   try {
-    entries = await readdir(skillDir);
+    entries = (await readdir(skillDir, { withFileTypes: true })) as unknown as Dirent[];
   } catch {
     return skills;
   }
 
-  for (const file of entries) {
-    if (!file.endsWith(".md")) continue;
-    const path = join(skillDir, file);
-    try {
-      const raw = await readFile(path, "utf-8");
-      const parsed = parseFrontmatter(raw);
-      if (!parsed) continue;
-
-      const { frontmatter, body } = parsed;
-      const name = frontmatter.name;
-      const trigger = frontmatter.trigger;
-
-      if (typeof name !== "string" || !name) continue;
-      if (typeof trigger !== "string" || !VALID_TRIGGERS.has(trigger)) continue;
-
-      skills.push({
-        name,
-        body,
-        frontmatter,
-        trigger: trigger as Skill["trigger"],
-      });
-    } catch {
-      // unreadable file — skip
+  for (const entry of entries) {
+    if (entry.isFile() && entry.name.endsWith(".md")) {
+      // Flat layout — name comes from filename
+      const inferredName = entry.name.slice(0, -3);
+      const skill = await readSkillFile(join(skillDir, entry.name), inferredName);
+      if (skill) skills.push(skill);
+    } else if (entry.isDirectory()) {
+      // Claude per-skill layout — <dir>/SKILL.md (or skill.md). Match
+      // case-insensitively so the same skill works on case-sensitive
+      // filesystems (Linux) and case-insensitive ones (macOS APFS).
+      const subDir = join(skillDir, entry.name);
+      let subEntries: Dirent[];
+      try {
+        subEntries = (await readdir(subDir, { withFileTypes: true })) as unknown as Dirent[];
+      } catch {
+        continue;
+      }
+      const skillFile = subEntries.find(
+        (e) => e.isFile() && e.name.toLowerCase() === "skill.md",
+      );
+      if (!skillFile) continue;
+      const skill = await readSkillFile(join(subDir, skillFile.name), entry.name);
+      if (skill) skills.push(skill);
     }
   }
 
   return skills;
+}
+
+async function readSkillFile(
+  path: string,
+  inferredName: string,
+): Promise<Skill | null> {
+  let raw: string;
+  try {
+    raw = await readFile(path, "utf-8");
+  } catch {
+    return null;
+  }
+
+  const parsed = parseFrontmatter(raw);
+  if (!parsed) return null;
+
+  const { frontmatter, body } = parsed;
+  const name = typeof frontmatter.name === "string" && frontmatter.name
+    ? frontmatter.name
+    : inferredName;
+  if (!name) return null;
+
+  // Default to "manual" — Claude skills don't carry a trigger field.
+  const rawTrigger = frontmatter.trigger;
+  const trigger =
+    typeof rawTrigger === "string" && VALID_TRIGGERS.has(rawTrigger)
+      ? (rawTrigger as Skill["trigger"])
+      : "manual";
+
+  return { name, body, frontmatter, trigger };
 }
 
 /**

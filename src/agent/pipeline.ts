@@ -26,6 +26,7 @@ import {
   substituteArguments,
 } from "../skills/activation.js";
 import type { ActivatedSkill } from "../skills/types.js";
+import { createSkillTool } from "../tools/skill.js";
 
 export interface PipelineOptions {
   router: TierRouter;
@@ -72,8 +73,13 @@ export class Pipeline {
       projectDir: options.projectDir,
     });
 
-    // Discover skills
+    // Discover skills, then register the Skill tool so the model can
+    // invoke any loaded skill by name. Registered after loading so the
+    // tool's name → skill map captures everything that was discovered.
     this.skills = await loadSkills(options.projectDir);
+    if (this.registry) {
+      this.registry.register(createSkillTool(this.skills));
+    }
 
     // Cache slot
     this.cache = new UnionFindCache();
@@ -193,8 +199,28 @@ export class Pipeline {
       ...autoMatches,
     ];
 
+    const ev = perceived as PerceivedEvent;
+
+    // List manual-trigger skills so the model knows what it can invoke
+    // via the Skill tool. Slash and auto skills don't go in the listing —
+    // their activation is user-typed (`/foo`) or path-based, not model-
+    // initiated. Listing ALL skills would also bloat the system prompt.
+    const manualSkills = this.skills.filter((s) => s.trigger === "manual");
+    if (manualSkills.length > 0) {
+      ev.system_content ??= [];
+      const lines = manualSkills.map((s) => {
+        const desc = typeof s.frontmatter.description === "string"
+          ? s.frontmatter.description
+          : "";
+        return desc ? `- ${s.name}: ${desc}` : `- ${s.name}`;
+      });
+      ev.system_content.push({
+        type: "text",
+        text: `<available_skills>\nUse the Skill tool with one of these names to load its instructions.\n${lines.join("\n")}\n</available_skills>`,
+      });
+    }
+
     if (activeSkills.length > 0) {
-      const ev = perceived as PerceivedEvent;
       ev.system_content ??= [];
       for (const active of activeSkills) {
         const body = substituteArguments(active.skill.body, active.arguments);
