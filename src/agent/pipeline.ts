@@ -131,9 +131,19 @@ export class Pipeline {
     // Compare against the wrapped promise — `this.inFlight` holds the
     // wrapped promise, not `promise` itself, so `=== promise` was always
     // false and the cleanup never ran.
-    const wrapped: Promise<unknown> = promise.finally(() => {
-      if (this.inFlight === wrapped) this.inFlight = null;
-    });
+    //
+    // The trailing `.catch(() => {})` is load-bearing: the caller awaits
+    // `promise` and handles errors there. Without swallowing on `wrapped`,
+    // a rejection on the original (e.g. provider 429) bubbles to BOTH
+    // `promise` (handled by the caller) AND `wrapped` (unhandled, since
+    // nobody awaits it) — Node fires unhandledRejection, which cli.ts's
+    // crash handler turns into process.exit(1). The TUI dies on the
+    // first rate limit instead of recovering to the composer.
+    const wrapped: Promise<unknown> = promise
+      .finally(() => {
+        if (this.inFlight === wrapped) this.inFlight = null;
+      })
+      .catch(() => {});
     this.inFlight = wrapped;
     return promise;
   }
