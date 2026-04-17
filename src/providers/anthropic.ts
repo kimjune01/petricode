@@ -41,23 +41,26 @@ function toAnthropicContent(
   });
 }
 
-// Vertex quotas are per-region per-base-model. Saturating us-east5 for
-// claude-opus-4-7 doesn't touch europe-west4 for the same model — and
-// Claude Code picks regions per-model via VERTEX_REGION_CLAUDE_<MODEL>
-// env vars. Mirror that convention so a single shell config drives
-// both tools and the user doesn't get 429s in petricode while Claude
-// Code happily routes to a different region.
+// Vertex quotas are per-region per-base-model. Newer Anthropic models
+// (e.g. claude-opus-4-7) ship with quota allocated ONLY on `global` and
+// zero in regional buckets — so picking `us-east5` as a default here
+// caused first-message 429s while Claude Code (which uses `global`)
+// worked fine on the same project.
+//
+// `global` is the right default for Anthropic-on-Vertex now. Per-model
+// overrides honor the same env-var convention Claude Code uses, so a
+// single shell config drives both tools.
 //
 // Resolution order:
 //   1. VERTEX_REGION_<NORMALIZED_MODEL_ID>   (e.g. VERTEX_REGION_CLAUDE_OPUS_4_7)
 //   2. ANTHROPIC_VERTEX_REGION                (global override)
-//   3. us-east5                               (Anthropic's GA region)
+//   3. global                                 (where current quota lives)
 function resolveVertexRegion(model: string): string {
   const envKey = `VERTEX_REGION_${model.toUpperCase().replace(/-/g, "_")}`;
   return (
     process.env[envKey] ??
     process.env.ANTHROPIC_VERTEX_REGION ??
-    "us-east5"
+    "global"
   );
 }
 
@@ -67,7 +70,6 @@ function createAnthropicClient(model: string): Anthropic {
     process.env.CLAUDE_CODE_USE_VERTEX === "1" ||
     process.env.ANTHROPIC_VERTEX_PROJECT_ID
   ) {
-    // Anthropic on Vertex needs a real region — "global" is Google-only.
     return new AnthropicVertex({
       projectId: process.env.ANTHROPIC_VERTEX_PROJECT_ID,
       region: resolveVertexRegion(model),
