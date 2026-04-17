@@ -58,7 +58,87 @@ process.on("unhandledRejection", (reason) => {
 
 const args = process.argv.slice(2);
 
-if (args.includes("--help") || args.includes("-h")) {
+// ── Argv parsing ─────────────────────────────────────────────────
+// Walk argv positionally instead of indexOf-scanning the whole array.
+// indexOf doesn't know that the token after `-p` belongs to -p, so
+// `petricode -p "--list"` was treating --list as a top-level flag and
+// `petricode --resume -p hi` was treating "-p" as the session ID.
+//
+// `--` is honored as the end-of-flags sentinel: everything after is
+// treated as positional and won't trigger -h, --version, --list, etc.
+type ParsedArgs = {
+  help: boolean;
+  version: boolean;
+  list: boolean;
+  resume?: string;
+  prompt?: string;
+  format: "text" | "json";
+  errors: string[];
+};
+
+function parseArgs(input: string[]): ParsedArgs {
+  const out: ParsedArgs = {
+    help: false,
+    version: false,
+    list: false,
+    format: "text",
+    errors: [],
+  };
+  let i = 0;
+  let positional = false;
+  while (i < input.length) {
+    const arg = input[i]!;
+    if (positional) {
+      i++;
+      continue;
+    }
+    if (arg === "--") { positional = true; i++; continue; }
+    if (arg === "--help" || arg === "-h") { out.help = true; i++; continue; }
+    if (arg === "--version") { out.version = true; i++; continue; }
+    if (arg === "--list") { out.list = true; i++; continue; }
+    if (arg === "--resume") {
+      const next = input[i + 1];
+      if (!next || next.startsWith("-")) {
+        out.errors.push("--resume requires a session ID. Use --list to see sessions.");
+        i++;
+      } else {
+        out.resume = next;
+        i += 2;
+      }
+      continue;
+    }
+    if (arg === "-p" || arg === "--prompt") {
+      const next = input[i + 1];
+      if (!next || next.startsWith("-")) {
+        out.errors.push("-p/--prompt requires a non-flag prompt string. Example: petricode -p \"fix the failing test\"");
+        i++;
+      } else {
+        // Last-wins per clig.dev: a later -p overrides an earlier one.
+        out.prompt = next;
+        i += 2;
+      }
+      continue;
+    }
+    if (arg === "--format") {
+      const next = input[i + 1];
+      if (next === "text" || next === "json") {
+        out.format = next;
+        i += 2;
+      } else {
+        out.errors.push("--format expects 'text' or 'json'.");
+        i++;
+      }
+      continue;
+    }
+    out.errors.push(`Unknown flag: ${arg}`);
+    i++;
+  }
+  return out;
+}
+
+const parsed = parseArgs(args);
+
+if (parsed.help) {
   console.log(`petricode
 
 Usage:
@@ -74,17 +154,38 @@ Options:
   -p, --prompt <text>   Headless: run one turn against <text>, write result
                         to stdout, exit. No TUI. Tools auto-allow.
   --format <text|json>  With -p: output format. Default: text.
+  --                    Treat the rest of the arguments as positional.
+
+Examples:
+  petricode -p "summarize README.md"
+  petricode -p "fix the failing test" --format json
+  petricode --resume abc123
+
+Exit codes:
+  0   success
+  1   runtime error (bootstrap failure, model rejection)
+  2   misuse (bad or missing flag value)
+  130 SIGINT (Ctrl+C)
+  141 SIGPIPE (downstream consumer closed the pipe)
 
 Run without arguments to open the TUI.`);
   process.exit(0);
 }
 
-if (args.includes("--version")) {
+if (parsed.version) {
   console.log("petricode 0.1.0");
   process.exit(0);
 }
 
-if (args.includes("--list")) {
+// argv errors are reported AFTER --help/--version so users can still
+// reach those without first satisfying flag validation. Anything else
+// (bad --resume, unknown flag, malformed -p) bails with exit 2.
+if (parsed.errors.length > 0) {
+  for (const e of parsed.errors) console.error(e);
+  process.exit(2);
+}
+
+if (parsed.list) {
   // List sessions requires async — handled here before TUI
   const { createSqliteRemember } = await import("./remember/sqlite.js");
   const { listSessions } = await import("./session/resume.js");
@@ -106,39 +207,13 @@ if (args.includes("--list")) {
   process.exit(0);
 }
 
-// Parse --resume flag
-let resumeSessionId: string | undefined;
-const resumeIdx = args.indexOf("--resume");
-if (resumeIdx !== -1) {
-  resumeSessionId = args[resumeIdx + 1];
-  if (!resumeSessionId) {
-    console.error("--resume requires a session ID. Use --list to see sessions.");
-    process.exit(1);
-  }
-}
+const resumeSessionId = parsed.resume;
 
 // Headless mode — `-p` / `--prompt`. Routed BEFORE the TUI bootstrap so
 // the Ink import and raw-mode setup never run for non-interactive callers.
-// Earliest occurrence wins so users can pass either flag (or both) in any
-// order without one silently shadowing the other.
-const promptIdx = (() => {
-  const candidates = [args.indexOf("-p"), args.indexOf("--prompt")].filter(
-    (i) => i !== -1,
-  );
-  return candidates.length === 0 ? -1 : Math.min(...candidates);
-})();
-if (promptIdx !== -1) {
-  const prompt = args[promptIdx + 1];
-  // Reject missing OR flag-shaped values so `-p --format json` doesn't
-  // happily send "--format" as the prompt.
-  if (!prompt || prompt.startsWith("-")) {
-    console.error("-p/--prompt requires a non-flag prompt string.");
-    process.exit(2); // 2 = misuse of shell builtin (clig.dev convention)
-  }
-  const formatIdx = args.indexOf("--format");
-  const formatArg = formatIdx !== -1 ? args[formatIdx + 1] : undefined;
-  const format: "text" | "json" =
-    formatArg === "json" ? "json" : "text";
+if (parsed.prompt !== undefined) {
+  const prompt = parsed.prompt;
+  const format = parsed.format;
 
   const { runHeadless, writeAndDrain } = await import("./headless.js");
   const result = await runHeadless({

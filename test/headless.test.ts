@@ -227,6 +227,31 @@ describe("runHeadlessTurn", () => {
     expect(result.stderr.includes("at ")).toBe(false);
   });
 
+  test("bootstrap rejection becomes exitCode 1 with stderr message (not unhandledRejection)", async () => {
+    // Regression backstop for round 20 #1. Previously, a bootstrap throw
+    // bubbled past runHeadless to cli.ts's unhandledRejection handler,
+    // which wrote a crash log and printed "Crash logged to .petricode/
+    // crash.log" — useless for the user. Now the failure is a clean
+    // exit-1 with the actual error on stderr.
+    //
+    // We can't easily make bootstrap throw from a unit test (it touches
+    // disk + creates a sqlite DB), so we use module replacement via
+    // mock.module to inject a throwing bootstrap.
+    const { mock } = await import("bun:test");
+    const { runHeadless } = await import("../src/headless.js");
+    mock.module("../src/session/bootstrap.js", () => ({
+      bootstrap: async () => { throw new Error("bad config"); },
+    }));
+    const result = await runHeadless({
+      prompt: "hi",
+      projectDir: "/tmp/petricode-bootstrap-fail",
+    });
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("bad config");
+    mock.restore();
+  });
+
   test("pipeline error becomes exitCode 1 with stderr message", async () => {
     // Stub a pipeline whose turn() rejects — bypasses the mock provider
     // setup since we don't need to drive a real failure mode for this assertion.
@@ -297,6 +322,29 @@ describe("cli -p / --prompt argv parsing", () => {
     const { code, stderr } = await runCli(["-p", "--format", "json"]);
     expect(code).toBe(2);
     expect(stderr).toContain("requires a non-flag prompt string");
+  });
+
+  test("`-p \"--list\"` treats --list as the prompt, not a top-level flag", async () => {
+    // Round-19 fix only rejected flag-shaped values; this asserts the
+    // round-20 positional parser actually consumes the value as -p's
+    // argument so `-p "--list"` makes it past argv parsing (then exits
+    // 2 because we still reject leading-dash, but does NOT trigger the
+    // --list session lister).
+    const { code, stdout, stderr } = await runCli(["-p", "--list"]);
+    expect(code).toBe(2);
+    expect(stdout).not.toContain("Recent sessions");
+    expect(stdout).not.toContain("No sessions found");
+    expect(stderr).toContain("requires a non-flag prompt string");
+  });
+
+  test("`--resume -p hi` doesn't consume -p as the session ID", async () => {
+    // Pre-fix, args.indexOf("--resume") + 1 returned the index of "-p",
+    // which then bootstrap'd a session named "-p" (or 1'd with cryptic
+    // error). After fix: --resume sees -p has a leading dash and reports
+    // the user-facing error.
+    const { code, stderr } = await runCli(["--resume", "-p", "hi"]);
+    expect(code).toBe(2);
+    expect(stderr).toContain("--resume requires a session ID");
   });
 
   test("`--prompt` is recognized when -p is absent", async () => {

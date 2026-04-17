@@ -481,9 +481,13 @@ export class Pipeline {
    * in the TUI was previously only resetting React state, leaving the
    * pipeline cache intact — the model kept remembering the "cleared"
    * conversation across subsequent turns.
+   *
+   * Also resets the loop detector so the LLM can re-issue an identical
+   * tool call after a clear without being falsely flagged as looping.
    */
   clear(): void {
     this.cache.clear();
+    this.loopDetector.reset();
   }
 
   /** Current session ID. */

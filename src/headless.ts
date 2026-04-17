@@ -77,11 +77,23 @@ export function writeAndDrain(
 
 /** Bootstrap a pipeline from disk config and run one turn against it. */
 export async function runHeadless(opts: HeadlessOptions): Promise<HeadlessResult> {
-  const { bootstrap } = await import("./session/bootstrap.js");
-  const { pipeline } = await bootstrap({
-    projectDir: opts.projectDir,
-    resumeSessionId: opts.resumeSessionId,
-    // No onConfirm — tools requiring confirmation auto-allow.
-  });
+  // Bootstrap can throw on bad config, missing creds, or an invalid
+  // --resume session ID. Surface those as a clean stderr message + exit
+  // 1, not as an unhandledRejection that hits cli.ts's crash logger and
+  // tells the user "Crash logged to .petricode/crash.log" with no hint
+  // of what actually went wrong.
+  let pipeline;
+  try {
+    const { bootstrap } = await import("./session/bootstrap.js");
+    const result = await bootstrap({
+      projectDir: opts.projectDir,
+      resumeSessionId: opts.resumeSessionId,
+      // No onConfirm — tools requiring confirmation auto-allow.
+    });
+    pipeline = result.pipeline;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { exitCode: 1, stdout: "", stderr: `petricode: ${msg}\n` };
+  }
   return runHeadlessTurn(pipeline, opts.prompt, opts.format ?? "text");
 }
