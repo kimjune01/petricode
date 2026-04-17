@@ -527,4 +527,62 @@ describe("getPartialToolResults", () => {
     expect(getPartialToolResults(new Error("nope"))).toBeUndefined();
     expect(getPartialToolResults(undefined)).toBeUndefined();
   });
+
+  test("onConfirm AbortError preserves partial results (gemini sniff)", async () => {
+    // User Ctrl+C's while the confirmation modal is open on tool 2 —
+    // tool 1's real result must survive instead of being clobbered with
+    // "Interrupted" by an unwrapped AbortError that escapes the partial-
+    // results path.
+    const registry = new ToolRegistry();
+    registry.register({
+      name: "good",
+      description: "ok",
+      input_schema: { properties: {}, required: [] },
+      execute: async () => "ok-output",
+    });
+    registry.register({
+      name: "ask",
+      description: "needs confirm",
+      input_schema: { properties: {}, required: [] },
+      execute: async () => "should-not-run",
+    });
+
+    const turn: Turn = {
+      id: "t1",
+      role: "assistant",
+      content: [
+        { type: "tool_use", id: "g", name: "good", input: {} },
+        { type: "tool_use", id: "a", name: "ask", input: {} },
+      ],
+      tool_calls: [
+        { id: "g", name: "good", args: {} },
+        { id: "a", name: "ask", args: {} },
+      ],
+      timestamp: Date.now(),
+    };
+
+    let caught: unknown;
+    let confirmCalls = 0;
+    try {
+      await runToolSubpipe(turn, {
+        registry,
+        policyRules: [
+          { tool: "good", outcome: "ALLOW" },
+          { tool: "ask", outcome: "ASK_USER" },
+        ],
+        onConfirm: async () => {
+          confirmCalls++;
+          throw new DOMException("Aborted", "AbortError");
+        },
+      });
+    } catch (err) {
+      caught = err;
+    }
+    expect(confirmCalls).toBe(1);
+    const partial = getPartialToolResults(caught);
+    expect(partial).toBeDefined();
+    expect(partial!).toHaveLength(2);
+    expect(partial![0]).toMatchObject({ toolUseId: "g", content: "ok-output" });
+    expect(partial![1]!.content).toContain("Interrupted");
+  });
 });

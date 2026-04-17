@@ -135,7 +135,25 @@ export async function runToolSubpipe(
 
     if (policyOutcome === "ASK_USER") {
       if (onConfirm) {
-        const allowed = await onConfirm(tc);
+        // Confirmation can throw AbortError if the user Ctrl+C's while the
+        // prompt is open. Route it through the same partial-results path
+        // as a mid-execution abort — otherwise the unwrapped throw lacks
+        // partialResults, the pipeline's getPartialToolResults returns
+        // undefined, and every real result accumulated so far in `results`
+        // gets clobbered by the empty-fallback in commitToolBatch.
+        let allowed: boolean;
+        try {
+          allowed = await onConfirm(tc);
+        } catch (err) {
+          if (err instanceof DOMException && err.name === "AbortError") {
+            results.push(interruptedResult(tc));
+            for (const remaining of turn.tool_calls.slice(idx + 1)) {
+              results.push(interruptedResult(remaining));
+            }
+            throw makeAbortWithPartial(results);
+          }
+          throw err;
+        }
         if (!allowed) {
           results.push({
             toolUseId,
