@@ -60,6 +60,21 @@ export async function runHeadlessTurn(
   }
 }
 
+/**
+ * Promise wrapper around stream.write so callers can `await` before
+ * `process.exit`. Without this, `process.exit` cuts the pipe before the
+ * kernel finishes draining stdout — large `--format json` payloads get
+ * truncated when piped into a downstream process.
+ */
+export function writeAndDrain(
+  stream: NodeJS.WriteStream,
+  chunk: string,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    stream.write(chunk, (err) => (err ? reject(err) : resolve()));
+  });
+}
+
 /** Bootstrap a pipeline from disk config and run one turn against it. */
 export async function runHeadless(opts: HeadlessOptions): Promise<HeadlessResult> {
   const { bootstrap } = await import("./session/bootstrap.js");
