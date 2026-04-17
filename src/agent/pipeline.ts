@@ -17,7 +17,9 @@ import { assembleContext } from "./context.js";
 import {
   runToolSubpipe,
   toolResultsToContent,
+  getPartialToolResults,
   type ConfirmFn,
+  type ToolResult,
 } from "./toolSubpipe.js";
 import { loadSkills } from "../skills/loader.js";
 import {
@@ -292,7 +294,7 @@ export class Pipeline {
     if (signal?.aborted) {
       const pendingTools = assistantTurn.tool_calls ?? [];
       if (pendingTools.length > 0) {
-        this.commitInterruptedToolCalls(assistantTurn, pendingTools, commitTurn);
+        this.commitToolBatch(assistantTurn, [], commitTurn);
       } else {
         commitTurn(assistantTurn);
       }
@@ -371,7 +373,7 @@ export class Pipeline {
       // next turn's conversation includes the LLM's intent + the
       // fact that it was interrupted.
       if (signal?.aborted) {
-        this.commitInterruptedToolCalls(currentTurn, currentTurn.tool_calls, commitTurn);
+        this.commitToolBatch(currentTurn, [], commitTurn);
         throw new DOMException("Aborted", "AbortError");
       }
 
@@ -386,10 +388,15 @@ export class Pipeline {
           signal,
         });
       } catch (err) {
-        // If runToolSubpipe was interrupted (e.g. confirmation rejected
-        // due to abort), persist whatever didn't execute.
+        // Mid-batch abort: recover real results of tools that finished
+        // before Ctrl+C from the thrown AbortError, then commit the
+        // batch so the LLM sees actual outcomes for completed tools and
+        // "Interrupted" only for the ones that didn't run. Without this,
+        // a successful Bash that mutated the filesystem would be cached
+        // as "Interrupted" and the next turn would try to redo it.
         if (err instanceof DOMException && err.name === "AbortError") {
-          this.commitInterruptedToolCalls(currentTurn, currentTurn.tool_calls, commitTurn);
+          const partial = getPartialToolResults(err) ?? [];
+          this.commitToolBatch(currentTurn, partial, commitTurn);
           throw err;
         }
         throw err;
@@ -398,9 +405,10 @@ export class Pipeline {
       // Re-check abort after tool execution — a denied confirmation
       // resolves normally (DENY result) rather than throwing, so we must
       // check the signal to prevent a concurrent second turn from
-      // corrupting the cache.
+      // corrupting the cache. Use the actual toolResults so completed
+      // tools are preserved instead of synthesized as interrupted.
       if (signal?.aborted) {
-        this.commitInterruptedToolCalls(currentTurn, currentTurn.tool_calls, commitTurn);
+        this.commitToolBatch(currentTurn, toolResults, commitTurn);
         throw new DOMException("Aborted", "AbortError");
       }
 
@@ -541,34 +549,40 @@ export class Pipeline {
   // ── Private ────────────────────────────────────────────────────
 
   /**
-   * Commit an interrupted assistant turn so the next conversation
-   * includes the LLM's intent and a record that it was interrupted.
-   * Uses the same synthetic-result pattern as the max-tool-rounds guard.
+   * Persist an assistant turn and a tool_result turn that combines the
+   * actual results of tools that completed (`partialResults`) with
+   * synthetic "Interrupted" markers for any of the assistant's
+   * tool_calls that aren't represented. Used both when no tools ran
+   * (pre-execution abort, partialResults is []) and when some did
+   * (mid-batch abort, partialResults carries the survivors).
+   *
+   * Earlier rev synthesized "Interrupted" for ALL tool_calls regardless
+   * of what executed, telling the LLM that file edits or shell commands
+   * it had actually run hadn't — corrupting the cached conversation.
    */
-  private commitInterruptedToolCalls(
+  private commitToolBatch(
     turn: Turn,
-    toolCalls: ToolCall[],
+    partialResults: ToolResult[],
     commitTurn: (t: Turn) => void,
   ): void {
-    // Commit the assistant turn with its tool_calls so the LLM can
-    // see what it tried to do.
     commitTurn(turn);
 
-    // Synthesize "Interrupted by user" results for each pending tool
-    // call so the conversation stays structurally valid (every
-    // tool_use must have a matching tool_result).
-    const syntheticResults: Content[] = toolCalls.map(tc => ({
-      type: "tool_result" as const,
-      tool_use_id: tc.id,
-      content: "Interrupted by user — tool call was not executed.",
-    }));
-    const syntheticTurn: Turn = {
+    const realById = new Map(partialResults.map(r => [r.toolUseId, r]));
+    const content: Content[] = (turn.tool_calls ?? []).map(tc => {
+      const real = realById.get(tc.id);
+      return {
+        type: "tool_result" as const,
+        tool_use_id: tc.id,
+        content: real?.content ?? "Interrupted by user — tool call was not executed.",
+      };
+    });
+
+    commitTurn({
       id: crypto.randomUUID(),
       role: "user",
-      content: syntheticResults,
+      content,
       timestamp: Date.now(),
-    };
-    commitTurn(syntheticTurn);
+    });
   }
 
   private toolDefinitions(): ToolDefinition[] {

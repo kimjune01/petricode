@@ -2,6 +2,7 @@ import { describe, test, expect } from "bun:test";
 import type { Content, Message, StreamChunk, Turn } from "../src/core/types.js";
 import type { Provider, ModelConfig } from "../src/providers/provider.js";
 import type { TiersConfig } from "../src/config/models.js";
+import type { RememberSlot } from "../src/core/contracts.js";
 import { TierRouter } from "../src/providers/router.js";
 import { ToolRegistry } from "../src/tools/registry.js";
 import { Pipeline } from "../src/agent/pipeline.js";
@@ -9,9 +10,10 @@ import { assembleContext } from "../src/agent/context.js";
 import {
   runToolSubpipe,
   toolResultsToContent,
+  getPartialToolResults,
 } from "../src/agent/toolSubpipe.js";
 import { LoopDetector } from "../src/filter/loopDetection.js";
-import type { PerceivedEvent } from "../src/core/types.js";
+import type { PerceivedEvent, Session } from "../src/core/types.js";
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -405,5 +407,124 @@ describe("Pipeline", () => {
 
     const result = await pipeline.turn("Run a command");
     expect(result.role).toBe("assistant");
+  });
+
+  test("mid-batch abort preserves real results of completed tools (Round 20 #5)", async () => {
+    // Two tool calls in one turn: "good" succeeds and writes a sentinel,
+    // "bad" simulates Ctrl+C mid-execution by throwing AbortError. The
+    // pipeline must persist the assistant turn + a tool_result turn that
+    // carries good's REAL result (not "Interrupted") and bad's interrupted
+    // marker — otherwise the LLM thinks good never ran and the next turn
+    // tries to redo it (clobbering files, double-spending side effects).
+    const router = makeTierRouter([
+      [
+        { type: "tool_use_start", id: "good_id", name: "good", index: 0 },
+        { type: "tool_use_delta", input_json: '{}', index: 0 },
+        { type: "tool_use_start", id: "bad_id", name: "bad", index: 1 },
+        { type: "tool_use_delta", input_json: '{}', index: 1 },
+        { type: "done" },
+      ],
+    ]);
+
+    const registry = new ToolRegistry();
+    registry.register({
+      name: "good",
+      description: "succeeds",
+      input_schema: { properties: {}, required: [] },
+      execute: async () => "GOOD_REAL_RESULT",
+    });
+    registry.register({
+      name: "bad",
+      description: "aborts mid-flight",
+      input_schema: { properties: {}, required: [] },
+      execute: async () => {
+        throw new DOMException("Aborted", "AbortError");
+      },
+    });
+
+    // Capture every persisted turn so we can assert on cache state without
+    // reaching into Pipeline private fields.
+    const persisted: PerceivedEvent[] = [];
+    const remember: RememberSlot = {
+      append: async (ev) => { persisted.push(ev); },
+      read: async () => [],
+      list: async () => [] as Session[],
+    };
+
+    const pipeline = new Pipeline();
+    await pipeline.init({
+      router,
+      projectDir: "/tmp/petricode-test",
+      registry,
+    });
+    pipeline.setRemember(remember);
+
+    await expect(pipeline.turn("do both")).rejects.toThrow();
+
+    // Find the tool_result turn (user role, content blocks of type tool_result).
+    const toolResultTurn = persisted.find((ev) =>
+      ev.role === "user" &&
+      ev.content.some((c) => c.type === "tool_result"),
+    );
+    expect(toolResultTurn).toBeDefined();
+
+    const byId = new Map(
+      toolResultTurn!.content
+        .filter((c): c is Extract<Content, { type: "tool_result" }> => c.type === "tool_result")
+        .map((c) => [c.tool_use_id, c.content]),
+    );
+    expect(byId.get("good_id")).toBe("GOOD_REAL_RESULT");
+    expect(byId.get("bad_id")).toContain("Interrupted");
+  });
+});
+
+// ── getPartialToolResults ───────────────────────────────────────
+
+describe("getPartialToolResults", () => {
+  test("recovers partial results from AbortError thrown by runToolSubpipe", async () => {
+    const registry = new ToolRegistry();
+    registry.register({
+      name: "good",
+      description: "ok",
+      input_schema: { properties: {}, required: [] },
+      execute: async () => "ok-output",
+    });
+    registry.register({
+      name: "bad",
+      description: "abort",
+      input_schema: { properties: {}, required: [] },
+      execute: async () => { throw new DOMException("Aborted", "AbortError"); },
+    });
+
+    const turn: Turn = {
+      id: "t1",
+      role: "assistant",
+      content: [
+        { type: "tool_use", id: "g", name: "good", input: {} },
+        { type: "tool_use", id: "b", name: "bad", input: {} },
+      ],
+      tool_calls: [
+        { id: "g", name: "good", args: {} },
+        { id: "b", name: "bad", args: {} },
+      ],
+      timestamp: Date.now(),
+    };
+
+    let caught: unknown;
+    try {
+      await runToolSubpipe(turn, { registry });
+    } catch (err) {
+      caught = err;
+    }
+    const partial = getPartialToolResults(caught);
+    expect(partial).toBeDefined();
+    expect(partial!).toHaveLength(2);
+    expect(partial![0]).toMatchObject({ toolUseId: "g", content: "ok-output" });
+    expect(partial![1]!.content).toContain("Interrupted");
+  });
+
+  test("returns undefined for non-AbortError", () => {
+    expect(getPartialToolResults(new Error("nope"))).toBeUndefined();
+    expect(getPartialToolResults(undefined)).toBeUndefined();
   });
 });

@@ -30,6 +30,40 @@ export interface ToolResult {
   content: string;
 }
 
+const INTERRUPTED_CONTENT = "Interrupted by user — tool call was not executed.";
+
+/**
+ * Was this AbortError thrown by runToolSubpipe with a partial result set?
+ * Pipeline uses this to recover the actual results of tools that finished
+ * before Ctrl+C, instead of synthesizing "Interrupted" for the whole batch.
+ */
+export function getPartialToolResults(err: unknown): ToolResult[] | undefined {
+  if (err instanceof DOMException && err.name === "AbortError") {
+    const maybe = (err as DOMException & { partialResults?: ToolResult[] }).partialResults;
+    if (Array.isArray(maybe)) return maybe;
+  }
+  return undefined;
+}
+
+function makeAbortWithPartial(results: ToolResult[]): DOMException {
+  const err = new DOMException("Aborted", "AbortError");
+  Object.defineProperty(err, "partialResults", {
+    value: results,
+    enumerable: false,
+    writable: false,
+  });
+  return err;
+}
+
+function interruptedResult(tc: ToolCall): ToolResult {
+  return {
+    toolUseId: tc.id,
+    name: tc.name,
+    outcome: "ALLOW",
+    content: INTERRUPTED_CONTENT,
+  };
+}
+
 /**
  * Process tool calls from an assistant turn through the policy filter,
  * execute approved ones, and return results.
@@ -45,8 +79,17 @@ export async function runToolSubpipe(
     return results;
   }
 
-  for (const tc of turn.tool_calls) {
-    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+  for (let idx = 0; idx < turn.tool_calls.length; idx++) {
+    const tc = turn.tool_calls[idx]!;
+    if (signal?.aborted) {
+      // Synthesize "Interrupted" for this tool + everything after it,
+      // preserving the real results already in `results`. The pipeline
+      // catches the throw and persists the merged set.
+      for (const remaining of turn.tool_calls.slice(idx)) {
+        results.push(interruptedResult(remaining));
+      }
+      throw makeAbortWithPartial(results);
+    }
     const toolUseId = tc.id;
 
     // Path validation (before policy, before execution)
@@ -118,10 +161,17 @@ export async function runToolSubpipe(
         content: masked.content,
       });
     } catch (err) {
-      // Propagate abort so the pipeline can synthesize "Interrupted" results
-      // for this tool AND the rest. Otherwise it'd be swallowed as a regular
-      // tool error and the loop would continue executing remaining tools.
-      if (err instanceof DOMException && err.name === "AbortError") throw err;
+      // Abort: synthesize "Interrupted" for this tool + remaining tools,
+      // attach the merged result set to the error, and re-throw. Pipeline
+      // uses getPartialToolResults() to recover the real results from
+      // tools that finished before Ctrl+C, instead of clobbering them all.
+      if (err instanceof DOMException && err.name === "AbortError") {
+        results.push(interruptedResult(tc));
+        for (const remaining of turn.tool_calls.slice(idx + 1)) {
+          results.push(interruptedResult(remaining));
+        }
+        throw makeAbortWithPartial(results);
+      }
       const errMsg = err instanceof Error ? err.message : String(err);
       tc.result = `Error: ${errMsg}`;
       results.push({
