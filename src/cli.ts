@@ -95,7 +95,9 @@ Run without arguments to open the TUI.`);
 }
 
 if (parsed.version) {
-  console.log("petricode 0.1.0");
+  // Bare semver per clig.dev so `petricode --version` is trivially
+  // machine-parseable (no need to strip a "petricode " prefix).
+  console.log("0.1.0");
   process.exit(0);
 }
 

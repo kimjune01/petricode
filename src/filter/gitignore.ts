@@ -97,15 +97,19 @@ function patternToRegex(pattern: string): RegExp {
   //   **    → match anything including /
   //   *     → match anything except /
   //   ?     → match single char except /
+  //
+  // The `?` glob substitution runs FIRST: globstar expansions emit literal
+  // regex `?` quantifiers (`(/.*)?/`, `(.*/)?`), and a later `?` → `[^/]`
+  // pass would mangle them.
   regex = regex
+    .replace(/\?/g, "[^/]")
     .replace(/\/\*\*\//g, "⟨SLASHGLOBSTAR⟩")
     .replace(/\*\*\//g, "⟨LEADGLOBSTAR⟩")
     .replace(/\*\*/g, "⟨GLOBSTAR⟩")
     .replace(/\*/g, "[^/]*")
     .replace(/⟨SLASHGLOBSTAR⟩/g, "(/.*)?/")
     .replace(/⟨LEADGLOBSTAR⟩/g, "(.*/)?")
-    .replace(/⟨GLOBSTAR⟩/g, ".*")
-    .replace(/\?/g, "[^/]");
+    .replace(/⟨GLOBSTAR⟩/g, ".*");
 
   if (anchored) {
     return new RegExp(`^${regex}(/|$)`);

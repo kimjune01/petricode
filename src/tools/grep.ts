@@ -39,7 +39,11 @@ export const GrepTool: Tool = {
 
     return new Promise<string>((resolve, reject) => {
       const grepArgs = [
-        "-rn",
+        // -E for extended regex: LLMs write ERE-style patterns (`foo|bar`,
+        // `\d+`) and BRE silently treats `|`/`+` as literals, returning
+        // zero matches and leading the model to conclude the pattern is
+        // genuinely absent.
+        "-rnE",
         "--exclude-dir=.git",
         "--exclude-dir=node_modules",
         "--exclude=.env*",

@@ -1,8 +1,12 @@
-import { readFile } from "fs/promises";
+import { open, stat } from "fs/promises";
 import { isAbsolute, resolve } from "path";
 import { validateFilePath } from "../filter/pathValidation.js";
 
 const FILE_REF_PATTERN = /@([^\s]+)/g;
+// Mirrors ReadFileTool's MAX_READ_BYTES so an `@huge.log` mention can't
+// dump unbounded bytes into the prompt — the per-tool cap meant nothing
+// when fileRefs.ts inlined files via raw readFile().
+const MAX_READ_BYTES = 262_144; // 256 KB
 
 /**
  * Expand @path references in input text by inlining file contents.
@@ -31,7 +35,20 @@ export async function expandFileRefs(input: string, projectDir: string): Promise
     // splice the wrong file's contents under a misleading <file path="..."> tag.
     const absPath = isAbsolute(filePath) ? filePath : resolve(projectDir, filePath);
     try {
-      const contents = await readFile(absPath, "utf-8");
+      const stats = await stat(absPath);
+      const fh = await open(absPath, "r");
+      let contents: string;
+      try {
+        if (stats.size <= MAX_READ_BYTES) {
+          contents = await fh.readFile("utf-8");
+        } else {
+          const buf = Buffer.alloc(MAX_READ_BYTES);
+          const { bytesRead } = await fh.read(buf, 0, MAX_READ_BYTES, 0);
+          contents = `${buf.slice(0, bytesRead).toString("utf-8")}\n[truncated — file is ${stats.size} bytes, showing first ${MAX_READ_BYTES}]`;
+        }
+      } finally {
+        await fh.close();
+      }
       // Reattach the trailing punctuation we stripped from the path —
       // otherwise `What about @README.md, @LICENSE?` would lose the
       // comma and the question mark from the user's prose.
