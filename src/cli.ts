@@ -1,8 +1,8 @@
-import { render } from "ink";
-import React from "react";
+// Ink is loaded lazily — headless mode (`-p`) skips the import entirely
+// so non-TTY scripts don't pay for the React/Ink boot or hit raw-mode
+// errors when stdin isn't a terminal.
 import { appendFileSync, mkdirSync, existsSync } from "fs";
 import { join } from "path";
-import App from "./app/App.js";
 
 // ── Crash log ────────────────────────────────────────────────────
 const logDir = join(process.cwd(), ".petricode");
@@ -57,12 +57,17 @@ if (args.includes("--help") || args.includes("-h")) {
 
 Usage:
   petricode [options]
+  petricode -p "<prompt>"          Run one turn headless, print result, exit
+  petricode --prompt "<prompt>"    Same as -p
 
 Options:
   --help, -h            Show this help message
   --version             Show version
   --resume <session-id> Resume a previous session
   --list                List recent sessions
+  -p, --prompt <text>   Headless: run one turn against <text>, write result
+                        to stdout, exit. No TUI. Tools auto-allow.
+  --format <text|json>  With -p: output format. Default: text.
 
 Run without arguments to open the TUI.`);
   process.exit(0);
@@ -106,6 +111,33 @@ if (resumeIdx !== -1) {
   }
 }
 
+// Headless mode — `-p` / `--prompt`. Routed BEFORE the TUI bootstrap so
+// the Ink import and raw-mode setup never run for non-interactive callers.
+const promptIdx = (() => {
+  const i = args.indexOf("-p");
+  return i !== -1 ? i : args.indexOf("--prompt");
+})();
+if (promptIdx !== -1) {
+  const prompt = args[promptIdx + 1];
+  if (!prompt) {
+    console.error("-p/--prompt requires a prompt string.");
+    process.exit(1);
+  }
+  const formatIdx = args.indexOf("--format");
+  const formatArg = formatIdx !== -1 ? args[formatIdx + 1] : undefined;
+  const format: "text" | "json" =
+    formatArg === "json" ? "json" : "text";
+
+  const { runHeadless } = await import("./headless.js");
+  const code = await runHeadless({
+    prompt,
+    projectDir: process.cwd(),
+    resumeSessionId,
+    format,
+  });
+  process.exit(code);
+}
+
 // Bootstrap the pipeline
 const { bootstrap } = await import("./session/bootstrap.js");
 const { pipeline, sessionId, resumed, mode } = await bootstrap({
@@ -120,6 +152,11 @@ if (resumed) {
 
 // Workaround for Bun stdin bug with Ink's useInput
 process.stdin.resume();
+
+// Lazy imports — see header comment for why Ink isn't at the top.
+const { render } = await import("ink");
+const React = await import("react");
+const { default: App } = await import("./app/App.js");
 
 const { waitUntilExit } = render(
   React.createElement(App, { pipeline, resumeSessionId, mode }),
