@@ -2,6 +2,11 @@ import { spawn } from "child_process";
 import type { Tool } from "./tool.js";
 
 const DEFAULT_TIMEOUT = 30_000;
+// Cap output to protect the agent from `cat /dev/urandom`, `yes`, and
+// other unbounded producers that would OOM the Node heap before the
+// timeout fires. 1 MB matches grep.ts; downstream maskToolOutput
+// replaces anything larger with a placeholder anyway.
+const MAX_OUTPUT_BYTES = 1_048_576;
 
 export const ShellTool: Tool = {
   name: "shell",
@@ -34,9 +39,22 @@ export const ShellTool: Tool = {
 
       let stdout = "";
       let stderr = "";
+      let outputBytes = 0;
+      let truncated = false;
 
-      proc.stdout.on("data", (d: Buffer) => (stdout += d.toString()));
-      proc.stderr.on("data", (d: Buffer) => (stderr += d.toString()));
+      const collect = (d: Buffer, sink: "out" | "err") => {
+        if (truncated) return;
+        outputBytes += d.length;
+        if (outputBytes > MAX_OUTPUT_BYTES) {
+          truncated = true;
+          proc.kill("SIGTERM");
+          return;
+        }
+        if (sink === "out") stdout += d.toString();
+        else stderr += d.toString();
+      };
+      proc.stdout.on("data", (d: Buffer) => collect(d, "out"));
+      proc.stderr.on("data", (d: Buffer) => collect(d, "err"));
 
       // Single cleanup so timeout / abort / close / error all fully detach.
       // Without this the abort listener leaks past timeout fires.
@@ -60,7 +78,10 @@ export const ShellTool: Tool = {
 
       proc.on("close", (code) => {
         cleanup();
-        const output = (stdout + stderr).trimEnd();
+        let output = (stdout + stderr).trimEnd();
+        if (truncated) {
+          output += `\n[output truncated — exceeded ${MAX_OUTPUT_BYTES} bytes]`;
+        }
         if (code !== 0) {
           resolve(`[exit ${code}]\n${output}`);
         } else {

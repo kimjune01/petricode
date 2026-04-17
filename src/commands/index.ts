@@ -29,8 +29,7 @@ const commands: Record<string, CommandHandler> = {
       "",
       "Tips:",
       "  @path/to/file — include file contents in prompt",
-      "  Ctrl+C        — quit immediately",
-      "  q             — quit when input is empty",
+      "  Ctrl+C        — interrupt / quit",
     ].join("\n"),
   }),
   clear: () => {

@@ -9,6 +9,7 @@ import { DEFAULT_TIERS, validateTiers } from "../config/models.js";
 import { TierRouter } from "../providers/router.js";
 import { RetryProvider } from "../providers/retry.js";
 import { Pipeline, type PipelineOptions } from "../agent/pipeline.js";
+import type { PolicyRule } from "../filter/policy.js";
 import { createSqliteRemember } from "../remember/sqlite.js";
 import { createDefaultRegistry } from "../tools/registry.js";
 import { resumeSession } from "./resume.js";
@@ -103,12 +104,18 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<BootstrapR
   // Session ID
   const sessionId = opts.sessionId ?? opts.resumeSessionId ?? crypto.randomUUID();
 
-  // Init pipeline
+  // Init pipeline. Apply mode → policyRules so `mode: "yolo"` actually
+  // skips the confirmation prompt instead of being silently ignored.
+  const mode: ConfirmMode = tiersConfig.mode ?? "cautious";
+  const policyRules: PolicyRule[] = mode === "yolo"
+    ? [{ tool: "*", outcome: "ALLOW" }]
+    : [];
   const pipelineOpts: PipelineOptions = {
     router,
     projectDir,
     sessionId,
     registry,
+    policyRules,
     onConfirm: opts.onConfirm,
   };
 
@@ -126,6 +133,5 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<BootstrapR
     }
   }
 
-  const mode: ConfirmMode = tiersConfig.mode ?? "cautious";
   return { pipeline, sessionId, resumed, mode };
 }

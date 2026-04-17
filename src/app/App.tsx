@@ -115,11 +115,6 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
 
     // Ctrl+D EOF is owned by Composer (only triggers when its input is empty)
     // so a user mid-typing isn't ejected by the parallel handler.
-
-    // Quick quit when idle
-    if (_ch === "q" && state.phase === "idle") {
-      exit();
-    }
   });
 
   const addSystemTurn = useCallback((text: string) => {

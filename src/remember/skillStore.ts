@@ -84,8 +84,31 @@ export class SkillStore {
     return { name, body, frontmatter, trigger };
   }
 
-  write(skill: Skill): void {
-    writeFileSync(this.skillPath(skill.name), this.serializeSkill(skill));
+  /**
+   * Persist a skill. If a skill file with the same name already exists,
+   * suffix `-2`, `-3`, … to disambiguate so a clobbering write from
+   * `groupToCandidate` (which can mint duplicate names from short or
+   * coincident problem-word clusters) doesn't silently overwrite an
+   * approved skill the user already saved.
+   *
+   * Returns the actual name written (may differ from input on collision).
+   */
+  write(skill: Skill): string {
+    let candidateName = skill.name;
+    let suffix = 2;
+    while (existsSync(this.skillPath(candidateName))) {
+      candidateName = `${skill.name}-${suffix}`;
+      suffix++;
+      // Re-validate the synthesized name passes the safe-name regex.
+      // Suffix `-N` only adds digits + hyphen, so validation never fails
+      // unless the original name itself was already at the boundary —
+      // skillPath() asserts.
+    }
+    const persisted: Skill = candidateName === skill.name
+      ? skill
+      : { ...skill, name: candidateName };
+    writeFileSync(this.skillPath(candidateName), this.serializeSkill(persisted));
+    return candidateName;
   }
 
   readAll(): Skill[] {

@@ -2,7 +2,7 @@
 
 import type { Turn, ToolCall } from "../core/types.js";
 
-export type AppPhase = "idle" | "composing" | "running" | "confirming";
+export type AppPhase = "composing" | "running" | "confirming";
 
 export interface AppState {
   phase: AppPhase;
