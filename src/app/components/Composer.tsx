@@ -169,17 +169,21 @@ export default function Composer({ onSubmit, disabled, clearSignal, phase, onEof
         else if (key.rightArrow || (key.ctrl && ch === "f")) {
           nextCursor = Math.min(prev.input.length, prev.cursor + 1);
         }
-        // Backspace — delete char before cursor
-        else if (key.backspace) {
+        // Backspace — delete char before cursor.
+        // Ink 5.2.1's parseKeypress maps macOS Backspace (\x7f) to
+        // `key.delete`, not `key.backspace` (only \x08 / Ctrl+H gets
+        // `backspace`). Treat both as backward-delete so the Backspace
+        // key actually works on macOS terminals.
+        else if (key.backspace || key.delete) {
           if (prev.cursor > 0) {
             nextInput = prev.input.slice(0, prev.cursor - 1) + prev.input.slice(prev.cursor);
             nextCursor = prev.cursor - 1;
           }
         }
-        // Delete / Ctrl+D — delete char at cursor (forward delete);
-        // empty input + Ctrl+D = EOF exit (standard shell behavior).
-        else if (key.delete || (key.ctrl && ch === "d")) {
-          if (prev.input.length === 0 && key.ctrl && ch === "d") {
+        // Ctrl+D — forward delete at cursor; empty input + Ctrl+D = EOF
+        // exit (standard shell behavior).
+        else if (key.ctrl && ch === "d") {
+          if (prev.input.length === 0) {
             onEofExit?.();
             return prev;
           }
