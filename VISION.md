@@ -1,6 +1,6 @@
-# Roadmap
+# Vision
 
-High-level features. The cache layer is built on [union-find compaction](https://june.kim/union-find-compaction); the items below are the user-visible affordances that compaction unlocks, plus the framework gap (Consolidate) and a polish pile.
+Bets, not commitments. The cache layer is built on [union-find compaction](https://june.kim/union-find-compaction); the items below are the user-visible affordances that compaction *could* unlock, plus the framework gap (Consolidate) and a polish pile of scoped work that's actually queued.
 
 Granular bug fixes live in `docs/bug-hunt-round*.md`. clig.dev compliance items live in `docs/design-pass-clig-gemini.md`. This file is intentionally thin.
 
