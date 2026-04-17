@@ -52,7 +52,6 @@ The sixth Natural Framework role. Currently unwired. The post's framing: compact
 
 Each is small to medium and well-scoped — fold into a release rather than a feature.
 
-- **clig.dev #6** — TTY auto-detect: today the TUI boots even when stdin/stdout aren't a terminal; should fall back to headless or fail with a clear message
 - **clig.dev #7** — `--yes` flag for headless destructive tools; today `-p` auto-allows everything implicitly
 - **clig.dev #9** — slash command naming consistency (`/clear`, `/compact` vs `/model`, `/skills`)
 - **clig.dev #10** — JSONC config so `petricode.config.json` can carry inline comments

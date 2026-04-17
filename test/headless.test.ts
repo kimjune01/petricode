@@ -339,6 +339,17 @@ describe("cli -p / --prompt argv parsing", () => {
     expect(stderr).toContain("--format requires -p/--prompt");
   });
 
+  test("non-TTY without -p exits 2 with hint to use -p (clig.dev #6)", async () => {
+    // runCli pipes stdin/stdout so process.std{in,out}.isTTY are false.
+    // Without -p, the TUI would have booted Ink against a non-terminal
+    // stream — useInput hangs or raw-mode setup throws. Now it bails
+    // up front with an actionable hint.
+    const { code, stderr } = await runCli([]);
+    expect(code).toBe(2);
+    expect(stderr).toContain("TUI requires a terminal");
+    expect(stderr).toContain("-p");
+  });
+
   test("`--resume -p hi` doesn't consume -p as the session ID", async () => {
     // Pre-fix, args.indexOf("--resume") + 1 returned the index of "-p",
     // which then bootstrap'd a session named "-p" (or 1'd with cryptic

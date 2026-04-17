@@ -165,6 +165,19 @@ if (parsed.prompt !== undefined) {
   process.exit(result.exitCode);
 }
 
+// TUI requires a terminal on both ends. Without `-p`, a redirected
+// stdin (`petricode < input.txt`) or stdout (`petricode > out.txt`)
+// would boot Ink into a non-interactive stream — useInput hangs or
+// raw-mode setup crashes. Surface the misuse with an actionable hint
+// instead of letting Ink fail opaquely.
+if (!process.stdin.isTTY || !process.stdout.isTTY) {
+  console.error(
+    "petricode: TUI requires a terminal on both stdin and stdout.\n" +
+    "For non-interactive use, pass -p \"<prompt>\" to run a single headless turn.",
+  );
+  process.exit(2);
+}
+
 // Past this point we're running the TUI — register the bracketed-paste
 // cleanup hooks so a crash or signal doesn't leave the user's terminal
 // in bracketed-paste mode. Headless mode never gets here, so its stdout
