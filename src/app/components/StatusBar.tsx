@@ -10,7 +10,12 @@ interface StatusBarProps {
   contextSummary?: string;
 }
 
-const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+// Science-themed rotation. All glyphs are U+1F9** / U+1F52C — modern
+// terminals render them at a consistent 2-column width, so the line
+// doesn't jitter between frames. Avoiding ⚗️ on purpose: it carries a
+// variation selector and renders 1-column in some terminals.
+const SPINNER = ["🧪", "🧫", "🦠", "🧬", "🔬"];
+const SPINNER_INTERVAL_MS = 220;
 
 const PHASE_LABEL: Record<AppPhase, string> = {
   composing: "ready",
@@ -22,7 +27,7 @@ function useSpinner(active: boolean): string {
   const [frame, setFrame] = useState(0);
   useEffect(() => {
     if (!active) return;
-    const timer = setInterval(() => setFrame((f) => (f + 1) % SPINNER.length), 80);
+    const timer = setInterval(() => setFrame((f) => (f + 1) % SPINNER.length), SPINNER_INTERVAL_MS);
     return () => clearInterval(timer);
   }, [active]);
   return active ? SPINNER[frame]! : "";
