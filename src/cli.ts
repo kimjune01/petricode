@@ -129,13 +129,15 @@ if (promptIdx !== -1) {
     formatArg === "json" ? "json" : "text";
 
   const { runHeadless } = await import("./headless.js");
-  const code = await runHeadless({
+  const result = await runHeadless({
     prompt,
     projectDir: process.cwd(),
     resumeSessionId,
     format,
   });
-  process.exit(code);
+  if (result.stdout) process.stdout.write(result.stdout);
+  if (result.stderr) process.stderr.write(result.stderr);
+  process.exit(result.exitCode);
 }
 
 // Bootstrap the pipeline
