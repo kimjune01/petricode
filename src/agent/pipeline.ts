@@ -27,7 +27,7 @@ import {
 } from "../skills/activation.js";
 import type { ActivatedSkill } from "../skills/types.js";
 import { createSkillTool } from "../tools/skill.js";
-import { inferProviderFromModel } from "../config/models.js";
+import { inferProviderFromModel, listKnownModels } from "../config/models.js";
 
 export interface PipelineOptions {
   router: TierRouter;
@@ -492,6 +492,17 @@ export class Pipeline {
    * vendor collides with the reviewer tier (router enforces separation).
    */
   setPrimaryModel(modelId: string): { previous: string; current: string } {
+    // Validate against the known-models registry first so typos fail in the
+    // TUI rather than silently swapping in a bogus model and surfacing only
+    // when the next turn 404s from the provider. Reachability (Vertex region
+    // entitlement, etc.) is still on the provider side — this just gates
+    // names that aren't recognized at all.
+    const known = listKnownModels();
+    if (!known.includes(modelId)) {
+      throw new Error(
+        `Unknown model '${modelId}'. Known: ${known.sort().join(", ")}`,
+      );
+    }
     const vendor = inferProviderFromModel(modelId);
     if (!vendor) {
       throw new Error(

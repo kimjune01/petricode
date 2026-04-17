@@ -194,7 +194,26 @@ export default function Composer({ onSubmit, disabled, clearSignal, phase, onEof
             nextInput = prev.input.slice(0, prev.cursor) + prev.input.slice(prev.cursor + 1);
           }
         }
-        // Ignore other control sequences
+        // Multi-char chunk — a paste that escaped bracketed-paste detection
+        // (terminal didn't send \x1b[200~ wrappers) or arrived with
+        // key.meta=true from macOS Cmd+V. Insert the whole payload, but
+        // strip ESC sequences and other control bytes so terminal codes
+        // don't leak into the input. Checked BEFORE the ctrl/meta drop so
+        // Cmd+V's meta flag doesn't swallow the payload.
+        else if (ch && ch.length > 1) {
+          const cleaned = ch.replace(
+            /\x1b\[[0-9;]*[a-zA-Z]|[\x00-\x08\x0b-\x1f\x7f]/g,
+            "",
+          );
+          if (cleaned) {
+            nextInput =
+              prev.input.slice(0, prev.cursor) +
+              cleaned +
+              prev.input.slice(prev.cursor);
+            nextCursor = prev.cursor + cleaned.length;
+          }
+        }
+        // Ignore other single-char control sequences
         else if (key.ctrl || key.meta) {
           return prev;
         }
