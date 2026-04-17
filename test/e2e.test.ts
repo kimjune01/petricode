@@ -522,7 +522,6 @@ describe("/help and /clear", () => {
     expect(result!.output).toContain("/clear");
     expect(result!.output).toContain("/compact");
     expect(result!.output).toContain("/skills");
-    expect(result!.output).toContain("/consolidate");
     expect(result!.output).toContain("@path");
   });
 

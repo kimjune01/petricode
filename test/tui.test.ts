@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { tryCommand } from "../src/commands/index.js";
+import { tryCommand, overrideCommand } from "../src/commands/index.js";
 
 describe("slash commands", () => {
   test("/exit returns exit flag", () => {
@@ -19,6 +19,19 @@ describe("slash commands", () => {
     expect(result).not.toBeNull();
     expect(result!.output).toContain("/exit");
     expect(result!.exit).toBeUndefined();
+  });
+
+  test("/help does not advertise unimplemented /consolidate", () => {
+    const result = tryCommand("/help");
+    expect(result!.output).not.toContain("/consolidate");
+  });
+
+  test("overrideCommand replaces /compact with real handler", () => {
+    overrideCommand("compact", () => ({ output: "Compacted: 100 → 40 tokens" }));
+    const result = tryCommand("/compact");
+    expect(result!.output).toContain("Compacted");
+    // Restore stub so subsequent tests aren't polluted
+    overrideCommand("compact", () => ({ output: "Compaction not yet implemented." }));
   });
 
   test("/compact returns stub message", () => {

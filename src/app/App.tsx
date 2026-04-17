@@ -3,7 +3,8 @@ import { Box, Text, useApp, useInput } from "ink";
 import type { Turn, ToolCall } from "../core/types.js";
 import type { AppPhase } from "./state.js";
 import { initialState } from "./state.js";
-import { tryCommand } from "../commands/index.js";
+import { tryCommand, overrideCommand } from "../commands/index.js";
+import { listSkills } from "../commands/skills.js";
 import type { Pipeline } from "../agent/pipeline.js";
 import type { ConfirmMode } from "../config/models.js";
 import { spacing } from "./theme.js";
@@ -50,6 +51,21 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
     return () => {
       pipeline.onConfirm = undefined;
     };
+  }, [pipeline]);
+
+  // Wire pipeline-backed slash commands. Done here (not at module load)
+  // because /skills needs pipeline.loadedSkills() and /compact needs the
+  // pipeline's cache.
+  useEffect(() => {
+    if (!pipeline) return;
+    overrideCommand("skills", () => listSkills(pipeline.loadedSkills()));
+    overrideCommand("compact", () => {
+      const before = pipeline.tokenCount();
+      pipeline.compact();
+      const after = pipeline.tokenCount();
+      setState((prev) => ({ ...prev, tokenCount: after }));
+      return { output: `Compacted: ${before} → ${after} tokens` };
+    });
   }, [pipeline]);
 
   useEffect(() => {

@@ -456,6 +456,15 @@ export class Pipeline {
     return this.cache.token_count();
   }
 
+  /**
+   * Compact the conversation cache: graduate hot turns to the cold
+   * union-find zone and enforce the cluster cap. Bounded operation —
+   * no LLM call, no async work.
+   */
+  compact(): void {
+    this.cache.compact();
+  }
+
   /** Current session ID. */
   sessionId(): string {
     return this._sessionId;

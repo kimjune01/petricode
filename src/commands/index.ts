@@ -7,13 +7,6 @@ export interface CommandResult {
 
 export type CommandHandler = (args: string) => CommandResult;
 
-// Clear callback — set by App to wire hot zone reset
-let clearCallback: (() => void) | null = null;
-
-export function setClearCallback(cb: () => void): void {
-  clearCallback = cb;
-}
-
 const commands: Record<string, CommandHandler> = {
   exit: () => ({ output: "Goodbye.", exit: true }),
   quit: () => ({ output: "Goodbye.", exit: true }),
@@ -25,19 +18,36 @@ const commands: Record<string, CommandHandler> = {
       "  /clear        — reset conversation (keeps session)",
       "  /compact      — compact conversation history",
       "  /skills       — list available skills",
-      "  /consolidate  — extract skills from session history",
       "",
       "Tips:",
       "  @path/to/file — include file contents in prompt",
       "  Ctrl+C        — interrupt / quit",
     ].join("\n"),
   }),
-  clear: () => {
-    if (clearCallback) clearCallback();
-    return { output: "Conversation cleared." };
-  },
+  // /clear is intercepted directly in App.tsx so it can reset React state;
+  // the stub here is the fallback for headless callers (tests).
+  clear: () => ({ output: "Conversation cleared." }),
+  // Stubs — App.tsx overrides these via overrideCommand once the pipeline
+  // is wired. Kept here so tryCommand returns something useful in headless
+  // contexts (tests, scripts) instead of "Unknown command".
   compact: () => ({ output: "Compaction not yet implemented." }),
   skills: () => ({ output: "No skills loaded." }),
+  // /consolidate is intentionally not wired yet. Roadmap:
+  //   1. Skills authored manually.
+  //   2. Meta-skills added on top.
+  //   3. Repeated tasks compress into skills via runConsolidate.
+  //   4. Repeated skill invocations compose.
+  //   5. End state: composite skills like /copyedit get generated and
+  //      implemented automagically.
+  // The data path (runConsolidate → consolidator) is implemented and
+  // tested; only the slash-command registration is held back until the
+  // manual-skill phase has produced enough material to compress.
+  //
+  // Half-baked further layer: a meta-consolidate that watches petricode's
+  // own sessions, mines patterns in its tool-use and failure modes, and
+  // proposes skills or code edits to itself. Bootstrapping is the open
+  // problem — needs enough self-history to mine, plus a sandboxed eval
+  // before any auto-apply lands on disk.
 };
 
 /**
