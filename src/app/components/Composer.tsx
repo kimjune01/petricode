@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Box, Text, useInput, useStdin } from "ink";
 import { colors } from "../theme.js";
+import { useSpinner } from "../spinner.js";
 
 // Bracketed paste escape sequences
 const PASTE_START = "\x1b[200~";
@@ -21,6 +22,8 @@ interface ComposerProps {
 }
 
 export default function Composer({ onSubmit, disabled, clearSignal, phase, onEofExit }: ComposerProps) {
+  const spinner = useSpinner(phase === "running");
+
   // Sync ref + async state eliminates stale closures during rapid keypresses.
   // All mutations go through updateState which writes both synchronously (ref)
   // and asynchronously (setState for re-render).
@@ -223,7 +226,7 @@ export default function Composer({ onSubmit, disabled, clearSignal, phase, onEof
           {">"}{" "}
         </Text>
         {disabled ? (
-          <Text dimColor>{phase === "running" ? "thinking…" : phase === "confirming" ? "confirm tool call" : "…"}</Text>
+          <Text dimColor>{phase === "running" ? `${spinner} thinking…` : phase === "confirming" ? "confirm tool call" : "…"}</Text>
         ) : (
           <Text>
             {before}
