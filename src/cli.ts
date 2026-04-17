@@ -3,6 +3,7 @@
 // errors when stdin isn't a terminal.
 import { appendFileSync, mkdirSync, existsSync } from "fs";
 import { join } from "path";
+import { parseArgs } from "./argv.js";
 
 // ── Crash log ────────────────────────────────────────────────────
 const logDir = join(process.cwd(), ".petricode");
@@ -57,104 +58,7 @@ process.on("unhandledRejection", (reason) => {
 });
 
 const args = process.argv.slice(2);
-
-// ── Argv parsing ─────────────────────────────────────────────────
-// Walk argv positionally instead of indexOf-scanning the whole array.
-// indexOf doesn't know that the token after `-p` belongs to -p, so
-// `petricode -p "--list"` was treating --list as a top-level flag and
-// `petricode --resume -p hi` was treating "-p" as the session ID.
-//
-// `--` is honored as the end-of-flags sentinel: everything after is
-// treated as positional and won't trigger -h, --version, --list, etc.
-type ParsedArgs = {
-  help: boolean;
-  version: boolean;
-  list: boolean;
-  resume?: string;
-  prompt?: string;
-  format: "text" | "json";
-  // Tracks whether --format was explicitly set, so we can report
-  // "--format requires -p" when the user passes --format but no
-  // prompt — without that, --format silently launched the TUI.
-  formatExplicit: boolean;
-  errors: string[];
-};
-
-function parseArgs(input: string[]): ParsedArgs {
-  const out: ParsedArgs = {
-    help: false,
-    version: false,
-    list: false,
-    format: "text",
-    formatExplicit: false,
-    errors: [],
-  };
-  let i = 0;
-  let positional = false;
-  while (i < input.length) {
-    const arg = input[i]!;
-    if (positional) {
-      i++;
-      continue;
-    }
-    if (arg === "--") { positional = true; i++; continue; }
-    if (arg === "--help" || arg === "-h") { out.help = true; i++; continue; }
-    if (arg === "--version") { out.version = true; i++; continue; }
-    if (arg === "--list") { out.list = true; i++; continue; }
-    if (arg === "--resume") {
-      const next = input[i + 1];
-      if (!next || next.startsWith("-")) {
-        out.errors.push("--resume requires a session ID. Use --list to see sessions.");
-        i++;
-      } else {
-        out.resume = next;
-        i += 2;
-      }
-      continue;
-    }
-    if (arg === "-p" || arg === "--prompt") {
-      const next = input[i + 1];
-      // Trust the user: a prompt is allowed to start with `-` (e.g.
-      // "- write tests for X"). The earlier rejection of leading-dash
-      // values prevented `petricode -p "-f or whatever"` entirely with
-      // no escape hatch. Only reject the truly missing case here.
-      if (next === undefined) {
-        out.errors.push("-p/--prompt requires a prompt string. Example: petricode -p \"fix the failing test\"");
-        i++;
-      } else {
-        // Last-wins per clig.dev: a later -p overrides an earlier one.
-        out.prompt = next;
-        i += 2;
-      }
-      continue;
-    }
-    if (arg === "--format") {
-      const next = input[i + 1];
-      if (next === "text" || next === "json") {
-        out.format = next;
-        out.formatExplicit = true;
-        i += 2;
-      } else {
-        out.errors.push("--format expects 'text' or 'json'.");
-        i++;
-      }
-      continue;
-    }
-    out.errors.push(`Unknown flag: ${arg}`);
-    i++;
-  }
-  return out;
-}
-
 const parsed = parseArgs(args);
-
-// Cross-flag validation that's awkward to express inside the per-token
-// loop: --format only does anything in headless mode, so flagging it
-// without -p surfaces the user's mistake instead of silently dropping
-// the flag and launching the TUI.
-if (parsed.formatExplicit && parsed.prompt === undefined) {
-  parsed.errors.push("--format requires -p/--prompt (it only affects headless output).");
-}
 
 if (parsed.help) {
   console.log(`petricode

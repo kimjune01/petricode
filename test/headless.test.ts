@@ -10,6 +10,7 @@ import {
   runHeadlessTurn,
   turnText,
 } from "../src/headless.js";
+import { parseArgs } from "../src/argv.js";
 import { join } from "path";
 
 // ── Mock router (mirrors test/integration.test.ts) ───────────────
@@ -330,42 +331,6 @@ describe("cli -p / --prompt argv parsing", () => {
     expect(stderr).not.toContain("requires a prompt string");
   });
 
-  test("`-p --format` (no trailing positional) sends '--format' as the prompt cleanly", async () => {
-    // Without a trailing token the parser succeeds and bootstrap runs.
-    // We don't wait for bootstrap — just verify the parser handed off
-    // (no exit-2 misuse, no stderr complaint about missing value).
-    const proc = Bun.spawn([process.execPath, cliPath, "-p", "--format"], {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const killer = setTimeout(() => proc.kill("SIGTERM"), 1500);
-    const stderr = await new Response(proc.stderr).text();
-    const code = await proc.exited;
-    clearTimeout(killer);
-    expect(code).not.toBe(2);
-    expect(stderr).not.toContain("requires a prompt string");
-    expect(stderr).not.toContain("Unknown flag");
-  }, 5000);
-
-  test("`-p \"--list\"` consumes --list as the prompt, not a top-level flag", async () => {
-    // Round-21 trusted the value of -p so dash-prefixed prompts are
-    // legal. The critical UX invariant: --list must NOT run as the
-    // session lister when it was clearly given as -p's value. The
-    // headless run kicks off bootstrap which is slow; we don't need
-    // it to complete — just need to confirm the lister output never
-    // appears.
-    const proc = Bun.spawn([process.execPath, cliPath, "-p", "--list"], {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const killer = setTimeout(() => proc.kill("SIGTERM"), 1500);
-    const stdout = await new Response(proc.stdout).text();
-    await proc.exited;
-    clearTimeout(killer);
-    expect(stdout).not.toContain("Recent sessions");
-    expect(stdout).not.toContain("No sessions found");
-  }, 5000);
-
   test("`--format json` without -p reports misuse (not silent TUI launch)", async () => {
     // Round-21 #2: --format used to be silently dropped if -p was
     // missing, and the CLI happily booted the TUI. Now it errors out.
@@ -384,22 +349,92 @@ describe("cli -p / --prompt argv parsing", () => {
     expect(stderr).toContain("--resume requires a session ID");
   });
 
-  test("`--prompt` recognized as -p alias (parser routes to headless, no misuse)", async () => {
-    // Deterministic: kill the spawned process after a short window,
-    // then assert the parser-misuse string never appeared on stderr
-    // and that exit wasn't the parser's exit-2. This catches
-    // regressions where --prompt would be silently dropped (treated
-    // as unknown flag) while staying robust to slow bootstrap.
-    const proc = Bun.spawn([process.execPath, cliPath, "--prompt", "hi"], {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const killer = setTimeout(() => proc.kill("SIGTERM"), 1500);
-    const stderr = await new Response(proc.stderr).text();
-    const code = await proc.exited;
-    clearTimeout(killer);
-    expect(code).not.toBe(2);
-    expect(stderr).not.toContain("requires a prompt string");
-    expect(stderr).not.toContain("Unknown flag");
-  }, 5000);
+});
+
+// ── parseArgs unit tests ─────────────────────────────────────────
+// Direct tests of the argv parser. These replace earlier subprocess+
+// timer-killed tests that were prone to false positives on slow CI
+// (SIGTERM exit codes trivially passing not-2 checks) and to negative-
+// assertion blindspots (any unrelated stderr satisfied the assertion).
+// The parser is pure — exercise it as such.
+
+describe("parseArgs", () => {
+  test("`--prompt` is an alias for `-p`", () => {
+    const a = parseArgs(["--prompt", "hi"]);
+    expect(a.prompt).toBe("hi");
+    expect(a.errors).toEqual([]);
+  });
+
+  test("`-p --format` consumes --format as the prompt value", () => {
+    // Round-21 trust-the-user: prompt values may begin with `-`. With
+    // no trailing positional after, the parser succeeds cleanly.
+    const a = parseArgs(["-p", "--format"]);
+    expect(a.prompt).toBe("--format");
+    expect(a.formatExplicit).toBe(false);
+    expect(a.errors).toEqual([]);
+  });
+
+  test("`-p \"--list\"` consumes --list as the prompt, not a top-level flag", () => {
+    // Critical UX invariant: --list must not run as the session lister
+    // when the user clearly handed it to -p. Pre-fix (indexOf-based
+    // parsing) would set both `prompt` and `list`.
+    const a = parseArgs(["-p", "--list"]);
+    expect(a.prompt).toBe("--list");
+    expect(a.list).toBe(false);
+  });
+
+  test("`-p \"--help\"` consumes --help as the prompt, not a top-level flag", () => {
+    const a = parseArgs(["-p", "--help"]);
+    expect(a.prompt).toBe("--help");
+    expect(a.help).toBe(false);
+  });
+
+  test("`--` ends flag parsing; subsequent tokens are positional and ignored", () => {
+    const a = parseArgs(["--", "--list", "--help"]);
+    expect(a.list).toBe(false);
+    expect(a.help).toBe(false);
+    expect(a.errors).toEqual([]);
+  });
+
+  test("last -p wins (clig.dev convention)", () => {
+    const a = parseArgs(["-p", "first", "-p", "second"]);
+    expect(a.prompt).toBe("second");
+    expect(a.errors).toEqual([]);
+  });
+
+  test("--format text|json sets formatExplicit", () => {
+    const a = parseArgs(["-p", "hi", "--format", "json"]);
+    expect(a.format).toBe("json");
+    expect(a.formatExplicit).toBe(true);
+    expect(a.errors).toEqual([]);
+  });
+
+  test("--format with bad value reports a parse error", () => {
+    const a = parseArgs(["-p", "hi", "--format", "yaml"]);
+    expect(a.errors).toContain("--format expects 'text' or 'json'.");
+  });
+
+  test("--format without -p is a cross-flag misuse", () => {
+    const a = parseArgs(["--format", "json"]);
+    expect(a.errors.some((e) => e.includes("--format requires -p/--prompt"))).toBe(true);
+  });
+
+  test("--resume rejects a leading-dash next token", () => {
+    const a = parseArgs(["--resume", "-p", "hi"]);
+    expect(a.errors.some((e) => e.includes("--resume requires a session ID"))).toBe(true);
+    expect(a.resume).toBeUndefined();
+  });
+
+  test("-p with no value is missing-value misuse", () => {
+    const a = parseArgs(["-p"]);
+    expect(a.errors.some((e) => e.includes("requires a prompt string"))).toBe(true);
+    expect(a.prompt).toBeUndefined();
+  });
+
+  test("-p followed by unknown positional reports the positional, not a missing-value", () => {
+    const a = parseArgs(["-p", "--format", "json"]);
+    expect(a.prompt).toBe("--format");
+    expect(a.errors).toContain("Unknown flag: json");
+    expect(a.errors.some((e) => e.includes("requires a prompt string"))).toBe(false);
+  });
 });
