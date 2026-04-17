@@ -41,18 +41,36 @@ function toAnthropicContent(
   });
 }
 
-function createAnthropicClient(): Anthropic {
+// Vertex quotas are per-region per-base-model. Saturating us-east5 for
+// claude-opus-4-7 doesn't touch europe-west4 for the same model — and
+// Claude Code picks regions per-model via VERTEX_REGION_CLAUDE_<MODEL>
+// env vars. Mirror that convention so a single shell config drives
+// both tools and the user doesn't get 429s in petricode while Claude
+// Code happily routes to a different region.
+//
+// Resolution order:
+//   1. VERTEX_REGION_<NORMALIZED_MODEL_ID>   (e.g. VERTEX_REGION_CLAUDE_OPUS_4_7)
+//   2. ANTHROPIC_VERTEX_REGION                (global override)
+//   3. us-east5                               (Anthropic's GA region)
+function resolveVertexRegion(model: string): string {
+  const envKey = `VERTEX_REGION_${model.toUpperCase().replace(/-/g, "_")}`;
+  return (
+    process.env[envKey] ??
+    process.env.ANTHROPIC_VERTEX_REGION ??
+    "us-east5"
+  );
+}
+
+function createAnthropicClient(model: string): Anthropic {
   // Auto-detect Vertex AI from env vars (same ones Claude Code uses)
   if (
     process.env.CLAUDE_CODE_USE_VERTEX === "1" ||
     process.env.ANTHROPIC_VERTEX_PROJECT_ID
   ) {
-    // Anthropic on Vertex needs a real region (not "global" which is Google-only).
-    // Prefer ANTHROPIC_VERTEX_REGION, fall back to us-east5.
-    const region = process.env.ANTHROPIC_VERTEX_REGION ?? "us-east5";
+    // Anthropic on Vertex needs a real region — "global" is Google-only.
     return new AnthropicVertex({
       projectId: process.env.ANTHROPIC_VERTEX_PROJECT_ID,
-      region,
+      region: resolveVertexRegion(model),
     }) as unknown as Anthropic;
   }
   return new Anthropic();
@@ -64,7 +82,7 @@ export class AnthropicProvider implements Provider {
 
   constructor(model: string, client?: Anthropic) {
     this.model = model;
-    this.client = client ?? createAnthropicClient();
+    this.client = client ?? createAnthropicClient(model);
   }
 
   async *generate(
