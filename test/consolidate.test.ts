@@ -2,7 +2,7 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtempSync, rmSync, existsSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { createSqliteRemember } from "../src/remember/sqlite.js";
+import { createSqliteTransmit } from "../src/transmit/sqlite.js";
 import { createConsolidator, groupTriples } from "../src/consolidate/consolidator.js";
 import { parseTriples } from "../src/consolidate/extractor.js";
 import { runConsolidate, writeApproved } from "../src/commands/consolidate.js";
@@ -142,11 +142,11 @@ describe("Consolidator", () => {
 
 describe("ConsolidateCommand", () => {
   let tmpDir: string;
-  let remember: ReturnType<typeof createSqliteRemember>;
+  let transmit: ReturnType<typeof createSqliteTransmit>;
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), "petricode-consolidate-"));
-    remember = createSqliteRemember({
+    transmit = createSqliteTransmit({
       dataDir: join(tmpDir, "data"),
       skillsDir: join(tmpDir, "skills"),
     });
@@ -162,15 +162,15 @@ describe("ConsolidateCommand", () => {
     const reviewer = mockProvider(["NO_ISSUES"], "reviewer");
     const consolidator = createConsolidator({ fast, primary, reviewer });
 
-    const result = await runConsolidate({ remember, consolidator });
+    const result = await runConsolidate({ transmit, consolidator });
     expect(result.output).toContain("No sessions");
   });
 
-  test("runConsolidate hydrates session turns from remember.read", async () => {
-    // remember.list() returns metadata only (turns: []). runConsolidate
-    // must hydrate via remember.read so the extractor sees the actual
+  test("runConsolidate hydrates session turns from transmit.read", async () => {
+    // transmit.list() returns metadata only (turns: []). runConsolidate
+    // must hydrate via transmit.read so the extractor sees the actual
     // transcript instead of an empty string.
-    await remember.append({
+    await transmit.append({
       kind: "perceived",
       source: "sess-A",
       content: [{ type: "text", text: "DISTINCTIVE_USER_PHRASE_xyz" }],
@@ -193,7 +193,7 @@ describe("ConsolidateCommand", () => {
     const reviewer = mockProvider(["NO_ISSUES"], "reviewer");
     const consolidator = createConsolidator({ fast: capturingFast, primary, reviewer });
 
-    await runConsolidate({ remember, consolidator });
+    await runConsolidate({ transmit, consolidator });
 
     expect(seenPrompts.length).toBeGreaterThan(0);
     expect(seenPrompts.some((p) => p.includes("DISTINCTIVE_USER_PHRASE_xyz"))).toBe(true);
@@ -211,11 +211,11 @@ describe("ConsolidateCommand", () => {
       { candidate, action: "approve" },
     ];
 
-    const result = await writeApproved(remember, decisions);
+    const result = await writeApproved(transmit, decisions);
     expect(result).toContain("Wrote 1 skill");
 
     // Verify skill exists on disk with valid frontmatter
-    const skills = await remember.read_skills!();
+    const skills = await transmit.read_skills!();
     expect(skills).toHaveLength(1);
     expect(skills[0]!.name).toBe("error-handling");
     expect(skills[0]!.body).toBe("When errors occur, add try-catch.");
@@ -236,10 +236,10 @@ describe("ConsolidateCommand", () => {
       { candidate, action: "reject" },
     ];
 
-    const result = await writeApproved(remember, decisions);
+    const result = await writeApproved(transmit, decisions);
     expect(result).toContain("No skills approved");
 
-    const skills = await remember.read_skills!();
+    const skills = await transmit.read_skills!();
     expect(skills).toHaveLength(0);
   });
 
@@ -252,7 +252,7 @@ describe("ConsolidateCommand", () => {
         content: [{ type: "text", text: `discussion in ${sid}` }],
         timestamp: Date.now(),
       };
-      await remember.append(event);
+      await transmit.append(event);
     }
 
     const fast = mockProvider([
@@ -265,11 +265,11 @@ describe("ConsolidateCommand", () => {
       fast,
       primary,
       reviewer,
-      listDecisions: () => remember.list_decisions!(),
+      listDecisions: () => transmit.list_decisions!(),
     });
 
     // Run consolidation
-    const sessions = await remember.list();
+    const sessions = await transmit.list();
     const candidates = await consolidator.run(sessions);
     expect(candidates.length).toBeGreaterThanOrEqual(1);
 
@@ -279,10 +279,10 @@ describe("ConsolidateCommand", () => {
       action: "approve" as const,
     }));
 
-    await writeApproved(remember, decisions);
+    await writeApproved(transmit, decisions);
 
     // Verify on disk
-    const skills = await remember.read_skills!();
+    const skills = await transmit.read_skills!();
     expect(skills.length).toBeGreaterThanOrEqual(1);
     expect(skills[0]!.frontmatter.generated).toBe(true);
     expect(skills[0]!.frontmatter.source_sessions).toBeTruthy();

@@ -10,7 +10,7 @@ import { TierRouter } from "../providers/router.js";
 import { RetryProvider } from "../providers/retry.js";
 import { Pipeline, type PipelineOptions } from "../agent/pipeline.js";
 import type { PolicyRule } from "../filter/policy.js";
-import { createSqliteRemember } from "../remember/sqlite.js";
+import { createSqliteTransmit } from "../transmit/sqlite.js";
 import { createDefaultRegistry } from "../tools/registry.js";
 import { resumeSession } from "./resume.js";
 import type { ConfirmFn } from "../agent/toolSubpipe.js";
@@ -59,7 +59,7 @@ function loadTiersConfig(projectDir: string): TiersConfig {
 
 /**
  * Bootstrap a complete pipeline with all roles wired.
- * Handles config loading, retry wrapping, remember setup, and optional resume.
+ * Handles config loading, retry wrapping, transmit setup, and optional resume.
  */
 export async function bootstrap(opts: BootstrapOptions = {}): Promise<BootstrapResult> {
   const projectDir = opts.projectDir ?? process.cwd();
@@ -96,10 +96,10 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<BootstrapR
   // Set up tool registry
   const registry = createDefaultRegistry();
 
-  // Set up remember
+  // Set up transmit
   const dataDir = join(projectDir, ".petricode", "data");
   const skillsDir = join(projectDir, ".petricode", "skills");
-  const remember = createSqliteRemember({ dataDir, skillsDir });
+  const transmit = createSqliteTransmit({ dataDir, skillsDir });
 
   // Session ID
   const sessionId = opts.sessionId ?? opts.resumeSessionId ?? crypto.randomUUID();
@@ -121,14 +121,14 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<BootstrapR
 
   const pipeline = new Pipeline();
   await pipeline.init(pipelineOpts);
-  pipeline.setRemember(remember);
+  pipeline.setTransmit(transmit);
 
   // Resume if requested
   let resumed = false;
   if (opts.resumeSessionId) {
     const cache = (pipeline as unknown as { cache: UnionFindCache }).cache;
     if (cache) {
-      await resumeSession(opts.resumeSessionId, remember, cache);
+      await resumeSession(opts.resumeSessionId, transmit, cache);
       resumed = true;
     }
   }

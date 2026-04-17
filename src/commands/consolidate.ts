@@ -1,12 +1,12 @@
 // ── /consolidate command ─────────────────────────────────────────
 
-import type { RememberSlot, ConsolidateSlot } from "../core/contracts.js";
+import type { TransmitSlot, ConsolidateSlot } from "../core/contracts.js";
 import type { Session, Turn } from "../core/types.js";
 import type { CommandResult } from "./index.js";
 import type { ReviewDecision } from "../app/components/ConsolidateReview.js";
 
 export interface ConsolidateCommandDeps {
-  remember: RememberSlot;
+  transmit: TransmitSlot;
   consolidator: ConsolidateSlot;
 }
 
@@ -17,18 +17,18 @@ export interface ConsolidateCommandDeps {
 export async function runConsolidate(
   deps: ConsolidateCommandDeps,
 ): Promise<CommandResult> {
-  const summaries = await deps.remember.list();
+  const summaries = await deps.transmit.list();
   if (summaries.length === 0) {
     return { output: "No sessions to consolidate." };
   }
 
-  // `remember.list()` returns metadata only — `turns: []`. Hydrate each
+  // `transmit.list()` returns metadata only — `turns: []`. Hydrate each
   // session via `read()` so the extractor builds a non-empty transcript;
   // otherwise the fast model gets EXTRACTION_PROMPT + "" and returns no
   // triples for every session.
   const sessions: Session[] = await Promise.all(
     summaries.map(async (s) => {
-      const events = await deps.remember.read(s.id);
+      const events = await deps.transmit.read(s.id);
       const turns: Turn[] = events.map((ev) => ({
         id: crypto.randomUUID(),
         role: ev.role ?? "user",
@@ -53,7 +53,7 @@ export async function runConsolidate(
  * Write approved skills from review decisions.
  */
 export async function writeApproved(
-  remember: RememberSlot,
+  transmit: TransmitSlot,
   decisions: ReviewDecision[],
 ): Promise<string> {
   const approved = decisions.filter((d) => d.action === "approve");
@@ -62,7 +62,7 @@ export async function writeApproved(
   }
 
   for (const { candidate } of approved) {
-    await remember.write_skill!({
+    await transmit.write_skill!({
       name: candidate.name,
       body: candidate.body,
       frontmatter: {

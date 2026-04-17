@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { readFileSync, mkdirSync, existsSync } from "fs";
 import { join, dirname } from "path";
-import type { RememberSlot } from "../core/contracts.js";
+import type { TransmitSlot } from "../core/contracts.js";
 import type { PerceivedEvent, Session, Skill, DecisionRecord } from "../core/types.js";
 import { SessionStore } from "./sessionStore.js";
 import { SkillStore } from "./skillStore.js";
@@ -9,12 +9,12 @@ import { DecisionStore } from "./decisionStore.js";
 
 const SCHEMA_PATH = join(dirname(import.meta.path), "schema.sql");
 
-export interface SqliteRememberOptions {
+export interface SqliteTransmitOptions {
   dataDir: string;
   skillsDir?: string;
 }
 
-export function createSqliteRemember(opts: SqliteRememberOptions): RememberSlot {
+export function createSqliteTransmit(opts: SqliteTransmitOptions): TransmitSlot {
   const { dataDir } = opts;
   const skillsDir = opts.skillsDir ?? join(dataDir, "..", "skills");
 
@@ -67,5 +67,5 @@ export function createSqliteRemember(opts: SqliteRememberOptions): RememberSlot 
     _writeDecision(sessionId: string, record: DecisionRecord): void {
       decisionStore.write(sessionId, record);
     },
-  } as RememberSlot & { _writeDecision(sessionId: string, record: DecisionRecord): void };
+  } as TransmitSlot & { _writeDecision(sessionId: string, record: DecisionRecord): void };
 }

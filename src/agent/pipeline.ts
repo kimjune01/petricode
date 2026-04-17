@@ -1,8 +1,8 @@
 // ── Forward pipe orchestrator ────────────────────────────────────
-// Perceive → Cache → Provider → Filter → Tool subpipe → Remember
+// Perceive → Cache → Provider → Filter → Tool subpipe → Transmit
 
 import type { Content, Message, Turn, ToolCall, Skill, PerceivedEvent } from "../core/types.js";
-import type { FilterSlot, RememberSlot } from "../core/contracts.js";
+import type { FilterSlot, TransmitSlot } from "../core/contracts.js";
 import type { Provider, ToolDefinition } from "../providers/provider.js";
 import type { TierRouter } from "../providers/router.js";
 import type { PolicyRule } from "../filter/policy.js";
@@ -45,7 +45,7 @@ export class Pipeline {
   private perceiver!: Perceiver;
   private cache!: UnionFindCache;
   private filter!: FilterSlot;
-  private remember?: RememberSlot;
+  private transmit?: TransmitSlot;
   private router!: TierRouter;
   private registry?: ToolRegistry;
   private projectDir!: string;
@@ -96,9 +96,9 @@ export class Pipeline {
     this.loopDetector = new LoopDetector();
   }
 
-  /** Attach a RememberSlot for persistence (optional for headless testing). */
-  setRemember(remember: RememberSlot): void {
-    this.remember = remember;
+  /** Attach a TransmitSlot for persistence (optional for headless testing). */
+  setTransmit(transmit: TransmitSlot): void {
+    this.transmit = transmit;
   }
 
   /**
@@ -111,7 +111,7 @@ export class Pipeline {
    * 5. Filter — content validation
    * 6. Tool sub-pipe (loop until no tool calls or max rounds)
    * 7. Cache — append assistant + tool result turns
-   * 8. Remember — persist
+   * 8. Transmit — persist
    * 9. Return the final assistant turn
    */
   async turn(input: string, options?: { signal?: AbortSignal }): Promise<Turn> {
@@ -171,10 +171,10 @@ export class Pipeline {
       // replaces the pending return/throw per ECMAScript semantics),
       // and one failing turn must not block subsequent turns from
       // attempting to persist.
-      if (this.remember && pendingPersist.length > 0) {
+      if (this.transmit && pendingPersist.length > 0) {
         for (const t of pendingPersist) {
           try {
-            await this.remember.append({
+            await this.transmit.append({
               kind: "perceived",
               source: this._sessionId,
               content: t.content,

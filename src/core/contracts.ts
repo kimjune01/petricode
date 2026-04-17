@@ -36,9 +36,9 @@ export interface FilterSlot {
   filter(subject: unknown): Promise<FilterResult>;
 }
 
-// ── Remember ──────────────────────────────────────────────────────
+// ── Transmit ──────────────────────────────────────────────────────
 
-export interface RememberSlot {
+export interface TransmitSlot {
   append(event: PerceivedEvent): Promise<void>;
   read(session_id: string): Promise<PerceivedEvent[]>;
   list(filter?: Record<string, unknown>): Promise<Session[]>;
@@ -69,7 +69,7 @@ export interface SlotMap {
   perceive: PerceiveSlot;
   cache: CacheSlot;
   filter: FilterSlot;
-  remember: RememberSlot;
+  transmit: TransmitSlot;
   consolidate: ConsolidateSlot;
 }
 

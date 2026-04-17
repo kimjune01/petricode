@@ -111,12 +111,12 @@ if (parsed.errors.length > 0) {
 
 if (parsed.list) {
   // List sessions requires async — handled here before TUI
-  const { createSqliteRemember } = await import("./remember/sqlite.js");
+  const { createSqliteTransmit } = await import("./transmit/sqlite.js");
   const { listSessions } = await import("./session/resume.js");
   const { join } = await import("path");
   const dataDir = join(process.cwd(), ".petricode", "data");
-  const remember = createSqliteRemember({ dataDir });
-  const sessions = await listSessions(remember, 20);
+  const transmit = createSqliteTransmit({ dataDir });
+  const sessions = await listSessions(transmit, 20);
   if (sessions.length === 0) {
     console.log("No sessions found.");
   } else {

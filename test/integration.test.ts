@@ -2,7 +2,7 @@ import { describe, test, expect } from "bun:test";
 import type { Content, Message, StreamChunk, Turn } from "../src/core/types.js";
 import type { Provider, ModelConfig } from "../src/providers/provider.js";
 import type { TiersConfig } from "../src/config/models.js";
-import type { RememberSlot } from "../src/core/contracts.js";
+import type { TransmitSlot } from "../src/core/contracts.js";
 import { TierRouter } from "../src/providers/router.js";
 import { ToolRegistry } from "../src/tools/registry.js";
 import { Pipeline } from "../src/agent/pipeline.js";
@@ -445,7 +445,7 @@ describe("Pipeline", () => {
     // Capture every persisted turn so we can assert on cache state without
     // reaching into Pipeline private fields.
     const persisted: PerceivedEvent[] = [];
-    const remember: RememberSlot = {
+    const transmit: TransmitSlot = {
       append: async (ev) => { persisted.push(ev); },
       read: async () => [],
       list: async () => [] as Session[],
@@ -457,7 +457,7 @@ describe("Pipeline", () => {
       projectDir: "/tmp/petricode-test",
       registry,
     });
-    pipeline.setRemember(remember);
+    pipeline.setTransmit(transmit);
 
     await expect(pipeline.turn("do both")).rejects.toThrow();
 

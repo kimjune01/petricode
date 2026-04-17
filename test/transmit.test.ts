@@ -2,15 +2,15 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtempSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { createSqliteRemember } from "../src/remember/sqlite.js";
+import { createSqliteTransmit } from "../src/transmit/sqlite.js";
 import type { PerceivedEvent, Skill, DecisionRecord } from "../src/core/types.js";
 
 let tmpDir: string;
-let remember: ReturnType<typeof createSqliteRemember>;
+let transmit: ReturnType<typeof createSqliteTransmit>;
 
 beforeEach(() => {
   tmpDir = mkdtempSync(join(tmpdir(), "petricode-test-"));
-  remember = createSqliteRemember({
+  transmit = createSqliteTransmit({
     dataDir: join(tmpDir, "data"),
     skillsDir: join(tmpDir, "skills"),
   });
@@ -36,10 +36,10 @@ describe("SessionStore", () => {
       timestamp: 2000,
     };
 
-    await remember.append(event1);
-    await remember.append(event2);
+    await transmit.append(event1);
+    await transmit.append(event2);
 
-    const events = await remember.read(sessionId);
+    const events = await transmit.read(sessionId);
     expect(events).toHaveLength(2);
     expect(events[0]!.content[0]).toEqual({ type: "text", text: "Hello world" });
     expect(events[1]!.content[0]).toEqual({ type: "text", text: "Second message" });
@@ -55,8 +55,8 @@ describe("SessionStore", () => {
       timestamp: Date.now(),
     };
 
-    await remember.append(event);
-    const sessions = await remember.list();
+    await transmit.append(event);
+    const sessions = await transmit.list();
     expect(sessions.length).toBeGreaterThanOrEqual(1);
     expect(sessions.some((s) => s.id === "session-abc")).toBe(true);
   });
@@ -71,8 +71,8 @@ describe("SkillStore", () => {
       trigger: "slash_command",
     };
 
-    await remember.write_skill!(skill);
-    const skills = await remember.read_skills!();
+    await transmit.write_skill!(skill);
+    const skills = await transmit.read_skills!();
 
     expect(skills).toHaveLength(1);
     expect(skills[0]!.name).toBe("test-skill");
@@ -90,16 +90,16 @@ describe("SkillStore", () => {
       trigger: "manual",
     };
 
-    await remember.write_skill!(skill);
-    const deleted = await remember.delete_skill!("to-delete");
+    await transmit.write_skill!(skill);
+    const deleted = await transmit.delete_skill!("to-delete");
     expect(deleted).toBe(true);
 
-    const skills = await remember.read_skills!();
+    const skills = await transmit.read_skills!();
     expect(skills.some((s) => s.name === "to-delete")).toBe(false);
   });
 
   test("delete nonexistent skill returns false", async () => {
-    const deleted = await remember.delete_skill!("nonexistent");
+    const deleted = await transmit.delete_skill!("nonexistent");
     expect(deleted).toBe(false);
   });
 });
@@ -113,7 +113,7 @@ describe("DecisionStore", () => {
       content: [{ type: "text", text: "context" }],
       timestamp: Date.now(),
     };
-    await remember.append(event);
+    await transmit.append(event);
 
     const record: DecisionRecord = {
       decision_type: "tool_selection",
@@ -125,9 +125,9 @@ describe("DecisionStore", () => {
       outcome_ref: "selected:grep",
     };
 
-    (remember as any)._writeDecision(sessionId, record);
+    (transmit as any)._writeDecision(sessionId, record);
 
-    const decisions = await remember.list_decisions!();
+    const decisions = await transmit.list_decisions!();
     expect(decisions).toHaveLength(1);
     expect(decisions[0]!.decision_type).toBe("tool_selection");
     expect(decisions[0]!.subject_ref).toBe("grep-vs-find");
@@ -150,9 +150,9 @@ describe("Binary content", () => {
       timestamp: Date.now(),
     };
 
-    await remember.append(event);
+    await transmit.append(event);
 
-    const events = await remember.read(sessionId);
+    const events = await transmit.read(sessionId);
     expect(events).toHaveLength(1);
     const result = events[0]!.content[0]!;
     expect(result.type).toBe("tool_result");

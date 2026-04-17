@@ -5,7 +5,7 @@ import type {
   PerceiveSlot,
   CacheSlot,
   FilterSlot,
-  RememberSlot,
+  TransmitSlot,
   ConsolidateSlot,
 } from "../src/core/contracts.js";
 import type {
@@ -65,7 +65,7 @@ const stubFilter: FilterSlot = {
   },
 };
 
-const stubRemember: RememberSlot = {
+const stubTransmit: TransmitSlot = {
   async append(_event) {},
   async read(session_id) {
     return session_id === "s1" ? [stubEvent] : [];
@@ -94,14 +94,14 @@ describe("runtime container", () => {
     rt.register("perceive", stubPerceive);
     rt.register("cache", makeCacheStub());
     rt.register("filter", stubFilter);
-    rt.register("remember", stubRemember);
+    rt.register("transmit", stubTransmit);
     rt.register("consolidate", stubConsolidate);
 
     // All five retrievable without throwing
     rt.get("perceive");
     rt.get("cache");
     rt.get("filter");
-    rt.get("remember");
+    rt.get("transmit");
     rt.get("consolidate");
   });
 
@@ -143,10 +143,10 @@ describe("runtime container", () => {
     expect(result).toEqual({ pass: true });
   });
 
-  test("remember append / read / list", async () => {
+  test("transmit append / read / list", async () => {
     const rt = new Runtime();
-    rt.register("remember", stubRemember);
-    const mem = rt.get("remember");
+    rt.register("transmit", stubTransmit);
+    const mem = rt.get("transmit");
 
     await mem.append(stubEvent);
     const events = await mem.read("s1");

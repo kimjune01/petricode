@@ -2,7 +2,7 @@
 // Load a prior session's turns back into the pipeline cache.
 
 import type { Session, Turn } from "../core/types.js";
-import type { RememberSlot } from "../core/contracts.js";
+import type { TransmitSlot } from "../core/contracts.js";
 import type { UnionFindCache } from "../cache/cache.js";
 
 export interface ResumeResult {
@@ -16,10 +16,10 @@ export interface ResumeResult {
  */
 export async function resumeSession(
   sessionId: string,
-  remember: RememberSlot,
+  transmit: TransmitSlot,
   cache: UnionFindCache,
 ): Promise<ResumeResult> {
-  const events = await remember.read(sessionId);
+  const events = await transmit.read(sessionId);
 
   if (events.length === 0) {
     throw new Error(`Session '${sessionId}' not found or has no turns`);
@@ -41,13 +41,13 @@ export async function resumeSession(
 }
 
 /**
- * List recent sessions from the remember slot.
+ * List recent sessions from the transmit slot.
  */
 export async function listSessions(
-  remember: RememberSlot,
+  transmit: TransmitSlot,
   limit: number = 10,
 ): Promise<Session[]> {
-  return remember.list({ limit });
+  return transmit.list({ limit });
 }
 
 /**
@@ -55,8 +55,8 @@ export async function listSessions(
  * Returns null if no sessions exist.
  */
 export async function lastSession(
-  remember: RememberSlot,
+  transmit: TransmitSlot,
 ): Promise<Session | null> {
-  const sessions = await remember.list({ limit: 1 });
+  const sessions = await transmit.list({ limit: 1 });
   return sessions[0] ?? null;
 }

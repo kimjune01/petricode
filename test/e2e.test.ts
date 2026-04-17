@@ -9,7 +9,7 @@ import { TierRouter } from "../src/providers/router.js";
 import { Pipeline } from "../src/agent/pipeline.js";
 import { RetryProvider, ProviderError } from "../src/providers/retry.js";
 import { CircuitBreaker } from "../src/filter/circuitBreaker.js";
-import { createSqliteRemember } from "../src/remember/sqlite.js";
+import { createSqliteTransmit } from "../src/transmit/sqlite.js";
 import { resumeSession, listSessions } from "../src/session/resume.js";
 import { UnionFindCache } from "../src/cache/cache.js";
 import { tryCommand } from "../src/commands/index.js";
@@ -393,13 +393,13 @@ describe("Bootstrap (pipeline init)", () => {
     );
   });
 
-  test("pipeline with remember persists turns", async () => {
+  test("pipeline with transmit persists turns", async () => {
     const router = makeTierRouter([
       [{ type: "content_delta", text: "Persisted" }, { type: "done" }],
     ]);
 
     const dataDir = join(tmpDir, "data");
-    const remember = createSqliteRemember({ dataDir });
+    const transmit = createSqliteTransmit({ dataDir });
 
     const pipeline = new Pipeline();
     await pipeline.init({
@@ -407,11 +407,11 @@ describe("Bootstrap (pipeline init)", () => {
       projectDir: tmpDir,
       sessionId: "persist-test",
     });
-    pipeline.setRemember(remember);
+    pipeline.setTransmit(transmit);
 
     await pipeline.turn("Save this");
 
-    const events = await remember.read("persist-test");
+    const events = await transmit.read("persist-test");
     expect(events.length).toBeGreaterThanOrEqual(1);
   });
 });
@@ -421,17 +421,17 @@ describe("Bootstrap (pipeline init)", () => {
 describe("Session resume", () => {
   test("loads persisted turns into cache", async () => {
     const dataDir = join(tmpDir, "data");
-    const remember = createSqliteRemember({ dataDir });
+    const transmit = createSqliteTransmit({ dataDir });
 
     // Seed a session
     const sessionId = "resume-test";
-    await remember.append({
+    await transmit.append({
       kind: "perceived",
       source: sessionId,
       content: [{ type: "text", text: "Turn one" }],
       timestamp: 1000,
     });
-    await remember.append({
+    await transmit.append({
       kind: "perceived",
       source: sessionId,
       content: [{ type: "text", text: "Turn two" }],
@@ -439,7 +439,7 @@ describe("Session resume", () => {
     });
 
     const cache = new UnionFindCache();
-    const result = await resumeSession(sessionId, remember, cache);
+    const result = await resumeSession(sessionId, transmit, cache);
 
     expect(result.sessionId).toBe(sessionId);
     expect(result.turnCount).toBe(2);
@@ -452,11 +452,11 @@ describe("Session resume", () => {
 
   test("throws on nonexistent session", async () => {
     const dataDir = join(tmpDir, "data");
-    const remember = createSqliteRemember({ dataDir });
+    const transmit = createSqliteTransmit({ dataDir });
     const cache = new UnionFindCache();
 
     try {
-      await resumeSession("nonexistent", remember, cache);
+      await resumeSession("nonexistent", transmit, cache);
       expect(true).toBe(false);
     } catch (err) {
       expect((err as Error).message).toContain("not found");
@@ -465,16 +465,16 @@ describe("Session resume", () => {
 
   test("preserves persisted role across resume", async () => {
     const dataDir = join(tmpDir, "data");
-    const remember = createSqliteRemember({ dataDir });
+    const transmit = createSqliteTransmit({ dataDir });
     const sessionId = "resume-role-test";
-    await remember.append({
+    await transmit.append({
       kind: "perceived",
       source: sessionId,
       content: [{ type: "text", text: "user prompt" }],
       timestamp: 1000,
       role: "user",
     });
-    await remember.append({
+    await transmit.append({
       kind: "perceived",
       source: sessionId,
       content: [{ type: "text", text: "assistant reply" }],
@@ -483,29 +483,29 @@ describe("Session resume", () => {
     });
 
     const cache = new UnionFindCache();
-    await resumeSession(sessionId, remember, cache);
+    await resumeSession(sessionId, transmit, cache);
     const turns = cache.read();
     expect(turns.map((t) => t.role)).toEqual(["user", "assistant"]);
   });
 
   test("list sessions returns seeded sessions", async () => {
     const dataDir = join(tmpDir, "data");
-    const remember = createSqliteRemember({ dataDir });
+    const transmit = createSqliteTransmit({ dataDir });
 
-    await remember.append({
+    await transmit.append({
       kind: "perceived",
       source: "sess-1",
       content: [{ type: "text", text: "a" }],
       timestamp: 1000,
     });
-    await remember.append({
+    await transmit.append({
       kind: "perceived",
       source: "sess-2",
       content: [{ type: "text", text: "b" }],
       timestamp: 2000,
     });
 
-    const sessions = await listSessions(remember, 10);
+    const sessions = await listSessions(transmit, 10);
     expect(sessions.length).toBeGreaterThanOrEqual(2);
   });
 });
