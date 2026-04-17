@@ -86,6 +86,17 @@ export class UnionFindCache implements CacheSlot {
     enforce_cap(this.forest, this.config.max_clusters, this.index);
   }
 
+  // Drop everything: hot ring, cold forest, and the TF-IDF index that
+  // backs cluster similarity. Used by /clear so the next turn starts
+  // with an empty conversation history (the model otherwise still sees
+  // the entire prior session because the UI's setState doesn't touch
+  // the cache).
+  clear(): void {
+    this.hot = [];
+    this.forest = new UnionFindForest();
+    this.index = new TfIdfIndex();
+  }
+
   token_count(): number {
     let chars = 0;
 

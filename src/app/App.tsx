@@ -189,12 +189,21 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
       if (!matchedSlashSkill) {
         const cmdResult = tryCommand(input);
         if (cmdResult) {
-          // Handle /clear — reset turns and error
-          if (input.trim() === "/clear") {
+          // Match on the parsed command name so `/clear something` is
+          // treated as /clear (and reports no-such-args), not silently
+          // dropped to the generic addSystemTurn branch which printed
+          // "Conversation cleared." while leaving turns intact.
+          if (skillCmdName === "clear") {
+            // Wipe both the React turn list AND the pipeline cache.
+            // Without pipeline.clear(), the model kept seeing the full
+            // pre-clear history on the next turn even though the UI was
+            // empty.
+            pipeline?.clear();
             setState((prev) => ({
               ...prev,
               turns: [],
               error: null,
+              tokenCount: pipeline?.tokenCount() ?? prev.tokenCount,
             }));
             addSystemTurn(cmdResult.output);
             return;
@@ -260,8 +269,19 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
         }));
       } catch (err) {
         abortRef.current = null;
-        // Abort is not an error — user already saw "Interrupted."
-        if (err instanceof DOMException && err.name === "AbortError") return;
+        // Abort is not surfaced as an error — but we still need to drop
+        // back to "composing" or the composer stays disabled. The
+        // user-Ctrl+C path already sets phase to "composing" before this
+        // catch fires, so the setState here is idempotent for that case
+        // and load-bearing for non-user aborts (provider timeout, etc.).
+        if (err instanceof DOMException && err.name === "AbortError") {
+          setState((prev) =>
+            prev.phase === "composing"
+              ? prev
+              : { ...prev, phase: "composing" as AppPhase },
+          );
+          return;
+        }
         const errMsg = err instanceof Error ? err.message : String(err);
         const failedTurn: Turn = {
           id: crypto.randomUUID(),

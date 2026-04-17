@@ -264,3 +264,55 @@ describe("stdout drain on process.exit", () => {
     expect(stdout.length).toBe(SIZE);
   }, 10_000);
 });
+
+// ── CLI flag-parsing UX (subprocess) ─────────────────────────────
+// Drives the actual cli.ts entry to assert the user-visible argv
+// behavior: malformed prompts get exit 2 and a fix hint, not a cryptic
+// "input is empty" once the pipeline starts. Subprocess is needed
+// because cli.ts's flag parsing runs at module load.
+
+const cliPath = join(import.meta.dir, "..", "src", "cli.ts");
+
+async function runCli(argv: string[]): Promise<{ code: number; stderr: string; stdout: string }> {
+  const proc = Bun.spawn(["bun", cliPath, ...argv], {
+    stdout: "pipe",
+    stderr: "pipe",
+    env: { ...process.env, PETRICODE_NO_TUI: "1" },
+  });
+  const [stdout, stderr] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ]);
+  return { code: await proc.exited, stdout, stderr };
+}
+
+describe("cli -p / --prompt argv parsing", () => {
+  test("`-p` with no value exits 2 with usage hint", async () => {
+    const { code, stderr } = await runCli(["-p"]);
+    expect(code).toBe(2);
+    expect(stderr).toContain("requires a non-flag prompt string");
+  });
+
+  test("`-p --format json` rejects flag-shaped value (doesn't send --format as prompt)", async () => {
+    const { code, stderr } = await runCli(["-p", "--format", "json"]);
+    expect(code).toBe(2);
+    expect(stderr).toContain("requires a non-flag prompt string");
+  });
+
+  test("`--prompt` is recognized when -p is absent", async () => {
+    // Negative assertion only: the flag parser must NOT bail out with
+    // exit 2 (the misuse code we just tested). Whether bootstrap
+    // succeeds depends on env creds we don't want to require here, so
+    // we kill the process after a short delay and inspect the exit.
+    const proc = Bun.spawn(["bun", cliPath, "--prompt", "hi"], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const killed = setTimeout(() => proc.kill("SIGTERM"), 1500);
+    const stderr = await new Response(proc.stderr).text();
+    const code = await proc.exited;
+    clearTimeout(killed);
+    expect(code).not.toBe(2);
+    expect(stderr).not.toContain("requires a non-flag prompt string");
+  }, 5000);
+});

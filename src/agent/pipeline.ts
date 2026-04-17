@@ -476,6 +476,16 @@ export class Pipeline {
     this.cache.compact();
   }
 
+  /**
+   * Wipe conversation history so the next turn() starts fresh. /clear
+   * in the TUI was previously only resetting React state, leaving the
+   * pipeline cache intact — the model kept remembering the "cleared"
+   * conversation across subsequent turns.
+   */
+  clear(): void {
+    this.cache.clear();
+  }
+
   /** Current session ID. */
   sessionId(): string {
     return this._sessionId;

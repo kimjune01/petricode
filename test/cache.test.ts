@@ -289,4 +289,29 @@ describe("UnionFindCache", () => {
     // Either both stayed in hot, or both graduated together. Never a split.
     expect(orphanedToolResult).toBe(orphanedToolUse);
   });
+
+  test("clear() drops hot, cold, and token count back to empty", () => {
+    // Backstop the /clear UX bug — without cache.clear(), the model
+    // kept seeing the entire pre-clear history on the next turn even
+    // though the UI was empty.
+    const cache = new UnionFindCache({ hot_capacity: 3, max_clusters: 5 });
+
+    // Force both hot AND cold population so we exercise the forest reset,
+    // not just the hot-only happy path.
+    for (let i = 0; i < 10; i++) {
+      cache.append(unique_turn(`message ${i}`));
+    }
+    expect(cache.read().length).toBeGreaterThan(0);
+    expect(cache.token_count()).toBeGreaterThan(0);
+
+    cache.clear();
+
+    expect(cache.read()).toEqual([]);
+    expect(cache.token_count()).toBe(0);
+
+    // Sanity: appending after clear behaves like a fresh cache, not a
+    // stale-index re-bind.
+    cache.append(unique_turn("post-clear"));
+    expect(cache.read().length).toBe(1);
+  });
 });
