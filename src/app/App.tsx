@@ -289,7 +289,7 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
     <Box flexDirection="column" padding={spacing.sm}>
       <Text bold>🧫 petricode</Text>
       <Box flexDirection="column" flexGrow={1} marginY={spacing.sm}>
-        <MessageList turns={state.turns} />
+        <MessageList turns={state.turns} phase={state.phase} />
         <ReviewerNotes findings={reviewerFindings} />
       </Box>
 

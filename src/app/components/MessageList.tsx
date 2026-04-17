@@ -1,6 +1,7 @@
 import React from "react";
-import { Box, Text } from "ink";
+import { Box, Static, Text } from "ink";
 import type { Turn, Content } from "../../core/types.js";
+import type { AppPhase } from "../state.js";
 import ToolGroup from "./ToolGroup.js";
 import Markdown from "./Markdown.js";
 import { colors, spacing } from "../theme.js";
@@ -50,7 +51,24 @@ const TurnView = React.memo(function TurnView({ turn }: { turn: Turn }) {
   );
 });
 
-export default function MessageList({ turns }: { turns: Turn[] }) {
+interface MessageListProps {
+  turns: Turn[];
+  phase: AppPhase;
+}
+
+/**
+ * Splits turns into a Static section (rendered once, written to scrollback,
+ * never re-rendered) and a live tail. Without Static, every spinner tick in
+ * StatusBar/ToolGroup forces Ink to repaint the entire chat history — for
+ * long sessions that's enough screen-rewrite churn to manifest as black
+ * flashes. Static caps the dynamic redraw region to the active turn.
+ *
+ * Promotion rule: while the pipeline is in flight, the last turn may still
+ * be mutating (tool results filling in), so it stays dynamic. Once the
+ * phase settles back to composing, every turn is committed and the whole
+ * list moves into Static.
+ */
+export default function MessageList({ turns, phase }: MessageListProps) {
   if (turns.length === 0) {
     return (
       <Box flexDirection="column">
@@ -59,11 +77,20 @@ export default function MessageList({ turns }: { turns: Turn[] }) {
     );
   }
 
+  const settled = phase === "composing";
+  const staticTurns = settled ? turns : turns.slice(0, -1);
+  const liveTurn = settled ? null : turns[turns.length - 1];
+
   return (
-    <Box flexDirection="column">
-      {turns.map((turn) => (
-        <TurnView key={turn.id} turn={turn} />
-      ))}
-    </Box>
+    <>
+      <Static items={staticTurns}>
+        {(turn) => <TurnView key={turn.id} turn={turn} />}
+      </Static>
+      {liveTurn && (
+        <Box flexDirection="column">
+          <TurnView turn={liveTurn} />
+        </Box>
+      )}
+    </>
   );
 }

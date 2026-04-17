@@ -18,7 +18,7 @@ export function initialState(): AppState {
     phase: "composing",
     turns: [],
     pendingToolCall: null,
-    model: "claude-sonnet-4-20250514",
+    model: "claude-opus-4-7",
     tokenCount: 0,
     error: null,
   };
