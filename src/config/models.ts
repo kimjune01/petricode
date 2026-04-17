@@ -36,6 +36,7 @@ const MODEL_INFO: Record<string, ModelInfo> = {
   "claude-haiku-4-5-20251001": { token_limit: 200_000, supports_tools: true },
   "claude-opus-4-20250514": { token_limit: 200_000, supports_tools: true },
   "claude-opus-4-6-20260205": { token_limit: 200_000, supports_tools: true },
+  "claude-opus-4-7": { token_limit: 200_000, supports_tools: true },
   // OpenAI
   "gpt-4o": { token_limit: 128_000, supports_tools: true },
   "gpt-4o-mini": { token_limit: 128_000, supports_tools: true },
@@ -58,7 +59,7 @@ export function getModelInfo(model: string): ModelInfo {
 
 export const DEFAULT_TIERS: TiersConfig = {
   tiers: {
-    primary: { provider: "anthropic", model: "claude-sonnet-4-20250514" },
+    primary: { provider: "anthropic", model: "claude-opus-4-7" },
     reviewer: { provider: "openai", model: "gpt-4o" },
     fast: { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
   },

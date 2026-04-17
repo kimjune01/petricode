@@ -8,6 +8,7 @@ const MODEL_TOKEN_LIMITS: Record<string, number> = {
   "claude-haiku-4-5-20251001": 200_000,
   "claude-opus-4-20250514": 200_000,
   "claude-opus-4-6-20260205": 200_000,
+  "claude-opus-4-7": 200_000,
 };
 
 const DEFAULT_TOKEN_LIMIT = 200_000;
