@@ -12,7 +12,7 @@ describe("Google provider config", () => {
     const config = {
       tiers: {
         primary: { provider: "google", model: "gemini-2.5-pro" },
-        reviewer: { provider: "anthropic", model: "claude-sonnet-4-20250514" },
+        reviewer: { provider: "anthropic", model: "claude-sonnet-4-5" },
         fast: { provider: "google", model: "gemini-2.0-flash" },
       },
     };
@@ -45,7 +45,7 @@ describe("Google provider config", () => {
     const config: TiersConfig = {
       tiers: {
         primary: { provider: "google", model: "gemini-2.5-pro" },
-        reviewer: { provider: "anthropic", model: "claude-sonnet-4-20250514" },
+        reviewer: { provider: "anthropic", model: "claude-sonnet-4-5" },
         fast: { provider: "google", model: "gemini-2.0-flash" },
       },
     };

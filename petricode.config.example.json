@@ -2,6 +2,6 @@
   "tiers": {
     "primary": { "provider": "anthropic", "model": "claude-opus-4-7" },
     "reviewer": { "provider": "openai", "model": "gpt-4o" },
-    "fast": { "provider": "anthropic", "model": "claude-haiku-4-5-20251001" }
+    "fast": { "provider": "anthropic", "model": "claude-haiku-4-5" }
   }
 }

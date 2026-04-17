@@ -30,19 +30,26 @@ export interface ModelInfo {
   supports_tools: boolean;
 }
 
+// Anthropic model IDs follow Vertex AI's Model Garden naming
+// (`claude-<family>-<version>`, no date suffix; bare names map to the
+// `@default` published version). Direct-Anthropic-API users want the
+// dated form (e.g. `claude-sonnet-4-20250514`) — add those as additional
+// keys here if you wire AnthropicProvider against api.anthropic.com.
 const MODEL_INFO: Record<string, ModelInfo> = {
-  // Anthropic
-  "claude-sonnet-4-20250514": { token_limit: 200_000, supports_tools: true },
-  "claude-haiku-4-5-20251001": { token_limit: 200_000, supports_tools: true },
-  "claude-opus-4-20250514": { token_limit: 200_000, supports_tools: true },
-  "claude-opus-4-6-20260205": { token_limit: 200_000, supports_tools: true },
+  // Anthropic (Vertex)
+  "claude-haiku-4-5": { token_limit: 200_000, supports_tools: true },
+  "claude-opus-4-1": { token_limit: 200_000, supports_tools: true },
+  "claude-opus-4-5": { token_limit: 200_000, supports_tools: true },
+  "claude-opus-4-6": { token_limit: 200_000, supports_tools: true },
   "claude-opus-4-7": { token_limit: 200_000, supports_tools: true },
+  "claude-sonnet-4-5": { token_limit: 200_000, supports_tools: true },
+  "claude-sonnet-4-6": { token_limit: 200_000, supports_tools: true },
   // OpenAI
   "gpt-4o": { token_limit: 128_000, supports_tools: true },
   "gpt-4o-mini": { token_limit: 128_000, supports_tools: true },
   "gpt-4.1": { token_limit: 1_047_576, supports_tools: true },
   "gpt-4.1-mini": { token_limit: 1_047_576, supports_tools: true },
-  // Google
+  // Google (Vertex)
   "gemini-2.5-pro": { token_limit: 1_048_576, supports_tools: true },
   "gemini-2.5-flash": { token_limit: 1_048_576, supports_tools: true },
   "gemini-3.1-pro-preview": { token_limit: 1_048_576, supports_tools: true },
@@ -80,7 +87,7 @@ export const DEFAULT_TIERS: TiersConfig = {
   tiers: {
     primary: { provider: "anthropic", model: "claude-opus-4-7" },
     reviewer: { provider: "openai", model: "gpt-4o" },
-    fast: { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
+    fast: { provider: "anthropic", model: "claude-haiku-4-5" },
   },
 };
 

@@ -3,12 +3,16 @@ import { AnthropicVertex } from "@anthropic-ai/vertex-sdk";
 import type { Content, Message, StreamChunk } from "../core/types.js";
 import type { Provider, ModelConfig } from "./provider.js";
 
+// Vertex AI model IDs (bare names map to @default). For direct-Anthropic-API
+// usage, add the dated form as additional keys (e.g. `claude-sonnet-4-20250514`).
 const MODEL_TOKEN_LIMITS: Record<string, number> = {
-  "claude-sonnet-4-20250514": 200_000,
-  "claude-haiku-4-5-20251001": 200_000,
-  "claude-opus-4-20250514": 200_000,
-  "claude-opus-4-6-20260205": 200_000,
+  "claude-haiku-4-5": 200_000,
+  "claude-opus-4-1": 200_000,
+  "claude-opus-4-5": 200_000,
+  "claude-opus-4-6": 200_000,
   "claude-opus-4-7": 200_000,
+  "claude-sonnet-4-5": 200_000,
+  "claude-sonnet-4-6": 200_000,
 };
 
 const DEFAULT_TOKEN_LIMIT = 200_000;

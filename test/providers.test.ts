@@ -77,12 +77,12 @@ describe("adapter shape", () => {
   test("AnthropicProvider implements Provider interface", () => {
     // Pass a dummy client to avoid needing a real API key
     const dummyClient = new Anthropic({ apiKey: "test-key" });
-    const adapter = new AnthropicProvider("claude-sonnet-4-20250514", dummyClient);
+    const adapter = new AnthropicProvider("claude-sonnet-4-5", dummyClient);
     expect(typeof adapter.generate).toBe("function");
     expect(typeof adapter.model_id).toBe("function");
     expect(typeof adapter.token_limit).toBe("function");
     expect(typeof adapter.supports_tools).toBe("function");
-    expect(adapter.model_id()).toBe("claude-sonnet-4-20250514");
+    expect(adapter.model_id()).toBe("claude-sonnet-4-5");
     expect(adapter.token_limit()).toBe(200_000);
     expect(adapter.supports_tools()).toBe(true);
   });
@@ -105,25 +105,25 @@ describe("tier resolution", () => {
   test("config resolves all three tiers to correct providers", () => {
     const config: TiersConfig = {
       tiers: {
-        primary: { provider: "anthropic", model: "claude-sonnet-4-20250514" },
+        primary: { provider: "anthropic", model: "claude-sonnet-4-5" },
         reviewer: { provider: "openai", model: "gpt-4o" },
-        fast: { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
+        fast: { provider: "anthropic", model: "claude-haiku-4-5" },
       },
     };
 
     const router = new TierRouter(config, mockFactory);
 
-    expect(router.get("primary").model_id()).toBe("claude-sonnet-4-20250514");
+    expect(router.get("primary").model_id()).toBe("claude-sonnet-4-5");
     expect(router.get("reviewer").model_id()).toBe("gpt-4o");
-    expect(router.get("fast").model_id()).toBe("claude-haiku-4-5-20251001");
+    expect(router.get("fast").model_id()).toBe("claude-haiku-4-5");
   });
 
   test("primary and reviewer resolve to different vendors", () => {
     const config: TiersConfig = {
       tiers: {
-        primary: { provider: "anthropic", model: "claude-sonnet-4-20250514" },
+        primary: { provider: "anthropic", model: "claude-sonnet-4-5" },
         reviewer: { provider: "openai", model: "gpt-4o" },
-        fast: { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
+        fast: { provider: "anthropic", model: "claude-haiku-4-5" },
       },
     };
 
@@ -172,7 +172,7 @@ describe("startup validation", () => {
   test("fails if any tier is unwired", () => {
     const partial = {
       tiers: {
-        primary: { provider: "anthropic" as const, model: "claude-sonnet-4-20250514" },
+        primary: { provider: "anthropic" as const, model: "claude-sonnet-4-5" },
         reviewer: { provider: "openai" as const, model: "gpt-4o" },
         // fast is missing
       },
@@ -184,9 +184,9 @@ describe("startup validation", () => {
   test("fails if primary and reviewer use same vendor", () => {
     const sameVendor: TiersConfig = {
       tiers: {
-        primary: { provider: "anthropic", model: "claude-sonnet-4-20250514" },
-        reviewer: { provider: "anthropic", model: "claude-opus-4-20250514" },
-        fast: { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
+        primary: { provider: "anthropic", model: "claude-sonnet-4-5" },
+        reviewer: { provider: "anthropic", model: "claude-opus-4-1" },
+        fast: { provider: "anthropic", model: "claude-haiku-4-5" },
       },
     };
 
@@ -197,22 +197,22 @@ describe("startup validation", () => {
 describe("setModel", () => {
   const baseConfig: TiersConfig = {
     tiers: {
-      primary: { provider: "anthropic", model: "claude-sonnet-4-20250514" },
+      primary: { provider: "anthropic", model: "claude-sonnet-4-5" },
       reviewer: { provider: "openai", model: "gpt-4o" },
-      fast: { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
+      fast: { provider: "anthropic", model: "claude-haiku-4-5" },
     },
   };
 
   test("swaps the primary provider in place", () => {
     const router = new TierRouter(baseConfig, mockFactory);
-    expect(router.get("primary").model_id()).toBe("claude-sonnet-4-20250514");
+    expect(router.get("primary").model_id()).toBe("claude-sonnet-4-5");
 
     router.setModel("primary", "anthropic", "claude-opus-4-7");
 
     expect(router.get("primary").model_id()).toBe("claude-opus-4-7");
     // Other tiers untouched
     expect(router.get("reviewer").model_id()).toBe("gpt-4o");
-    expect(router.get("fast").model_id()).toBe("claude-haiku-4-5-20251001");
+    expect(router.get("fast").model_id()).toBe("claude-haiku-4-5");
   });
 
   test("rejects switch that collides with reviewer vendor", () => {
@@ -221,7 +221,7 @@ describe("setModel", () => {
       router.setModel("primary", "openai", "gpt-4.1"),
     ).toThrow(/different vendors/i);
     // Previous binding restored on rollback
-    expect(router.get("primary").model_id()).toBe("claude-sonnet-4-20250514");
+    expect(router.get("primary").model_id()).toBe("claude-sonnet-4-5");
   });
 });
 
@@ -229,9 +229,9 @@ describe("fast tier routing", () => {
   test("fast tier is callable and routed correctly", () => {
     const config: TiersConfig = {
       tiers: {
-        primary: { provider: "anthropic", model: "claude-sonnet-4-20250514" },
+        primary: { provider: "anthropic", model: "claude-sonnet-4-5" },
         reviewer: { provider: "openai", model: "gpt-4o" },
-        fast: { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
+        fast: { provider: "anthropic", model: "claude-haiku-4-5" },
       },
     };
 
@@ -239,7 +239,7 @@ describe("fast tier routing", () => {
     const fast = router.get("fast");
 
     expect(fast).toBeDefined();
-    expect(fast.model_id()).toBe("claude-haiku-4-5-20251001");
+    expect(fast.model_id()).toBe("claude-haiku-4-5");
     expect(fast.token_limit()).toBe(200_000);
   });
 });
