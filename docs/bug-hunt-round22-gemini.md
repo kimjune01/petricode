@@ -1,0 +1,16 @@
+# Bug Hunt Round 22
+
+Tested with `bun test` (18 pass, 0 fail) and `bun run typecheck` (0 errors).
+
+### Finding 1: Test `"-p --format json" consumes --format as the prompt` is falsely passing due to an `Unknown flag: json` bail-out
+- **File:** test/headless.test.ts:321
+- **Severity:** Medium
+- **Impact:** The test incorrectly asserts that the CLI parser successfully swallowed the typo and handed execution off to the bootstrap phase ("bootstrap kicks off... so we just need to assert the parser didn't bail early"). Instead, the parser bails early with exit code 2, failing to exercise the bootstrap path the comment describes.
+- **Repro/Reasoning:** The parser consumes `--format` as the prompt value for `-p` (as designed in round 21). However, this leaves `"json"` as the next positional argument. Because positional arguments aren't supported without `--`, the parser emits an `Unknown flag: json` error and immediately bails out with exit code `2`. The `bootstrap` phase never kicks off. The test only passes by accident because it blindly asserts the absence of the missing-value error message (`expect(stderr).not.toContain("requires a prompt string")`) without checking the exit code or looking for the actual `Unknown flag` error.
+- **Suggested fix:** To truly test the `last-arg trust` behavior without triggering a secondary parser error, drop `"json"` from the spawned arguments (e.g., `["-p", "--format"]`) so the array exhausts cleanly and kicks off bootstrap. Alternatively, update the test to explicitly expect the `Unknown flag: json` error and `code: 2` to codify the current typo behavior.
+
+### Answers to the prompt's explicit questions:
+- **`parseArgs()`: can `-p` now consume a sentinel like `--` as the prompt? what's the semantics?** Yes. If `-p` is immediately followed by `--`, `--` is consumed directly as the value of the `prompt` string. Because it is consumed as a value, it loses its sentinel behavior, meaning any subsequent arguments will continue to be evaluated as flags rather than positionals. This matches standard POSIX behavior for options requiring an argument.
+- **`parseArgs()`: does the cross-flag validation order matter?** Yes, pushing errors to the array *before* checking `--help` or `--version` allows informational flags to gracefully short-circuit (exit 0) without bothering the user about flag misuse, which is the intended, standard UX.
+- **`parseArgs()`: is `formatExplicit` needed?** Yes, it is strictly necessary to distinguish the default `"text"` format from an explicit `--format text`. Without it, running `petricode --format text` without `-p` would silently launch the interactive TUI instead of warning the user. Passing `--format text` explicitly alongside `-p` works flawlessly because `parsed.prompt` is defined, naturally bypassing the error check.
+- **`Bun.spawn` in tests: what if `process.execPath` is not bun (e.g. node)?** The test suite explicitly uses `Bun.spawn` (a Bun-only API) and top-level await TypeScript without loaders. It cannot be run by Node. Therefore, the runtime is strictly guaranteed to be Bun, making `process.execPath` a completely robust, path-safe way to spawn the exact identical Bun binary.

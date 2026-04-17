@@ -318,21 +318,33 @@ describe("cli -p / --prompt argv parsing", () => {
     expect(stderr).toContain("requires a prompt string");
   });
 
-  test("`-p --format json` consumes --format as the prompt (last-arg trust)", async () => {
-    // Round 21 walked back the leading-dash rejection so dash-prefixed
-    // prompts like "- bug fix" work. The cost: typo'd `-p --format json`
-    // sends "--format" as the prompt — bootstrap kicks off (slow, then
-    // likely fails on creds), so we just need to assert the parser
-    // didn't bail early with the missing-value error.
-    const proc = Bun.spawn([process.execPath, cliPath, "-p", "--format", "json"], {
+  test("`-p --format json` consumes --format as the prompt; `json` is then an unknown positional", async () => {
+    // Round-21 trust-the-user behavior + round-22 honesty. `-p` greedily
+    // consumes "--format" as its prompt value, leaving "json" as an
+    // unrecognized positional that the parser flags. Codifies the
+    // tradeoff so a future change either to last-wins or to silent-drop
+    // surfaces here.
+    const { code, stderr } = await runCli(["-p", "--format", "json"]);
+    expect(code).toBe(2);
+    expect(stderr).toContain("Unknown flag: json");
+    expect(stderr).not.toContain("requires a prompt string");
+  });
+
+  test("`-p --format` (no trailing positional) sends '--format' as the prompt cleanly", async () => {
+    // Without a trailing token the parser succeeds and bootstrap runs.
+    // We don't wait for bootstrap — just verify the parser handed off
+    // (no exit-2 misuse, no stderr complaint about missing value).
+    const proc = Bun.spawn([process.execPath, cliPath, "-p", "--format"], {
       stdout: "pipe",
       stderr: "pipe",
     });
     const killer = setTimeout(() => proc.kill("SIGTERM"), 1500);
     const stderr = await new Response(proc.stderr).text();
-    await proc.exited;
+    const code = await proc.exited;
     clearTimeout(killer);
+    expect(code).not.toBe(2);
     expect(stderr).not.toContain("requires a prompt string");
+    expect(stderr).not.toContain("Unknown flag");
   }, 5000);
 
   test("`-p \"--list\"` consumes --list as the prompt, not a top-level flag", async () => {
