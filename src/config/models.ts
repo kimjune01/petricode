@@ -55,6 +55,25 @@ export function getModelInfo(model: string): ModelInfo {
   return MODEL_INFO[model] ?? DEFAULT_MODEL_INFO;
 }
 
+export function listKnownModels(): string[] {
+  return Object.keys(MODEL_INFO);
+}
+
+/**
+ * Map a model ID to its vendor by name prefix. Returns null if the
+ * vendor can't be inferred — caller must specify provider explicitly.
+ */
+export function inferProviderFromModel(modelId: string): ProviderName | null {
+  if (modelId.startsWith("claude-")) return "anthropic";
+  if (
+    modelId.startsWith("gpt-") ||
+    modelId.startsWith("o1") ||
+    modelId.startsWith("o3")
+  ) return "openai";
+  if (modelId.startsWith("gemini-")) return "google";
+  return null;
+}
+
 // ── Tier defaults & validation ──────────────────────────────────
 
 export const DEFAULT_TIERS: TiersConfig = {

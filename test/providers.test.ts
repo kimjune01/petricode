@@ -194,6 +194,37 @@ describe("startup validation", () => {
   });
 });
 
+describe("setModel", () => {
+  const baseConfig: TiersConfig = {
+    tiers: {
+      primary: { provider: "anthropic", model: "claude-sonnet-4-20250514" },
+      reviewer: { provider: "openai", model: "gpt-4o" },
+      fast: { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
+    },
+  };
+
+  test("swaps the primary provider in place", () => {
+    const router = new TierRouter(baseConfig, mockFactory);
+    expect(router.get("primary").model_id()).toBe("claude-sonnet-4-20250514");
+
+    router.setModel("primary", "anthropic", "claude-opus-4-7");
+
+    expect(router.get("primary").model_id()).toBe("claude-opus-4-7");
+    // Other tiers untouched
+    expect(router.get("reviewer").model_id()).toBe("gpt-4o");
+    expect(router.get("fast").model_id()).toBe("claude-haiku-4-5-20251001");
+  });
+
+  test("rejects switch that collides with reviewer vendor", () => {
+    const router = new TierRouter(baseConfig, mockFactory);
+    expect(() =>
+      router.setModel("primary", "openai", "gpt-4.1"),
+    ).toThrow(/different vendors/i);
+    // Previous binding restored on rollback
+    expect(router.get("primary").model_id()).toBe("claude-sonnet-4-20250514");
+  });
+});
+
 describe("fast tier routing", () => {
   test("fast tier is callable and routed correctly", () => {
     const config: TiersConfig = {

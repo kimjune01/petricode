@@ -27,6 +27,7 @@ import {
 } from "../skills/activation.js";
 import type { ActivatedSkill } from "../skills/types.js";
 import { createSkillTool } from "../tools/skill.js";
+import { inferProviderFromModel } from "../config/models.js";
 
 export interface PipelineOptions {
   router: TierRouter;
@@ -483,6 +484,23 @@ export class Pipeline {
   /** Primary model ID for display. */
   modelId(): string {
     return this.router.get("primary").model_id();
+  }
+
+  /**
+   * Swap the primary tier to a new model. Vendor is inferred from the
+   * model name prefix; throws if it can't be inferred or if the new
+   * vendor collides with the reviewer tier (router enforces separation).
+   */
+  setPrimaryModel(modelId: string): { previous: string; current: string } {
+    const vendor = inferProviderFromModel(modelId);
+    if (!vendor) {
+      throw new Error(
+        `Cannot infer vendor for model '${modelId}' — expected prefix claude-/gpt-/o1/o3/gemini-`,
+      );
+    }
+    const previous = this.modelId();
+    this.router.setModel("primary", vendor, modelId);
+    return { previous, current: modelId };
   }
 
   /** Loaded skills for command registration. */

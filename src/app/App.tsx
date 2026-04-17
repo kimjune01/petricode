@@ -6,7 +6,7 @@ import { initialState } from "./state.js";
 import { tryCommand, overrideCommand } from "../commands/index.js";
 import { listSkills } from "../commands/skills.js";
 import type { Pipeline } from "../agent/pipeline.js";
-import type { ConfirmMode } from "../config/models.js";
+import { listKnownModels, type ConfirmMode } from "../config/models.js";
 import { spacing } from "./theme.js";
 import MessageList from "./components/MessageList.js";
 import Composer from "./components/Composer.js";
@@ -65,6 +65,24 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
       const after = pipeline.tokenCount();
       setState((prev) => ({ ...prev, tokenCount: after }));
       return { output: `Compacted: ${before} → ${after} tokens` };
+    });
+    overrideCommand("model", (args) => {
+      const trimmed = args.trim();
+      if (!trimmed) {
+        const models = listKnownModels().sort().map((m) => `  ${m}`).join("\n");
+        return {
+          output: `Current: ${pipeline.modelId()}\n\nAvailable:\n${models}\n\nUsage: /model <name>`,
+        };
+      }
+      try {
+        const { previous, current } = pipeline.setPrimaryModel(trimmed);
+        setState((prev) => ({ ...prev, model: current }));
+        return { output: `Model: ${previous} → ${current}` };
+      } catch (err) {
+        return {
+          output: `Error: ${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
     });
   }, [pipeline]);
 

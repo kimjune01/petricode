@@ -17,6 +17,7 @@ const commands: Record<string, CommandHandler> = {
       "  /exit, /quit  — quit petricode",
       "  /clear        — reset conversation (keeps session)",
       "  /compact      — compact conversation history",
+      "  /model [name] — show or switch the primary model",
       "  /skills       — list available skills",
       "",
       "Tips:",
@@ -31,6 +32,7 @@ const commands: Record<string, CommandHandler> = {
   // is wired. Kept here so tryCommand returns something useful in headless
   // contexts (tests, scripts) instead of "Unknown command".
   compact: () => ({ output: "Compaction not yet implemented." }),
+  model: () => ({ output: "Model switching requires a wired pipeline." }),
   skills: () => ({ output: "No skills loaded." }),
   // /consolidate is intentionally not wired yet. Roadmap:
   //   1. Skills authored manually.

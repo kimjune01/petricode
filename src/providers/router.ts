@@ -1,5 +1,5 @@
 import type { Provider } from "./provider.js";
-import type { TierName, TiersConfig } from "../config/models.js";
+import type { ProviderName, TierName, TiersConfig } from "../config/models.js";
 import { AnthropicProvider } from "./anthropic.js";
 import { OpenAIProvider } from "./openai.js";
 import { GoogleProvider } from "./google.js";
@@ -27,8 +27,11 @@ function defaultFactory(providerName: string, model: string): Provider {
 
 export class TierRouter {
   private providers: Map<TierName, Provider> = new Map();
+  private vendors: Map<TierName, ProviderName> = new Map();
+  private factory: ProviderFactory;
 
   constructor(config: TiersConfig, factory: ProviderFactory = defaultFactory) {
+    this.factory = factory;
     for (const tier of ALL_TIERS) {
       const tc = config.tiers[tier];
       if (!tc) {
@@ -36,16 +39,10 @@ export class TierRouter {
       }
 
       this.providers.set(tier, factory(tc.provider, tc.model));
+      this.vendors.set(tier, tc.provider);
     }
 
-    // Validate: primary and reviewer must be different vendors
-    const primaryVendor = config.tiers.primary.provider;
-    const reviewerVendor = config.tiers.reviewer.provider;
-    if (primaryVendor === reviewerVendor) {
-      throw new Error(
-        `Primary and reviewer must use different vendors (both are '${primaryVendor}')`,
-      );
-    }
+    this.validateVendorSeparation();
   }
 
   get(tier: TierName): Provider {
@@ -54,5 +51,35 @@ export class TierRouter {
       throw new Error(`Tier '${tier}' not found`);
     }
     return provider;
+  }
+
+  /**
+   * Replace the provider for `tier` with a freshly constructed one. Re-runs
+   * vendor-separation validation; on failure, the previous binding is restored
+   * so partial state can't violate the invariant.
+   */
+  setModel(tier: TierName, provider: ProviderName, model: string): void {
+    const prevProvider = this.providers.get(tier);
+    const prevVendor = this.vendors.get(tier);
+    const newProvider = this.factory(provider, model);
+    this.providers.set(tier, newProvider);
+    this.vendors.set(tier, provider);
+    try {
+      this.validateVendorSeparation();
+    } catch (err) {
+      if (prevProvider) this.providers.set(tier, prevProvider);
+      if (prevVendor) this.vendors.set(tier, prevVendor);
+      throw err;
+    }
+  }
+
+  private validateVendorSeparation(): void {
+    const primaryVendor = this.vendors.get("primary");
+    const reviewerVendor = this.vendors.get("reviewer");
+    if (primaryVendor && primaryVendor === reviewerVendor) {
+      throw new Error(
+        `Primary and reviewer must use different vendors (both are '${primaryVendor}')`,
+      );
+    }
   }
 }
