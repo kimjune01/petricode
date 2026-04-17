@@ -73,6 +73,10 @@ type ParsedArgs = {
   resume?: string;
   prompt?: string;
   format: "text" | "json";
+  // Tracks whether --format was explicitly set, so we can report
+  // "--format requires -p" when the user passes --format but no
+  // prompt — without that, --format silently launched the TUI.
+  formatExplicit: boolean;
   errors: string[];
 };
 
@@ -82,6 +86,7 @@ function parseArgs(input: string[]): ParsedArgs {
     version: false,
     list: false,
     format: "text",
+    formatExplicit: false,
     errors: [],
   };
   let i = 0;
@@ -109,8 +114,12 @@ function parseArgs(input: string[]): ParsedArgs {
     }
     if (arg === "-p" || arg === "--prompt") {
       const next = input[i + 1];
-      if (!next || next.startsWith("-")) {
-        out.errors.push("-p/--prompt requires a non-flag prompt string. Example: petricode -p \"fix the failing test\"");
+      // Trust the user: a prompt is allowed to start with `-` (e.g.
+      // "- write tests for X"). The earlier rejection of leading-dash
+      // values prevented `petricode -p "-f or whatever"` entirely with
+      // no escape hatch. Only reject the truly missing case here.
+      if (next === undefined) {
+        out.errors.push("-p/--prompt requires a prompt string. Example: petricode -p \"fix the failing test\"");
         i++;
       } else {
         // Last-wins per clig.dev: a later -p overrides an earlier one.
@@ -123,6 +132,7 @@ function parseArgs(input: string[]): ParsedArgs {
       const next = input[i + 1];
       if (next === "text" || next === "json") {
         out.format = next;
+        out.formatExplicit = true;
         i += 2;
       } else {
         out.errors.push("--format expects 'text' or 'json'.");
@@ -137,6 +147,14 @@ function parseArgs(input: string[]): ParsedArgs {
 }
 
 const parsed = parseArgs(args);
+
+// Cross-flag validation that's awkward to express inside the per-token
+// loop: --format only does anything in headless mode, so flagging it
+// without -p surfaces the user's mistake instead of silently dropping
+// the flag and launching the TUI.
+if (parsed.formatExplicit && parsed.prompt === undefined) {
+  parsed.errors.push("--format requires -p/--prompt (it only affects headless output).");
+}
 
 if (parsed.help) {
   console.log(`petricode

@@ -315,26 +315,51 @@ describe("cli -p / --prompt argv parsing", () => {
   test("`-p` with no value exits 2 with usage hint", async () => {
     const { code, stderr } = await runCli(["-p"]);
     expect(code).toBe(2);
-    expect(stderr).toContain("requires a non-flag prompt string");
+    expect(stderr).toContain("requires a prompt string");
   });
 
-  test("`-p --format json` rejects flag-shaped value (doesn't send --format as prompt)", async () => {
-    const { code, stderr } = await runCli(["-p", "--format", "json"]);
-    expect(code).toBe(2);
-    expect(stderr).toContain("requires a non-flag prompt string");
-  });
+  test("`-p --format json` consumes --format as the prompt (last-arg trust)", async () => {
+    // Round 21 walked back the leading-dash rejection so dash-prefixed
+    // prompts like "- bug fix" work. The cost: typo'd `-p --format json`
+    // sends "--format" as the prompt — bootstrap kicks off (slow, then
+    // likely fails on creds), so we just need to assert the parser
+    // didn't bail early with the missing-value error.
+    const proc = Bun.spawn([process.execPath, cliPath, "-p", "--format", "json"], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const killer = setTimeout(() => proc.kill("SIGTERM"), 1500);
+    const stderr = await new Response(proc.stderr).text();
+    await proc.exited;
+    clearTimeout(killer);
+    expect(stderr).not.toContain("requires a prompt string");
+  }, 5000);
 
-  test("`-p \"--list\"` treats --list as the prompt, not a top-level flag", async () => {
-    // Round-19 fix only rejected flag-shaped values; this asserts the
-    // round-20 positional parser actually consumes the value as -p's
-    // argument so `-p "--list"` makes it past argv parsing (then exits
-    // 2 because we still reject leading-dash, but does NOT trigger the
-    // --list session lister).
-    const { code, stdout, stderr } = await runCli(["-p", "--list"]);
-    expect(code).toBe(2);
+  test("`-p \"--list\"` consumes --list as the prompt, not a top-level flag", async () => {
+    // Round-21 trusted the value of -p so dash-prefixed prompts are
+    // legal. The critical UX invariant: --list must NOT run as the
+    // session lister when it was clearly given as -p's value. The
+    // headless run kicks off bootstrap which is slow; we don't need
+    // it to complete — just need to confirm the lister output never
+    // appears.
+    const proc = Bun.spawn([process.execPath, cliPath, "-p", "--list"], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const killer = setTimeout(() => proc.kill("SIGTERM"), 1500);
+    const stdout = await new Response(proc.stdout).text();
+    await proc.exited;
+    clearTimeout(killer);
     expect(stdout).not.toContain("Recent sessions");
     expect(stdout).not.toContain("No sessions found");
-    expect(stderr).toContain("requires a non-flag prompt string");
+  }, 5000);
+
+  test("`--format json` without -p reports misuse (not silent TUI launch)", async () => {
+    // Round-21 #2: --format used to be silently dropped if -p was
+    // missing, and the CLI happily booted the TUI. Now it errors out.
+    const { code, stderr } = await runCli(["--format", "json"]);
+    expect(code).toBe(2);
+    expect(stderr).toContain("--format requires -p/--prompt");
   });
 
   test("`--resume -p hi` doesn't consume -p as the session ID", async () => {
@@ -347,20 +372,22 @@ describe("cli -p / --prompt argv parsing", () => {
     expect(stderr).toContain("--resume requires a session ID");
   });
 
-  test("`--prompt` is recognized when -p is absent", async () => {
-    // Negative assertion only: the flag parser must NOT bail out with
-    // exit 2 (the misuse code we just tested). Whether bootstrap
-    // succeeds depends on env creds we don't want to require here, so
-    // we kill the process after a short delay and inspect the exit.
-    const proc = Bun.spawn(["bun", cliPath, "--prompt", "hi"], {
+  test("`--prompt` recognized as -p alias (parser routes to headless, no misuse)", async () => {
+    // Deterministic: kill the spawned process after a short window,
+    // then assert the parser-misuse string never appeared on stderr
+    // and that exit wasn't the parser's exit-2. This catches
+    // regressions where --prompt would be silently dropped (treated
+    // as unknown flag) while staying robust to slow bootstrap.
+    const proc = Bun.spawn([process.execPath, cliPath, "--prompt", "hi"], {
       stdout: "pipe",
       stderr: "pipe",
     });
-    const killed = setTimeout(() => proc.kill("SIGTERM"), 1500);
+    const killer = setTimeout(() => proc.kill("SIGTERM"), 1500);
     const stderr = await new Response(proc.stderr).text();
     const code = await proc.exited;
-    clearTimeout(killed);
+    clearTimeout(killer);
     expect(code).not.toBe(2);
-    expect(stderr).not.toContain("requires a non-flag prompt string");
+    expect(stderr).not.toContain("requires a prompt string");
+    expect(stderr).not.toContain("Unknown flag");
   }, 5000);
 });
