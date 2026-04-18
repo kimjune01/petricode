@@ -2,7 +2,7 @@
 // so non-TTY scripts don't pay for the React/Ink boot or hit raw-mode
 // errors when stdin isn't a terminal.
 import { appendFileSync, mkdirSync, existsSync, readFileSync, writeFileSync } from "fs";
-import { join } from "path";
+import { dirname, join } from "path";
 import { parseArgs } from "./argv.js";
 
 // ── Session-file helpers ─────────────────────────────────────────
@@ -26,6 +26,11 @@ function readSessionFile(path: string): string | undefined {
 }
 
 function writeSessionFile(path: string, sessionId: string): void {
+  // Create the parent so `--session-file .petricode/tmp/session` works
+  // even when the project hasn't run before. Idempotent + recursive so
+  // we don't need to gate on existsSync per call.
+  const dir = dirname(path);
+  if (dir && dir !== "." && dir !== "/") mkdirSync(dir, { recursive: true });
   writeFileSync(path, sessionId + "\n");
 }
 

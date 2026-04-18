@@ -1,5 +1,5 @@
 import { spawn } from "child_process";
-import { isAbsolute, relative } from "path";
+import { isAbsolute, relative, normalize } from "path";
 import type { Tool } from "./tool.js";
 import { loadIgnorePredicate } from "../filter/gitignore.js";
 
@@ -119,9 +119,14 @@ export const GrepTool: Tool = {
             const colon = line.indexOf(":");
             if (colon <= 0) return true;
             const filePath = line.slice(0, colon);
+            // grep -r emits paths relative to its cwd, prefixed `./` when
+            // the search arg was `.`. normalize() collapses that prefix
+            // (and any `foo/./bar`) so the predicate sees `src/foo.ts`,
+            // not `./src/foo.ts` — gitignore patterns like `dist/` would
+            // otherwise miss the leading-dot form entirely.
             const rel = isAbsolute(filePath)
               ? relative(projectRoot, filePath)
-              : filePath;
+              : normalize(filePath);
             // Path may escape projectRoot when the caller searches
             // outside (rare, but supported). Don't filter what we can't
             // reason about — relative() returns "../..." in that case.

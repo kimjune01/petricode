@@ -4,6 +4,8 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { buildIgnorePredicate } from "../src/filter/gitignore.js";
 import { expandFileRefs } from "../src/perceive/fileRefs.js";
+import { UnionFindCache } from "../src/cache/cache.js";
+import type { Turn } from "../src/core/types.js";
 
 // ── Round 20 #3: gitignore globstar `?` corruption ───────────────
 // patternToRegex used to run `?` → `[^/]` AFTER expanding `**` into
@@ -93,5 +95,36 @@ describe("@file ref size cap", () => {
     } finally {
       await rm(dir, { recursive: true });
     }
+  });
+});
+
+// ── Round 26 #4: compact() must not split tool_use/tool_result pairs ──
+// append() already drags a tool_result into cold along with a graduated
+// tool_use turn so the next API call doesn't see a dangling tool_result.
+// compact() bypassed the same check — running /compact at the wrong
+// boundary would split the pair and break the next turn.
+
+describe("UnionFindCache.compact tool pair invariant", () => {
+  test("compact graduates a tool_result alongside its preceding tool_use", () => {
+    const cache = new UnionFindCache({ hot_capacity: 4 });
+    const turns: Turn[] = [
+      { id: "u1", role: "user", content: [{ type: "text", text: "a" }], timestamp: 1 },
+      { id: "a1", role: "assistant", content: [{ type: "tool_use", id: "t1", name: "x", input: {} }], timestamp: 2 },
+      { id: "r1", role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "ok" }], timestamp: 3 },
+      { id: "u2", role: "user", content: [{ type: "text", text: "b" }], timestamp: 4 },
+    ];
+    for (const t of turns) cache.append(t);
+
+    cache.compact();
+
+    // hot_capacity 4 → keep = ceil(4/2) = 2. compact() shifts u1, then
+    // graduates a1; the tool-pair lookahead must drag r1 with it so r1
+    // never lingers in hot without its tool_use partner.
+    const hotIds = cache.read()
+      .filter((t) => !t.id.startsWith("cluster_"))
+      .map((t) => t.id);
+    expect(hotIds).not.toContain("a1");
+    expect(hotIds).not.toContain("r1");
+    expect(hotIds).toContain("u2");
   });
 });
