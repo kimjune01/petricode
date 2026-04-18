@@ -1,8 +1,12 @@
-// ── Skill activation ────────────────────────────────────────────
-// Match slash commands, auto-trigger on file paths, $ARGUMENTS substitution.
+// ── Skill matcher (Filter) ──────────────────────────────────────
+// Predicate filter over the indexed skill registry. Two predicates,
+// each producing ActivatedSkill envelopes:
+//   - matchSlashCommand: single_best (one slash → at most one skill)
+//   - matchAutoTriggers: top_k_slate (path globs → all that match)
+// Manual-trigger skills are not selected here — the LLM picks them
+// itself via the Skill tool.
 
-import type { Skill } from "../core/types.js";
-import type { ActivatedSkill } from "./types.js";
+import type { Skill, ActivatedSkill } from "../core/types.js";
 
 /**
  * Try to match input against a slash-command skill.
@@ -60,14 +64,6 @@ export function matchAutoTriggers(
   }
 
   return activated;
-}
-
-/**
- * Substitute $ARGUMENTS in skill body with the provided arguments string.
- */
-export function substituteArguments(body: string, args: string): string {
-  // Use split/join instead of replace to prevent $-token evaluation in args
-  return body.split("$ARGUMENTS").join(args);
 }
 
 /**

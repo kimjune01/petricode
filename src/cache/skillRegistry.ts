@@ -1,7 +1,8 @@
-// ── Skill loader ────────────────────────────────────────────────
-// Discovers skills from claude + global + project dirs.
-// Project wins over global; global wins over claude. Claude provides
-// the largest pool, so it sits at the bottom of the override stack.
+// ── Skill registry (Cache) ──────────────────────────────────────
+// Holds the loaded skill set keyed by name with claude < global <
+// project precedence. Cache stage in the PCFACT pipe: takes the raw
+// Skill[] streams produced by perceive/skillDiscovery and indexes them
+// for retrieval-by-name in the Filter (matcher) and Tool layers.
 
 import { join } from "path";
 import { homedir } from "os";

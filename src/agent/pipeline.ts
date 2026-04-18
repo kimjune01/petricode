@@ -24,13 +24,10 @@ import {
   type ToolResult,
 } from "./toolSubpipe.js";
 import type { TriageClassifier } from "../filter/triageClassifier.js";
-import { loadSkills } from "../skills/loader.js";
-import {
-  matchSlashCommand,
-  matchAutoTriggers,
-  substituteArguments,
-} from "../skills/activation.js";
-import type { ActivatedSkill } from "../skills/types.js";
+import { loadSkills } from "../cache/skillRegistry.js";
+import { matchSlashCommand, matchAutoTriggers } from "../filter/skillMatcher.js";
+import { substituteArguments } from "../consolidate/skillSubstitution.js";
+import type { ActivatedSkill } from "../core/types.js";
 import { createSkillTool } from "../tools/skill.js";
 import { inferProviderFromModel, listKnownModels } from "../config/models.js";
 

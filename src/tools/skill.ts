@@ -6,7 +6,7 @@
 
 import type { Tool } from "./tool.js";
 import type { Skill } from "../core/types.js";
-import { substituteArguments } from "../skills/activation.js";
+import { substituteArguments } from "../consolidate/skillSubstitution.js";
 
 /**
  * Build a Skill tool bound to the given skill set. Pass an array (not a
