@@ -40,8 +40,10 @@ describe("Content validation", () => {
 
 describe("Tool output masking", () => {
   test("masks oversized output", () => {
-    // 10001 tokens ≈ 40004 chars
-    const big = "x".repeat(40_004);
+    // Default threshold is 65K tokens (post round-31 change). Use 70K
+    // tokens (≈ 280K chars) to clearly exceed it without depending on
+    // the exact value.
+    const big = "x".repeat(280_000);
     const result = maskToolOutput(big);
     expect(result.masked).toBe(true);
     expect(result.content).toContain("[masked");

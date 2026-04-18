@@ -10,6 +10,7 @@ import { ReadFileTool } from "../src/tools/readFile.js";
 import { WriteFileTool } from "../src/tools/writeFile.js";
 import { EditTool } from "../src/tools/edit.js";
 import { ShellTool } from "../src/tools/shell.js";
+import { maskToolOutput } from "../src/filter/toolMasking.js";
 import type { Turn } from "../src/core/types.js";
 
 // ── Round 20 #3: gitignore globstar `?` corruption ───────────────
@@ -253,5 +254,29 @@ describe("shell tool output ordering", () => {
     );
     expect(out).not.toContain("[exit null]");
     expect(out).toMatch(/\[killed by SIG/);
+  });
+});
+
+// ── Round 31 #1: mask threshold must clear ReadFileTool's truncation ──
+// ReadFileTool truncates to 256KB and appends an actionable suffix.
+// If maskToolOutput's threshold is below ~64K tokens, that careful
+// truncation is wiped to an opaque `[masked — N tokens]` blob — which
+// is exactly the failure the readFile.ts comment warned against.
+
+describe("maskToolOutput threshold respects readFile cap", () => {
+  test("a 200KB readFile-style output passes through, not masked", () => {
+    // Mirror ReadFileTool's max payload (200KB of content, well under
+    // the 256KB cap, well over the old 10K-token threshold).
+    const out = "x".repeat(200_000);
+    const result = maskToolOutput(out);
+    expect(result.masked).toBe(false);
+    expect(result.content).toBe(out);
+  });
+
+  test("oversized output (e.g. 1MB shell flood) still gets masked", () => {
+    const out = "x".repeat(1_000_000);
+    const result = maskToolOutput(out);
+    expect(result.masked).toBe(true);
+    expect(result.content).toMatch(/\[masked/);
   });
 });

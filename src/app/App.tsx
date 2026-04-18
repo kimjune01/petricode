@@ -32,7 +32,15 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
   });
   const [reviewerFindings, setReviewerFindings] = useState<string[]>([]);
   const [contextSummary, setContextSummary] = useState<string | undefined>(undefined);
-  const confirmResolveRef = useRef<((allowed: boolean) => void) | null>(null);
+  // Ctrl+C during a confirmation prompt must REJECT, not resolve(false).
+  // Resolving false reaches toolSubpipe as `allowed=false` and gets recorded
+  // as "Denied by user" — making the LLM think the user evaluated and
+  // rejected this specific call. Rejecting with AbortError instead routes
+  // through the partial-results abort path with "Interrupted by user".
+  const confirmResolveRef = useRef<{
+    resolve: (allowed: boolean) => void;
+    reject: (err: unknown) => void;
+  } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const ctrlCTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -40,8 +48,8 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
   useEffect(() => {
     if (!pipeline) return;
     pipeline.onConfirm = (toolCall: ToolCall) =>
-      new Promise<boolean>((resolve) => {
-        confirmResolveRef.current = resolve;
+      new Promise<boolean>((resolve, reject) => {
+        confirmResolveRef.current = { resolve, reject };
         setState((prev) => ({
           ...prev,
           phase: "confirming" as AppPhase,
@@ -115,9 +123,10 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
       if ((state.phase === "running" || state.phase === "confirming") && abortRef.current) {
         abortRef.current.abort();
         abortRef.current = null;
-        // If confirming, also reject the pending confirmation to unblock the pipeline
+        // If confirming, REJECT the pending confirmation (don't resolve false)
+        // so toolSubpipe routes through interruptedResult, not "Denied by user".
         if (confirmResolveRef.current) {
-          confirmResolveRef.current(false);
+          confirmResolveRef.current.reject(new DOMException("Aborted", "AbortError"));
           confirmResolveRef.current = null;
         }
         addSystemTurn("Interrupted.");
@@ -307,7 +316,7 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
 
     // Resolve the pipeline's ASK_USER promise
     if (confirmResolveRef.current) {
-      confirmResolveRef.current(allowed);
+      confirmResolveRef.current.resolve(allowed);
       confirmResolveRef.current = null;
     }
 
