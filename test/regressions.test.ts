@@ -152,6 +152,15 @@ describe("gitignore backslash escapes", () => {
     const isIgnored = buildIgnorePredicate(["\\!keep.txt"]);
     expect(isIgnored("!keep.txt")).toBe(true);
   });
+
+  // Round 29 #1: prior masking used U+0001…U+0003 as placeholders.
+  // A pattern or path containing those control chars literally would
+  // be unmasked into a regex wildcard, turning a stray byte into `*`.
+  test("literal control chars in pattern do not collide with mask markers", () => {
+    const isIgnored = buildIgnorePredicate(["foo\u0001bar"]);
+    expect(isIgnored("foo\u0001bar")).toBe(true);
+    expect(isIgnored("fooXbar")).toBe(false);
+  });
 });
 
 // ── Round 28 #2: file tools refuse non-regular files (FIFO hang) ──

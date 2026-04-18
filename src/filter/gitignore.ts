@@ -125,9 +125,13 @@ function patternToRegex(pattern: string): RegExp {
   // substitutions, then restore them as literal-character matches.
   // Without masking, `\*` collapses to a literal-backslash + glob `*`,
   // matching `\Aname` instead of `*name` for a pattern like `file\*name`.
-  const ESC_STAR = "\u0001";
-  const ESC_QMARK = "\u0002";
-  const ESC_BANG = "\u0003";
+  //
+  // Markers use angle-bracket sentinels rather than control characters
+  // (U+0001…U+0003): a literal control char in the input pattern would
+  // otherwise be unmasked into a regex wildcard.
+  const ESC_STAR = "⟨ESCSTAR⟩";
+  const ESC_QMARK = "⟨ESCQMARK⟩";
+  const ESC_BANG = "⟨ESCBANG⟩";
   let regex = p
     .replace(/\\\*/g, ESC_STAR)
     .replace(/\\\?/g, ESC_QMARK)
@@ -162,9 +166,9 @@ function patternToRegex(pattern: string): RegExp {
     .replace(/⟨LEADGLOBSTAR⟩/g, "(.*?/)?")
     .replace(/⟨GLOBSTAR⟩/g, ".*?")
     // Restore masked gitignore escapes as literal-character regex matches.
-    .replace(new RegExp(ESC_STAR, "g"), "\\*")
-    .replace(new RegExp(ESC_QMARK, "g"), "\\?")
-    .replace(new RegExp(ESC_BANG, "g"), "!");
+    .replaceAll(ESC_STAR, "\\*")
+    .replaceAll(ESC_QMARK, "\\?")
+    .replaceAll(ESC_BANG, "!");
 
   if (anchored) {
     return new RegExp(`^${regex}(/|$)`);

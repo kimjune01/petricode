@@ -36,6 +36,13 @@ export const ShellTool: Tool = {
         stdio: ["ignore", "pipe", "pipe"],
         cwd,
       });
+      // Force UTF-8 chunk decoding: without setEncoding, raw Buffer
+      // chunks emitted by Node may split a multi-byte char across two
+      // 'data' events, and Buffer.toString() on each half emits U+FFFD
+      // replacement chars. setEncoding aligns chunk boundaries to whole
+      // code points using the stream's internal StringDecoder.
+      proc.stdout.setEncoding("utf8");
+      proc.stderr.setEncoding("utf8");
 
       // Single shared buffer: append both streams in arrival order so the
       // model sees output and error lines interleaved as they happened.
@@ -46,15 +53,17 @@ export const ShellTool: Tool = {
       let outputBytes = 0;
       let truncated = false;
 
-      const collect = (d: Buffer) => {
+      const collect = (chunk: string) => {
         if (truncated) return;
-        outputBytes += d.length;
+        // Byte length: utf8 strings can be 1–4 bytes per code point and
+        // we're protecting against output-size OOM, not character-count.
+        outputBytes += Buffer.byteLength(chunk, "utf8");
         if (outputBytes > MAX_OUTPUT_BYTES) {
           truncated = true;
           proc.kill("SIGTERM");
           return;
         }
-        output += d.toString();
+        output += chunk;
       };
       proc.stdout.on("data", collect);
       proc.stderr.on("data", collect);
