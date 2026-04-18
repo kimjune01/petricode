@@ -4,7 +4,7 @@ import type { Content, StreamChunk, Turn, ToolCall } from "../core/types.js";
  * Flush a single tool entry from the tools map into content + toolCalls arrays.
  */
 function flushTool(
-  tool: { id: string; name: string; jsonBuf: string },
+  tool: { id: string; name: string; jsonBuf: string; signature?: string },
   content: Content[],
   toolCalls: ToolCall[],
 ): void {
@@ -22,6 +22,7 @@ function flushTool(
     id: tool.id,
     name: tool.name,
     input: args,
+    ...(tool.signature ? { signature: tool.signature } : {}),
   });
   toolCalls.push({ id: tool.id, name: tool.name, args });
 }
@@ -42,7 +43,7 @@ export async function assembleTurn(
   const toolCalls: ToolCall[] = [];
 
   let textBuffer = "";
-  const toolMap = new Map<number, { id: string; name: string; jsonBuf: string }>();
+  const toolMap = new Map<number, { id: string; name: string; jsonBuf: string; signature?: string }>();
 
   for await (const chunk of stream) {
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
@@ -68,7 +69,12 @@ export async function assembleTurn(
           content.push({ type: "text", text: textBuffer });
           textBuffer = "";
         }
-        toolMap.set(idx, { id: chunk.id, name: chunk.name, jsonBuf: "" });
+        toolMap.set(idx, {
+          id: chunk.id,
+          name: chunk.name,
+          jsonBuf: "",
+          ...(chunk.signature ? { signature: chunk.signature } : {}),
+        });
         break;
       }
 

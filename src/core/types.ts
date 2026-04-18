@@ -2,12 +2,15 @@
 
 export type Content =
   | { type: "text"; text: string }
-  | { type: "tool_use"; id: string; name: string; input: unknown }
+  | { type: "tool_use"; id: string; name: string; input: unknown; signature?: string }
   | { type: "tool_result"; tool_use_id: string; content: string };
 
+// `signature` is an opaque per-call provider token (e.g. Gemini 3.x's
+// thoughtSignature) that must round-trip back with the tool_use block
+// when replaying conversation history. Other providers ignore it.
 export type StreamChunk =
   | { type: "content_delta"; text: string }
-  | { type: "tool_use_start"; id: string; name: string; index?: number }
+  | { type: "tool_use_start"; id: string; name: string; index?: number; signature?: string }
   | { type: "tool_use_delta"; input_json: string; index?: number }
   | { type: "done" };
 

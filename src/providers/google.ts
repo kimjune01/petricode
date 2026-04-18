@@ -44,6 +44,11 @@ type GeminiPart = {
   text?: string;
   functionCall?: { id?: string; name: string; args: Record<string, unknown> | undefined };
   functionResponse?: { id?: string; name: string; response: { result: string } };
+  // Vertex AI's per-part opaque thought signature. Required on the
+  // round-trip for thinking-capable models (Gemini 3.x): replaying a
+  // functionCall without its original signature gets rejected with
+  // INVALID_ARGUMENT "missing thought_signature".
+  thoughtSignature?: string;
 };
 
 function toGoogleContents(prompt: Message[]): {
@@ -88,6 +93,7 @@ function toGoogleContents(prompt: Message[]): {
               name: block.name,
               args: block.input as Record<string, unknown> | undefined,
             },
+            ...(block.signature ? { thoughtSignature: block.signature } : {}),
           });
           break;
         case "tool_result":
@@ -204,15 +210,28 @@ export class GoogleProvider implements Provider {
     });
 
     let toolIndex = 0;
+    // Thinking-capable models (Gemini 3.x) emit a separate `thought`
+    // part carrying a thoughtSignature, immediately followed by the
+    // functionCall part the signature authorizes. We don't surface
+    // thought text to the user, but we must carry the signature
+    // forward and bind it to the next functionCall — replaying the
+    // call without its signature fails with INVALID_ARGUMENT.
+    let pendingThoughtSig: string | undefined;
 
     for await (const chunk of response) {
       if (config.signal?.aborted) throw new DOMException("Aborted", "AbortError");
       if (!chunk.candidates?.[0]?.content?.parts) continue;
 
       for (const part of chunk.candidates[0].content.parts) {
-        // Skip thought/thinking parts — they're internal model reasoning,
-        // and Vertex AI has incompatible encryption for thoughtSignature.
-        if ((part as Record<string, unknown>).thought) continue;
+        const partSig = (part as { thoughtSignature?: string }).thoughtSignature;
+
+        if ((part as Record<string, unknown>).thought) {
+          // Thought summary part — text is internal reasoning we drop,
+          // but the signature here may be the only authorization for
+          // the functionCall that follows.
+          if (partSig) pendingThoughtSig = partSig;
+          continue;
+        }
 
         if (part.text) {
           yield { type: "content_delta", text: part.text };
@@ -222,11 +241,16 @@ export class GoogleProvider implements Provider {
           // Preserve Gemini's ID for parallel tool call correlation; generate fallback if absent
           const id = part.functionCall.id ?? `call_${crypto.randomUUID().slice(0, 8)}`;
           const name = part.functionCall.name ?? "unknown";
+          // Prefer the signature on the call part itself; fall back to
+          // the most recent unconsumed thought signature.
+          const signature = partSig ?? pendingThoughtSig;
+          pendingThoughtSig = undefined;
           yield {
             type: "tool_use_start",
             id,
             name,
             index: toolIndex,
+            ...(signature ? { signature } : {}),
           };
           // Gemini sends function call args as a complete object, not streaming
           yield {
