@@ -241,4 +241,17 @@ describe("shell tool output ordering", () => {
     expect(idxB).toBeGreaterThan(idxA);
     expect(idxC).toBeGreaterThan(idxB);
   });
+
+  // Round 30 #1: signal-killed processes report code=null. The old
+  // `if (code !== 0)` branch rendered the resulting output as
+  // "[exit null]\n…" — confusing both LLM and user. Now signals get a
+  // legible "[killed by SIGNAME]" prefix.
+  test("signal-killed processes do not surface as `[exit null]`", async () => {
+    const out = await ShellTool.execute(
+      { command: "kill -TERM $$" },
+      {},
+    );
+    expect(out).not.toContain("[exit null]");
+    expect(out).toMatch(/\[killed by SIG/);
+  });
 });

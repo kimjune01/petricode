@@ -88,14 +88,19 @@ export const ShellTool: Tool = {
       };
       signal?.addEventListener("abort", onAbort, { once: true });
 
-      proc.on("close", (code) => {
+      proc.on("close", (code, signalName) => {
         cleanup();
         let trimmed = output.trimEnd();
         if (truncated) {
           trimmed += `\n[output truncated — exceeded ${MAX_OUTPUT_BYTES} bytes]`;
         }
-        if (code !== 0) {
+        // Signal-terminated processes report code=null. Render the signal
+        // name instead of "[exit null]" so a SIGSEGV / our own SIGTERM
+        // (truncation) / SIGKILL (timeout) is legible to the model.
+        if (code !== null && code !== 0) {
           resolve(`[exit ${code}]\n${trimmed}`);
+        } else if (code === null && signalName) {
+          resolve(`[killed by ${signalName}]\n${trimmed}`);
         } else {
           resolve(trimmed);
         }

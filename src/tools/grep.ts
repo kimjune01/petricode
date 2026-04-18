@@ -70,19 +70,24 @@ export const GrepTool: Tool = {
         stdio: ["ignore", "pipe", "pipe"],
         cwd: projectRoot,
       });
+      // setEncoding aligns chunk boundaries to whole UTF-8 code points.
+      // Without it, a multi-byte char split across two 'data' events
+      // decodes to U+FFFD on each half — corrupting CJK/emoji matches.
+      proc.stdout.setEncoding("utf8");
+      proc.stderr.setEncoding("utf8");
 
       let output = "";
       let outputBytes = 0;
       let truncated = false;
-      const collect = (d: Buffer) => {
+      const collect = (chunk: string) => {
         if (truncated) return;
-        outputBytes += d.length;
+        outputBytes += Buffer.byteLength(chunk, "utf8");
         if (outputBytes > MAX_OUTPUT_BYTES) {
           truncated = true;
           proc.kill("SIGTERM");
           return;
         }
-        output += d.toString();
+        output += chunk;
       };
       proc.stdout.on("data", collect);
       proc.stderr.on("data", collect);
