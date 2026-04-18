@@ -36,6 +36,11 @@ export async function expandFileRefs(input: string, projectDir: string): Promise
     const absPath = isAbsolute(filePath) ? filePath : resolve(projectDir, filePath);
     try {
       const stats = await stat(absPath);
+      // Skip non-regular files. Opening a FIFO or character device
+      // (e.g. an `@/dev/urandom` mention slipping past validation in a
+      // weird projectDir) would block readFile() forever and hang the
+      // whole agent.
+      if (!stats.isFile()) continue;
       const fh = await open(absPath, "r");
       let contents: string;
       try {

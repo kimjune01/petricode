@@ -12,9 +12,17 @@ import { parseArgs } from "./argv.js";
 // file ⇒ resume that session.
 
 function readSessionFile(path: string): string | undefined {
-  if (!existsSync(path)) return undefined;
-  const raw = readFileSync(path, "utf-8").trim();
-  return raw.length > 0 ? raw : undefined;
+  // Read directly instead of existsSync()-then-read: the file can be
+  // removed between the two calls (rare in practice, but possible if
+  // /tmp is being cleaned), and that race would crash the CLI with an
+  // unhandled ENOENT instead of the "no session yet" semantics we want.
+  try {
+    const raw = readFileSync(path, "utf-8").trim();
+    return raw.length > 0 ? raw : undefined;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code === "ENOENT") return undefined;
+    throw err;
+  }
 }
 
 function writeSessionFile(path: string, sessionId: string): void {
@@ -186,6 +194,11 @@ if (parsed.prompt !== undefined) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       result.stderr += `petricode: failed to write --session-file ${parsed.sessionFile}: ${msg}\n`;
+      // A failed write means the next invocation can't resume — silent
+      // success would let scripts march past the broken state. Promote
+      // to a non-zero exit so the operator notices, but keep stdout
+      // intact so the turn output isn't lost.
+      if (result.exitCode === 0) result.exitCode = 1;
     }
   }
   // Drain via the shared helper so the truncation behavior is covered by

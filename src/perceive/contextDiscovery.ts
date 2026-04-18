@@ -39,12 +39,17 @@ export async function discoverContext(
   const projectAgents = join(projectDir, ".agents");
   await collectFromDir(projectAgents, fragments, 0.7);
 
-  // Subdirectory .agents/ — one level deep (skip always-excluded dirs)
+  // Subdirectory .agents/ — one level deep. Skip always-excluded dirs
+  // AND anything the project's own .gitignore opts out of, so we don't
+  // walk into `vendor/`, `dist/`, or any user-defined ignore dir
+  // chasing context fragments that don't exist.
   try {
+    const isIgnored = await loadIgnorePredicate(projectDir);
     const entries = await readdir(projectDir, { withFileTypes: true });
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
       if (isAlwaysExcluded(entry.name)) continue;
+      if (isIgnored(entry.name, true)) continue;
       const subAgents = join(projectDir, entry.name, ".agents");
       await collectFromDir(subAgents, fragments, 0.9);
     }

@@ -140,9 +140,14 @@ function patternToRegex(pattern: string): RegExp {
     .replace(/\*\*\//g, "⟨LEADGLOBSTAR⟩")
     .replace(/\*\*/g, "⟨GLOBSTAR⟩")
     .replace(/\*/g, "[^/]*")
-    .replace(/⟨SLASHGLOBSTAR⟩/g, "(/.*)?/")
-    .replace(/⟨LEADGLOBSTAR⟩/g, "(.*/)?")
-    .replace(/⟨GLOBSTAR⟩/g, ".*");
+    // Non-greedy expansions so the predicate's "match ends at leaf?" check
+    // (used by dir-only patterns) sees the shortest valid match. Without
+    // `?` quantifiers, `a/**/` against `a/foo/file.txt` greedily grabs
+    // `foo/file.txt`, end-of-match lands at the leaf, and the dirOnly
+    // skip incorrectly drops the file.
+    .replace(/⟨SLASHGLOBSTAR⟩/g, "(/.*?)?/")
+    .replace(/⟨LEADGLOBSTAR⟩/g, "(.*?/)?")
+    .replace(/⟨GLOBSTAR⟩/g, ".*?");
 
   if (anchored) {
     return new RegExp(`^${regex}(/|$)`);

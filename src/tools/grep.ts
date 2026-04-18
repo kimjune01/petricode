@@ -1,5 +1,7 @@
 import { spawn } from "child_process";
+import { isAbsolute, relative } from "path";
 import type { Tool } from "./tool.js";
+import { loadIgnorePredicate } from "../filter/gitignore.js";
 
 const DEFAULT_TIMEOUT = 30_000;
 const MAX_OUTPUT_BYTES = 1_048_576;
@@ -36,6 +38,14 @@ export const GrepTool: Tool = {
     const signal = opts?.signal;
 
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
+    // Honor the project's .gitignore so the model isn't drowned in build-
+    // artifact hits when it greps for a function name. The shell-level
+    // --exclude-dir/--exclude flags only cover .git/node_modules/.env*;
+    // anything else (`dist/`, `build/`, generated stubs) was leaking
+    // through. Post-filter rather than try to translate full gitignore
+    // syntax (globstars, negation, anchors) into grep --exclude flags.
+    const isIgnored = await loadIgnorePredicate(projectRoot);
 
     return new Promise<string>((resolve, reject) => {
       const grepArgs = [
@@ -95,9 +105,31 @@ export const GrepTool: Tool = {
         // grep exits 1 when no matches found — not an error
         if (code !== null && code > 1 && !truncated) {
           resolve(`[exit ${code}]\n${output.trimEnd()}${suffix}`);
-        } else {
-          resolve((output.trimEnd() || "(no matches)") + suffix);
+          return;
         }
+        // Drop matches that fall under .gitignore. Each line is
+        // `path:lineno:text`; the first colon separates the path. Paths
+        // grep emits are relative to its cwd (projectRoot), or absolute
+        // if the caller passed an absolute search path — normalize both
+        // to a project-root-relative form before consulting the predicate.
+        const filtered = output
+          .split("\n")
+          .filter((line) => {
+            if (!line) return false;
+            const colon = line.indexOf(":");
+            if (colon <= 0) return true;
+            const filePath = line.slice(0, colon);
+            const rel = isAbsolute(filePath)
+              ? relative(projectRoot, filePath)
+              : filePath;
+            // Path may escape projectRoot when the caller searches
+            // outside (rare, but supported). Don't filter what we can't
+            // reason about — relative() returns "../..." in that case.
+            if (rel.startsWith("..")) return true;
+            return !isIgnored(rel, false);
+          })
+          .join("\n");
+        resolve((filtered.trimEnd() || "(no matches)") + suffix);
       });
 
       proc.on("error", (err) => {

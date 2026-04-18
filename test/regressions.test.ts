@@ -48,6 +48,17 @@ describe("gitignore directory-only patterns", () => {
     const isIgnored = buildIgnorePredicate(["*.log"]);
     expect(isIgnored("debug.log", false)).toBe(true);
   });
+
+  // Regression for the leaf-greedy regex created by round 1's dirOnly fix:
+  // `a/**/` should ignore `a/foo/file.txt`, but a greedy `.*` consumed
+  // `foo/file.txt` so the match landed on the leaf and got skipped.
+  test("globstar dir patterns ignore children, not just the dir", () => {
+    const isIgnored = buildIgnorePredicate(["a/**/"]);
+    expect(isIgnored("a/foo/file.txt", false)).toBe(true);
+    expect(isIgnored("a/foo", true)).toBe(true);
+    expect(isIgnored("a/foo", false)).toBe(false);
+    expect(isIgnored("a", false)).toBe(false);
+  });
 });
 
 // ── Round 20 #4: @file ref size cap ──────────────────────────────
