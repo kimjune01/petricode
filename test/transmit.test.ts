@@ -125,7 +125,7 @@ describe("DecisionStore", () => {
       outcome_ref: "selected:grep",
     };
 
-    (transmit as any)._writeDecision(sessionId, record);
+    await transmit.append_decision!(sessionId, record);
 
     const decisions = await transmit.list_decisions!();
     expect(decisions).toHaveLength(1);

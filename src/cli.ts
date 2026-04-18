@@ -175,10 +175,12 @@ if (parsed.prompt !== undefined) {
     format,
   });
   // Persist the resolved session ID before exit so the next invocation
-  // with the same --session-file resumes the same conversation. Only
-  // write on success — a failed bootstrap leaves the file untouched so
-  // a stale ID isn't overwritten with garbage.
-  if (parsed.sessionFile && result.sessionId && result.exitCode === 0) {
+  // with the same --session-file resumes the same conversation. Write
+  // whenever bootstrap produced a sessionId — even when the turn itself
+  // failed, the session row exists in SQLite and the user needs the ID
+  // to retry against it. A failed *bootstrap* returns no sessionId, so
+  // the file is naturally left untouched in that case.
+  if (parsed.sessionFile && result.sessionId) {
     try {
       writeSessionFile(parsed.sessionFile, result.sessionId);
     } catch (err) {

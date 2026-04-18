@@ -39,11 +39,12 @@ export const GlobTool: Tool = {
     const glob = new BunGlob(pattern);
     const results: string[] = [];
     for await (const path of glob.scan({ cwd, dot: false })) {
-      // Reconstruct root-relative path for ignore matching.
+      // Reconstruct root-relative path for ignore matching. BunGlob.scan
+      // yields files only by default, so dir-only patterns must not match.
       const rootRelative = cwdPrefix === "." || cwdPrefix === ""
         ? path
         : join(cwdPrefix, path);
-      if (!isIgnored(rootRelative)) {
+      if (!isIgnored(rootRelative, false)) {
         results.push(path);
       }
     }

@@ -63,9 +63,8 @@ export function createSqliteTransmit(opts: SqliteTransmitOptions): TransmitSlot 
       return decisionStore.list(filter);
     },
 
-    // Expose for writing decisions (not in contract but needed internally)
-    _writeDecision(sessionId: string, record: DecisionRecord): void {
+    async append_decision(sessionId: string, record: DecisionRecord): Promise<void> {
       decisionStore.write(sessionId, record);
     },
-  } as TransmitSlot & { _writeDecision(sessionId: string, record: DecisionRecord): void };
+  };
 }

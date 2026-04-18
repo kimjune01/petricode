@@ -34,21 +34,29 @@ export async function parseGitignore(projectDir: string): Promise<string[]> {
  * Handles simple patterns: directory names, globs with *, negation (!).
  *
  * @param patterns - parsed gitignore lines
- * @returns predicate: (relativePath) => true if ignored
+ * @returns predicate: (relativePath, isDirectory?) => true if ignored.
+ *   `isDirectory` is consulted for trailing-slash patterns (`foo/`),
+ *   which per gitignore semantics MUST only match directories.
+ *   - true  → directory-only patterns may match
+ *   - false → directory-only patterns are skipped
+ *   - undefined → directory-only patterns may match (conservative default
+ *     for callers that don't know; preserves prior behavior)
  */
 export function buildIgnorePredicate(
   patterns: string[],
-): (relativePath: string) => boolean {
+): (relativePath: string, isDirectory?: boolean) => boolean {
   // Per gitignore semantics, patterns are evaluated in source order and the
   // LAST matching pattern decides — a later negation overrides an earlier
   // ignore, and a later ignore re-overrides that negation. Splitting into
   // positive/negative arrays loses this ordering.
   const compiled = patterns.map((pat) => {
     const negate = pat.startsWith("!");
-    return { negate, re: patternToRegex(negate ? pat.slice(1) : pat) };
+    const body = negate ? pat.slice(1) : pat;
+    const dirOnly = body.endsWith("/");
+    return { negate, dirOnly, re: patternToRegex(body) };
   });
 
-  return (relativePath: string): boolean => {
+  return (relativePath: string, isDirectory?: boolean): boolean => {
     const segments = relativePath.split("/");
 
     // Always-excluded: check every path segment
@@ -61,12 +69,37 @@ export function buildIgnorePredicate(
     // Walk patterns in source order. Anchored patterns (^...) only match the
     // full path; unanchored patterns ((^|/)...) also match individual segments
     // so bare names like "dist" match at any depth.
+    //
+    // Dir-only handling (`dist/`): the pattern must NOT match a regular file
+    // whose leaf segment happens to be named `dist`, but it MUST still ignore
+    // children of an ignored directory (e.g. `dist/index.js`). Strategy:
+    // when caller asserts the path is a file, skip dir-only matches that
+    // land on the leaf segment, but allow matches in the middle of the path
+    // (those are "inside an ignored dir").
+    const lastSegIdx = segments.length - 1;
     let ignored = false;
-    for (const { negate, re } of compiled) {
+    for (const { negate, dirOnly, re } of compiled) {
       const isAnchored = re.source.startsWith("^") && !re.source.startsWith("(^|/");
-      if (re.test(relativePath) || (!isAnchored && segments.some((seg) => re.test(seg)))) {
-        ignored = !negate;
+      const skipLeaf = dirOnly && isDirectory === false;
+      let matched = false;
+
+      const fullMatch = re.exec(relativePath);
+      if (fullMatch) {
+        const endsAtLeaf =
+          fullMatch.index + fullMatch[0].length === relativePath.length;
+        if (!(skipLeaf && endsAtLeaf)) matched = true;
       }
+
+      if (!matched && !isAnchored) {
+        for (let i = 0; i < segments.length; i++) {
+          if (!re.test(segments[i] as string)) continue;
+          if (skipLeaf && i === lastSegIdx) continue;
+          matched = true;
+          break;
+        }
+      }
+
+      if (matched) ignored = !negate;
     }
     return ignored;
   };
@@ -123,7 +156,7 @@ function patternToRegex(pattern: string): RegExp {
  */
 export async function loadIgnorePredicate(
   projectDir: string,
-): Promise<(relativePath: string) => boolean> {
+): Promise<(relativePath: string, isDirectory?: boolean) => boolean> {
   const patterns = await parseGitignore(projectDir);
   return buildIgnorePredicate(patterns);
 }

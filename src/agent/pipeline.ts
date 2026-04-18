@@ -478,10 +478,12 @@ export class Pipeline {
   /**
    * Compact the conversation cache: graduate hot turns to the cold
    * union-find zone and enforce the cluster cap. Bounded operation —
-   * no LLM call, no async work.
+   * no LLM call, no async work. Returns the compaction result so the
+   * caller (e.g. /compact slash command) can report effectiveness
+   * without recomputing token_count() on either side.
    */
-  compact(): void {
-    this.cache.compact();
+  compact() {
+    return this.cache.compact();
   }
 
   /**

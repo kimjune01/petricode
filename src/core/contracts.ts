@@ -8,6 +8,7 @@ import type {
   CandidateSkill,
   DecisionRecord,
   ContextFragment,
+  CompactionResult,
 } from "./types.js";
 
 // ── Perceive ──────────────────────────────────────────────────────
@@ -21,7 +22,7 @@ export interface PerceiveSlot {
 export interface CacheSlot {
   append(turn: Turn): void;
   read(): Turn[];
-  compact(): void;
+  compact(): CompactionResult;
   token_count(): number;
 
   // Extensions (optional — implement when needed)
@@ -48,6 +49,7 @@ export interface TransmitSlot {
   write_skill?(skill: Skill): Promise<void>;
   read_skills?(): Promise<Skill[]>;
   delete_skill?(name: string): Promise<boolean>;
+  append_decision?(session_id: string, record: DecisionRecord): Promise<void>;
   list_decisions?(filter?: Record<string, unknown>): Promise<DecisionRecord[]>;
 }
 

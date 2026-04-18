@@ -98,6 +98,19 @@ export interface DecisionRecord {
   outcome_ref: string;
 }
 
+// ── Cache ─────────────────────────────────────────────────────────
+
+/**
+ * Returned by CacheSlot.compact(). Lets the caller report compression
+ * effectiveness (e.g. the /compact slash command shows before/after) and
+ * lets policy enforce that compaction MUST run before token-overflow
+ * rejection — see spec/02-cache.md.
+ */
+export interface CompactionResult {
+  removed_tokens: number;
+  preserved_pct: number;
+}
+
 // ── Errors ────────────────────────────────────────────────────────
 
 export interface RetryableError {

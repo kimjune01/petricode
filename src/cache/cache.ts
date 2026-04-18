@@ -1,5 +1,5 @@
 import type { CacheSlot } from "../core/contracts.js";
-import type { Turn, ContextFragment } from "../core/types.js";
+import type { Turn, ContextFragment, CompactionResult } from "../core/types.js";
 import { UnionFindForest } from "./unionFind.js";
 import { TfIdfIndex } from "./tfidf.js";
 import { graduate, enforce_cap, turn_text, type CompactionConfig } from "./compaction.js";
@@ -72,8 +72,10 @@ export class UnionFindCache implements CacheSlot {
     return [...cold_summaries, ...hot_turns];
   }
 
-  compact(): void {
+  compact(): CompactionResult {
     this.compact_count++;
+
+    const before = this.token_count();
 
     // Graduate all but the most recent half of hot turns
     const keep = Math.ceil(this.config.hot_capacity / 2);
@@ -84,6 +86,16 @@ export class UnionFindCache implements CacheSlot {
 
     // Enforce cluster cap via LRU eviction
     enforce_cap(this.forest, this.config.max_clusters, this.index);
+
+    const after = this.token_count();
+    return {
+      removed_tokens: Math.max(0, before - after),
+      // Fraction of original tokens still present after compaction.
+      // 1.0 = no-op; lower = more aggressive compression. 1.0 also when
+      // the cache was empty before — preserving "nothing" is trivially
+      // total preservation, not a divide-by-zero.
+      preserved_pct: before > 0 ? after / before : 1.0,
+    };
   }
 
   // Drop everything: hot ring, cold forest, and the TF-IDF index that

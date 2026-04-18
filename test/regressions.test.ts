@@ -27,6 +27,29 @@ describe("gitignore globstar/?? regression", () => {
   });
 });
 
+// ── Round 25 #2: gitignore directory-only patterns ───────────────
+// Trailing-slash patterns (`dist/`) MUST only match directories per
+// gitignore spec. Before the fix, `patternToRegex` stripped the slash
+// silently and any file named `dist` was also hidden. The glob tool
+// (which only yields files) was the visible victim.
+
+describe("gitignore directory-only patterns", () => {
+  test("`dist/` ignores the dist directory but not a file named dist", () => {
+    const isIgnored = buildIgnorePredicate(["dist/"]);
+    // Caller asserts the path is a regular file → dirOnly skipped.
+    expect(isIgnored("dist", false)).toBe(false);
+    // Caller asserts the path is a directory → match.
+    expect(isIgnored("dist", true)).toBe(true);
+    // Path inside the ignored dir is matched regardless of caller hint.
+    expect(isIgnored("dist/index.js", false)).toBe(true);
+  });
+
+  test("non-dirOnly patterns still match files", () => {
+    const isIgnored = buildIgnorePredicate(["*.log"]);
+    expect(isIgnored("debug.log", false)).toBe(true);
+  });
+});
+
 // ── Round 20 #4: @file ref size cap ──────────────────────────────
 // expandFileRefs used raw readFile() with no size check, so an
 // `@huge.log` mention could OOM the agent. Now it stat-checks and

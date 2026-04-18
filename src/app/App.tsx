@@ -60,11 +60,13 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
     if (!pipeline) return;
     overrideCommand("skills", () => listSkills(pipeline.loadedSkills()));
     overrideCommand("compact", () => {
-      const before = pipeline.tokenCount();
-      pipeline.compact();
+      const { removed_tokens, preserved_pct } = pipeline.compact();
       const after = pipeline.tokenCount();
       setState((prev) => ({ ...prev, tokenCount: after }));
-      return { output: `Compacted: ${before} → ${after} tokens` };
+      const pct = Math.round(preserved_pct * 100);
+      return {
+        output: `Compacted: -${removed_tokens} tokens (${pct}% preserved, now ${after})`,
+      };
     });
     overrideCommand("model", (args) => {
       const trimmed = args.trim();

@@ -54,7 +54,11 @@ function makeCacheStub(): CacheSlot {
   return {
     append(turn) { turns.push(turn); },
     read() { return turns; },
-    compact() { turns.length = 0; },
+    compact() {
+      const before = turns.length * 10;
+      turns.length = 0;
+      return { removed_tokens: before, preserved_pct: before > 0 ? 0 : 1.0 };
+    },
     token_count() { return turns.length * 10; },
   };
 }
