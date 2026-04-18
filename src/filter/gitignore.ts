@@ -120,8 +120,21 @@ function patternToRegex(pattern: string): RegExp {
   const anchored = p.startsWith("/") || p.includes("/");
   if (p.startsWith("/")) p = p.slice(1);
 
+  // Mask gitignore escape sequences (`\*`, `\?`, `\!`) before regex
+  // escaping so they survive both the metachar pass and the glob
+  // substitutions, then restore them as literal-character matches.
+  // Without masking, `\*` collapses to a literal-backslash + glob `*`,
+  // matching `\Aname` instead of `*name` for a pattern like `file\*name`.
+  const ESC_STAR = "\u0001";
+  const ESC_QMARK = "\u0002";
+  const ESC_BANG = "\u0003";
+  let regex = p
+    .replace(/\\\*/g, ESC_STAR)
+    .replace(/\\\?/g, ESC_QMARK)
+    .replace(/\\!/g, ESC_BANG);
+
   // Escape regex special chars except * and ?
-  let regex = p.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  regex = regex.replace(/[.+^${}()|[\]\\]/g, "\\$&");
 
   // Convert glob patterns to regex.
   // Order matters: handle multi-char sequences before single-char ones.
@@ -147,7 +160,11 @@ function patternToRegex(pattern: string): RegExp {
     // skip incorrectly drops the file.
     .replace(/⟨SLASHGLOBSTAR⟩/g, "(/.*?)?/")
     .replace(/⟨LEADGLOBSTAR⟩/g, "(.*?/)?")
-    .replace(/⟨GLOBSTAR⟩/g, ".*?");
+    .replace(/⟨GLOBSTAR⟩/g, ".*?")
+    // Restore masked gitignore escapes as literal-character regex matches.
+    .replace(new RegExp(ESC_STAR, "g"), "\\*")
+    .replace(new RegExp(ESC_QMARK, "g"), "\\?")
+    .replace(new RegExp(ESC_BANG, "g"), "!");
 
   if (anchored) {
     return new RegExp(`^${regex}(/|$)`);

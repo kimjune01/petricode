@@ -37,12 +37,16 @@ export const ShellTool: Tool = {
         cwd,
       });
 
-      let stdout = "";
-      let stderr = "";
+      // Single shared buffer: append both streams in arrival order so the
+      // model sees output and error lines interleaved as they happened.
+      // Splitting into stdout/stderr and concatenating at the end (`stdout
+      // + stderr`) puts every error after every regular line, which made
+      // build/test failures look unrelated to the command they came from.
+      let output = "";
       let outputBytes = 0;
       let truncated = false;
 
-      const collect = (d: Buffer, sink: "out" | "err") => {
+      const collect = (d: Buffer) => {
         if (truncated) return;
         outputBytes += d.length;
         if (outputBytes > MAX_OUTPUT_BYTES) {
@@ -50,11 +54,10 @@ export const ShellTool: Tool = {
           proc.kill("SIGTERM");
           return;
         }
-        if (sink === "out") stdout += d.toString();
-        else stderr += d.toString();
+        output += d.toString();
       };
-      proc.stdout.on("data", (d: Buffer) => collect(d, "out"));
-      proc.stderr.on("data", (d: Buffer) => collect(d, "err"));
+      proc.stdout.on("data", collect);
+      proc.stderr.on("data", collect);
 
       // Single cleanup so timeout / abort / close / error all fully detach.
       // Without this the abort listener leaks past timeout fires.
@@ -78,14 +81,14 @@ export const ShellTool: Tool = {
 
       proc.on("close", (code) => {
         cleanup();
-        let output = (stdout + stderr).trimEnd();
+        let trimmed = output.trimEnd();
         if (truncated) {
-          output += `\n[output truncated — exceeded ${MAX_OUTPUT_BYTES} bytes]`;
+          trimmed += `\n[output truncated — exceeded ${MAX_OUTPUT_BYTES} bytes]`;
         }
         if (code !== 0) {
-          resolve(`[exit ${code}]\n${output}`);
+          resolve(`[exit ${code}]\n${trimmed}`);
         } else {
-          resolve(output);
+          resolve(trimmed);
         }
       });
 

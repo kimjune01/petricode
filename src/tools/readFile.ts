@@ -30,6 +30,11 @@ export const ReadFileTool: Tool = {
     const resolved = isAbsolute(path) ? path : resolve(cwd, path);
     try {
       const stats = await stat(resolved);
+      // Refuse non-regular files: open() on a FIFO or character device
+      // blocks until the other end speaks, hanging the agent indefinitely.
+      if (!stats.isFile()) {
+        throw new Error(`not a regular file: ${path}`);
+      }
       if (stats.size <= MAX_READ_BYTES) {
         const fh = await open(resolved, "r");
         try {

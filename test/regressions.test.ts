@@ -1,10 +1,15 @@
 import { describe, test, expect } from "bun:test";
-import { mkdtemp, rm, writeFile } from "fs/promises";
+import { mkdtemp, rm, writeFile, mkdir } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
+import { spawnSync } from "child_process";
 import { buildIgnorePredicate } from "../src/filter/gitignore.js";
 import { expandFileRefs } from "../src/perceive/fileRefs.js";
 import { UnionFindCache } from "../src/cache/cache.js";
+import { ReadFileTool } from "../src/tools/readFile.js";
+import { WriteFileTool } from "../src/tools/writeFile.js";
+import { EditTool } from "../src/tools/edit.js";
+import { ShellTool } from "../src/tools/shell.js";
 import type { Turn } from "../src/core/types.js";
 
 // ── Round 20 #3: gitignore globstar `?` corruption ───────────────
@@ -126,5 +131,105 @@ describe("UnionFindCache.compact tool pair invariant", () => {
     expect(hotIds).not.toContain("a1");
     expect(hotIds).not.toContain("r1");
     expect(hotIds).toContain("u2");
+  });
+});
+
+// ── Round 28 #1: gitignore backslash escapes ──────────────────────
+// patternToRegex used to escape `\` as a regex metachar BEFORE the
+// glob pass, so `file\*name` collapsed to a literal-backslash + glob
+// `*` and matched `file\Aname` instead of `file*name`. The masking
+// pass now stashes `\*`, `\?`, `\!` as placeholders before either
+// substitution touches them.
+
+describe("gitignore backslash escapes", () => {
+  test("`file\\*name` matches literal `file*name`, not `file\\Aname`", () => {
+    const isIgnored = buildIgnorePredicate(["file\\*name"]);
+    expect(isIgnored("file*name")).toBe(true);
+    expect(isIgnored("fileXname")).toBe(false);
+  });
+
+  test("`!literal` (escaped bang) is treated as ignore, not negation", () => {
+    const isIgnored = buildIgnorePredicate(["\\!keep.txt"]);
+    expect(isIgnored("!keep.txt")).toBe(true);
+  });
+});
+
+// ── Round 28 #2: file tools refuse non-regular files (FIFO hang) ──
+// Without an isFile() guard, opening or writing a FIFO/character
+// device blocks the agent until the other end speaks. file_read,
+// file_write, and edit now stat first and refuse anything that isn't
+// a regular file.
+
+describe("file tools reject non-regular files", () => {
+  test("file_read on a FIFO throws instead of hanging", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "petricode-fifo-"));
+    try {
+      const fifo = join(dir, "pipe");
+      const r = spawnSync("mkfifo", [fifo]);
+      if (r.status !== 0) return; // mkfifo unavailable — skip
+      await expect(
+        ReadFileTool.execute({ path: fifo }, { cwd: dir }),
+      ).rejects.toThrow(/not a regular file/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("edit on a FIFO throws instead of hanging", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "petricode-fifo-"));
+    try {
+      const fifo = join(dir, "pipe");
+      const r = spawnSync("mkfifo", [fifo]);
+      if (r.status !== 0) return;
+      await expect(
+        EditTool.execute(
+          { path: fifo, old_string: "a", new_string: "b" },
+          { cwd: dir },
+        ),
+      ).rejects.toThrow(/not a regular file/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("file_write into an existing FIFO throws instead of hanging", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "petricode-fifo-"));
+    try {
+      const fifo = join(dir, "pipe");
+      const r = spawnSync("mkfifo", [fifo]);
+      if (r.status !== 0) return;
+      await expect(
+        WriteFileTool.execute({ path: fifo, content: "x" }, { cwd: dir }),
+      ).rejects.toThrow(/not a regular file/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ── Round 28 #3: shell tool preserves chronological output order ──
+// Old shell.ts collected stdout/stderr into separate strings, then
+// concatenated them at the end. The model would see all stdout
+// followed by all stderr, hiding causal relationships in build/test
+// output. Shared buffer now preserves arrival order.
+
+describe("shell tool output ordering", () => {
+  test("interleaved stdout/stderr surface in arrival order", async () => {
+    // Three lines: stdout, stderr, stdout. With the old splitter the
+    // last line would be dragged into the stdout block, leaving stderr
+    // pinned at the end.
+    const out = await ShellTool.execute(
+      {
+        command:
+          "printf 'a\\n'; printf 'b\\n' >&2; sleep 0.05; printf 'c\\n'",
+      },
+      {},
+    );
+    const idxA = out.indexOf("a");
+    const idxB = out.indexOf("b");
+    const idxC = out.indexOf("c");
+    expect(idxA).toBeGreaterThanOrEqual(0);
+    expect(idxB).toBeGreaterThan(idxA);
+    expect(idxC).toBeGreaterThan(idxB);
   });
 });

@@ -1,4 +1,4 @@
-import { writeFile as fsWriteFile, mkdir } from "fs/promises";
+import { writeFile as fsWriteFile, mkdir, stat } from "fs/promises";
 import { dirname, isAbsolute, resolve } from "path";
 import type { Tool } from "./tool.js";
 
@@ -24,6 +24,17 @@ export const WriteFileTool: Tool = {
     const cwd = opts?.cwd ?? process.cwd();
     const resolved = isAbsolute(path) ? path : resolve(cwd, path);
     try {
+      // If the target already exists and isn't a regular file, refuse:
+      // writing to a FIFO blocks until a reader appears, hanging the agent.
+      try {
+        const existing = await stat(resolved);
+        if (!existing.isFile()) {
+          throw new Error(`file_write: not a regular file: ${path}`);
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!msg.includes("ENOENT")) throw err;
+      }
       await mkdir(dirname(resolved), { recursive: true });
       await fsWriteFile(resolved, content, "utf-8");
       return `Wrote ${content.length} bytes to ${path}`;

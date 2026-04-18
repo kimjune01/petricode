@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "fs/promises";
+import { readFile, stat, writeFile } from "fs/promises";
 import { isAbsolute, resolve } from "path";
 import type { Tool } from "./tool.js";
 
@@ -33,6 +33,12 @@ export const EditTool: Tool = {
 
     let content: string;
     try {
+      // Stat first: readFile on a FIFO/character device blocks the agent
+      // until the other end writes. Refuse anything that isn't a regular file.
+      const stats = await stat(resolved);
+      if (!stats.isFile()) {
+        throw new Error(`edit: not a regular file: ${path}`);
+      }
       content = await readFile(resolved, "utf-8");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);

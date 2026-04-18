@@ -54,6 +54,10 @@ export const GrepTool: Tool = {
         // zero matches and leading the model to conclude the pattern is
         // genuinely absent.
         "-rnE",
+        // -D skip: don't follow into FIFOs/character devices. Without it,
+        // grep blocks indefinitely on a named pipe inside the search tree.
+        "-D",
+        "skip",
         "--exclude-dir=.git",
         "--exclude-dir=node_modules",
         "--exclude=.env*",
