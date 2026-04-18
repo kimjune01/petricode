@@ -10,6 +10,7 @@
 
 import type { Turn, Content } from "./core/types.js";
 import type { Pipeline } from "./agent/pipeline.js";
+import { ClassifierEscalation } from "./agent/toolSubpipe.js";
 
 export type HeadlessFormat = "text" | "json";
 
@@ -58,6 +59,45 @@ export async function runHeadlessTurn(
     const turn = await pipeline.turn(prompt);
     return { exitCode: 0, stdout: formatHeadlessOutput(turn, format), stderr: "" };
   } catch (err) {
+    // Classifier escalated to human review but we have no human (headless).
+    // Exit 2 with the rationale so callers can distinguish "needs review"
+    // from a generic error and route accordingly (e.g. CI re-runs in TUI).
+    if (err instanceof ClassifierEscalation) {
+      // Surface the assistant's prose on stdout so callers piping output
+      // still see the model's reasoning. Rationale + tool name go to
+      // stderr alongside exit 2 so scripts can distinguish "needs human"
+      // from "real error" without parsing stdout.
+      // Honor --format json so machine-readable callers still get
+      // structured output instead of a hardcoded plaintext stream.
+      const assistant = err.assistantText ?? "";
+      // Include partial_results in JSON so machine callers can tell
+      // which tools in the batch already executed before the escalation.
+      // Without this, a CI runner gets the escalation signal but is
+      // blind to mutations the earlier tools already made.
+      const stdout = format === "json"
+        ? JSON.stringify({
+            kind: "classifier_escalation",
+            tool: err.toolName,
+            rationale: err.rationale,
+            assistant_text: assistant,
+            partial_results: err.partialResults,
+          }) + "\n"
+        : (assistant ? assistant + (assistant.endsWith("\n") ? "" : "\n") : "");
+      // Surface DENY-outcome partials on stderr too — those represent
+      // tools whose execution failed (the result is the error message).
+      // In plaintext mode the operator would otherwise miss them
+      // entirely, then wonder why the next turn references state that
+      // never landed.
+      const failed = err.partialResults.filter((r) => r.outcome === "DENY");
+      const failureNote = failed.length > 0
+        ? failed.map((r) => `petricode: tool ${r.name} failed before escalation: ${r.content}\n`).join("")
+        : "";
+      return {
+        exitCode: 2,
+        stdout,
+        stderr: failureNote + `petricode: classifier requested human review of ${err.toolName}: ${err.rationale}\n`,
+      };
+    }
     const msg = err instanceof Error ? err.message : String(err);
     return { exitCode: 1, stdout: "", stderr: `petricode: ${msg}\n` };
   }
@@ -92,7 +132,9 @@ export async function runHeadless(opts: HeadlessOptions): Promise<HeadlessResult
     const result = await bootstrap({
       projectDir: opts.projectDir,
       resumeSessionId: opts.resumeSessionId,
-      // No onConfirm — tools requiring confirmation auto-allow.
+      headless: true,
+      // No onConfirm — tools requiring confirmation auto-allow (or
+      // escalate via ClassifierEscalation when the classifier is on).
     });
     pipeline = result.pipeline;
     sessionId = result.sessionId;
@@ -101,5 +143,10 @@ export async function runHeadless(opts: HeadlessOptions): Promise<HeadlessResult
     return { exitCode: 1, stdout: "", stderr: `petricode: ${msg}\n` };
   }
   const turnResult = await runHeadlessTurn(pipeline, opts.prompt, opts.format ?? "text");
+  // Drain trace appends BEFORE returning. cli.ts goes straight to
+  // process.exit after this — without flush, in-flight audit writes for
+  // the just-finished batch get killed mid-syscall and the trace log
+  // misses entries.
+  await pipeline.flush().catch(() => undefined);
   return { ...turnResult, sessionId };
 }

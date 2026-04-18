@@ -249,6 +249,10 @@ const { bootstrap } = await import("./session/bootstrap.js");
 const { pipeline, sessionId, resumed, mode } = await bootstrap({
   projectDir: process.cwd(),
   resumeSessionId,
+  // Explicit headless: false so a classifier init failure degrades to
+  // manual confirmation instead of crashing the TUI. bootstrap defaults
+  // to headless=true (safe-by-default for programmatic callers).
+  headless: false,
   // onConfirm wired by App.tsx after mount
 });
 
@@ -280,3 +284,7 @@ const { waitUntilExit } = render(
   React.createElement(App, { pipeline, resumeSessionId, mode }),
 );
 await waitUntilExit();
+// Drain trace appends before Node tears down — the TUI session may
+// have queued writes that are still in flight when Ink exits, and
+// without flushing they get killed mid-syscall (corrupted JSONL).
+await pipeline.flush().catch(() => undefined);

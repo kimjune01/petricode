@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import type { Turn, ToolCall } from "../core/types.js";
+import type { Classification } from "../filter/triageClassifier.js";
 import type { AppPhase } from "./state.js";
 import { initialState } from "./state.js";
 import { tryCommand, overrideCommand } from "../commands/index.js";
@@ -43,13 +44,22 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
   } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const ctrlCTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The classifier verdict that came in alongside the current ASK_USER
+  // confirmation. Cleared when the prompt resolves or the run aborts.
+  // (Earlier revs also stashed every verdict in a Map for "lookup", but
+  // onConfirm receives the classification directly — the Map was dead
+  // state, so we just track the one currently on screen.)
+  const [pendingClassification, setPendingClassification] = useState<
+    Classification | undefined
+  >(undefined);
 
   // Wire pipeline's onConfirm to TUI confirmation flow
   useEffect(() => {
     if (!pipeline) return;
-    pipeline.onConfirm = (toolCall: ToolCall) =>
+    pipeline.onConfirm = (toolCall: ToolCall, classification?: Classification) =>
       new Promise<boolean>((resolve, reject) => {
         confirmResolveRef.current = { resolve, reject };
+        setPendingClassification(classification);
         setState((prev) => ({
           ...prev,
           phase: "confirming" as AppPhase,
@@ -129,6 +139,7 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
           confirmResolveRef.current.reject(new DOMException("Aborted", "AbortError"));
           confirmResolveRef.current = null;
         }
+        setPendingClassification(undefined);
         addSystemTurn("Interrupted.");
         setState((prev) => ({ ...prev, phase: "composing" as AppPhase, pendingToolCall: null }));
         return;
@@ -171,6 +182,27 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
     };
     setState((prev) => ({ ...prev, turns: [...prev.turns, turn] }));
   }, []);
+
+  // Surface ALLOW verdicts inline so users see what auto-ran without a
+  // y/n. ASK_USER's rationale is rendered inside ToolConfirmation via
+  // pendingClassification; DENY surfaces as a tool_result back to the
+  // model — neither needs an extra system turn here.
+  useEffect(() => {
+    if (!pipeline) return;
+    pipeline.onClassified = (toolCall, classification) => {
+      if (classification.verdict !== "ALLOW") return;
+      // Strip ANSI from the LLM-generated rationale before rendering —
+      // Ink doesn't sanitize, so a crafted rationale could clear the
+      // screen or spoof terminal output. C1 range (\x80–\x9f) blocks
+      // 8-bit CSI bypass (\x9b instead of \x1b[).
+      // eslint-disable-next-line no-control-regex
+      const safe = classification.rationale.replace(/[\x00-\x1f\x7f-\x9f]|\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "");
+      addSystemTurn(`[triage ALLOW] ${toolCall.name} — ${safe}`);
+    };
+    return () => {
+      pipeline.onClassified = undefined;
+    };
+  }, [pipeline, addSystemTurn]);
 
   const handleSubmit = useCallback(
     async (input: string) => {
@@ -325,6 +357,7 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
         ? `Allowed: ${state.pendingToolCall.name}`
         : `Denied: ${state.pendingToolCall.name}`,
     );
+    setPendingClassification(undefined);
     setState((prev) => ({
       ...prev,
       phase: "running" as AppPhase,
@@ -349,6 +382,7 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
           toolCall={state.pendingToolCall}
           onConfirm={handleToolConfirm}
           mode={mode}
+          classification={pendingClassification}
         />
       )}
 

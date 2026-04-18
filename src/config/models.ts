@@ -18,9 +18,23 @@ export type TierName = "primary" | "reviewer" | "fast";
 
 export type ConfirmMode = "yolo" | "cautious";
 
+/**
+ * Optional fast-LLM tool-call triage classifier. When enabled, sits
+ * between static policy and the user prompt: refines ASK_USER → ALLOW
+ * (auto-run) / DENY (surface to LLM) / ASK_USER (fall through).
+ * Requires Vertex creds (GOOGLE_CLOUD_PROJECT or ADC); fail-open on
+ * any error so the user always stays in the loop.
+ */
+export interface ClassifierConfig {
+  enabled: boolean;
+  model?: string;
+  timeout_ms?: number;
+}
+
 export interface TiersConfig {
   tiers: Record<TierName, TierConfig>;
   mode?: ConfirmMode;
+  classifier?: ClassifierConfig;
 }
 
 // ── Model metadata ───────────────────────────────────────────────

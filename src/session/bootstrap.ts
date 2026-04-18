@@ -13,14 +13,25 @@ import type { PolicyRule } from "../filter/policy.js";
 import { createSqliteTransmit } from "../transmit/sqlite.js";
 import { createDefaultRegistry } from "../tools/registry.js";
 import { resumeSession } from "./resume.js";
-import type { ConfirmFn } from "../agent/toolSubpipe.js";
+import type { ConfirmFn, ClassifiedNotice } from "../agent/toolSubpipe.js";
 import type { UnionFindCache } from "../cache/cache.js";
+import { createDefaultClassifier } from "../filter/triageClassifier.js";
 
 export interface BootstrapOptions {
   projectDir?: string;
   sessionId?: string;
   resumeSessionId?: string;
   onConfirm?: ConfirmFn;
+  onClassified?: ClassifiedNotice;
+  /**
+   * Set when running headlessly (no human in the loop). Controls how
+   * we react to a failed classifier init: TUI users get a warning and
+   * keep going (manual confirmation IS the fallback), headless users
+   * crash because no-classifier-headless silently auto-executes
+   * ASK_USER tools — a fail-open the user explicitly opted out of by
+   * enabling the classifier.
+   */
+  headless?: boolean;
 }
 
 export interface BootstrapResult {
@@ -109,6 +120,43 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<BootstrapR
   const policyRules: PolicyRule[] = mode === "yolo"
     ? [{ tool: "*", outcome: "ALLOW" }]
     : [];
+
+  // Classifier is opt-in: bare TiersConfig defaults to no classifier so
+  // existing users don't suddenly need GCP creds or eat extra latency.
+  //
+  // Failure handling depends on mode: TUI users degrade gracefully (the
+  // y/n prompt IS the safety net); headless users CRASH (without
+  // classifier OR human, ASK_USER auto-executes — that's the silent
+  // fail-open the user opted out of by enabling the classifier).
+  const classifierCfg = tiersConfig.classifier;
+  const classifier = classifierCfg?.enabled
+    ? await createDefaultClassifier({
+        projectDir,
+        modelId: classifierCfg.model,
+        timeoutMs: classifierCfg.timeout_ms,
+      }).catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        // Default to headless=true so a future caller that forgets the
+        // flag fails CLOSED instead of silently auto-executing.
+        // cli.ts (TUI) explicitly opts into headless=false to get
+        // graceful degradation to manual confirmation.
+        const isHeadless = opts.headless ?? true;
+        if (isHeadless) {
+          throw new Error(
+            `Classifier was enabled in config but failed to initialize: ${msg}. `
+              + `In headless mode this would silently auto-execute confirm-required tools — refusing. `
+              + `Either fix the issue or set classifier.enabled = false to disable.`,
+          );
+        }
+        // TUI: warn and proceed without classifier. The user can still
+        // confirm each ASK_USER tool manually.
+        console.warn(
+          `petricode: classifier disabled — ${msg}. Falling back to manual confirmation.`,
+        );
+        return undefined;
+      })
+    : undefined;
+
   const pipelineOpts: PipelineOptions = {
     router,
     projectDir,
@@ -116,6 +164,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<BootstrapR
     registry,
     policyRules,
     onConfirm: opts.onConfirm,
+    classifier,
+    onClassified: opts.onClassified,
   };
 
   const pipeline = new Pipeline();

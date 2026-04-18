@@ -18,9 +18,12 @@ import {
   runToolSubpipe,
   toolResultsToContent,
   getPartialToolResults,
+  ClassifierEscalation,
   type ConfirmFn,
+  type ClassifiedNotice,
   type ToolResult,
 } from "./toolSubpipe.js";
+import type { TriageClassifier } from "../filter/triageClassifier.js";
 import { loadSkills } from "../skills/loader.js";
 import {
   matchSlashCommand,
@@ -38,6 +41,10 @@ export interface PipelineOptions {
   registry?: ToolRegistry;
   policyRules?: PolicyRule[];
   onConfirm?: ConfirmFn;
+  /** Fast-LLM triage classifier (Gemini 3 Flash) for ASK_USER refinement. */
+  classifier?: TriageClassifier;
+  /** TUI hook called once per classified call so it can render a banner. */
+  onClassified?: ClassifiedNotice;
   maxToolRounds?: number;
 }
 
@@ -52,6 +59,8 @@ export class Pipeline {
   private policyRules: PolicyRule[] = [];
   private loopDetector!: LoopDetector;
   onConfirm?: ConfirmFn;
+  private classifier?: TriageClassifier;
+  onClassified?: ClassifiedNotice;
   private maxToolRounds: number = 10;
   private _sessionId!: string;
   private skills: Skill[] = [];
@@ -68,6 +77,8 @@ export class Pipeline {
     this.registry = options.registry;
     this.policyRules = options.policyRules ?? [];
     this.onConfirm = options.onConfirm;
+    this.classifier = options.classifier;
+    this.onClassified = options.onClassified;
     this.maxToolRounds = options.maxToolRounds ?? 10;
     this._sessionId = options.sessionId ?? crypto.randomUUID();
 
@@ -321,6 +332,20 @@ export class Pipeline {
 
     // 6. Tool sub-pipe — loop until no tool calls
     let currentTurn = assistantTurn;
+    // Accumulate the assistant's text across every tool round so a
+    // later ClassifierEscalation can surface the WHOLE explanation, not
+    // just whatever the LLM said in the round that happened to escalate.
+    // (Round-1 text is often the meaningful "here's what I'm about to
+    // do" preamble; round-3 is sometimes just a bare tool call.)
+    const assistantTextChunks: string[] = [];
+    const collectText = (t: Turn) => {
+      const text = t.content
+        .filter((c): c is Extract<Content, { type: "text" }> => c.type === "text")
+        .map((c) => c.text)
+        .join("");
+      if (text.trim()) assistantTextChunks.push(text.trim());
+    };
+    collectText(assistantTurn);
     for (let round = 0; round < this.maxToolRounds; round++) {
       if (!currentTurn.tool_calls || currentTurn.tool_calls.length === 0) {
         break;
@@ -385,6 +410,12 @@ export class Pipeline {
           policyRules: this.policyRules,
           loopDetector: this.loopDetector,
           onConfirm: this.onConfirm,
+          classifier: this.classifier,
+          // Last 8 turns is the conversational lookback fed to the classifier.
+          // Smaller than the model's full window — Flash classifier needs gist,
+          // not the whole transcript, and a tighter slice keeps latency steady.
+          recentTurns: this.cache.read().slice(-8),
+          onClassified: this.onClassified,
           signal,
         });
       } catch (err) {
@@ -397,6 +428,19 @@ export class Pipeline {
         if (err instanceof DOMException && err.name === "AbortError") {
           const partial = getPartialToolResults(err) ?? [];
           this.commitToolBatch(currentTurn, partial, commitTurn);
+          throw err;
+        }
+        // Headless escalation: the classifier said ASK_USER and there's
+        // no human. Persist the tools that DID execute before the
+        // escalation so the run's side-effects are recorded — otherwise
+        // the next resume would think the edits never happened.
+        if (err instanceof ClassifierEscalation) {
+          // Surface the WHOLE explanation across all rounds — earlier
+          // rev only used currentTurn, which dropped multi-round prose
+          // when the escalation hit round 2+ and the late round was
+          // just a bare tool call.
+          err.assistantText = assistantTextChunks.join("\n\n");
+          this.commitToolBatch(currentTurn, err.partialResults, commitTurn);
           throw err;
         }
         throw err;
@@ -436,6 +480,7 @@ export class Pipeline {
       });
       try {
         currentTurn = await assembleTurn(nextStream, signal);
+        collectText(currentTurn);
       } catch (err) {
         // If assembleTurn was aborted mid-stream, the previous round's
         // tool results are already cached. Nothing more to persist —
@@ -498,6 +543,15 @@ export class Pipeline {
   clear(): void {
     this.cache.clear();
     this.loopDetector.reset();
+  }
+
+  /**
+   * Drain any in-flight async work owned by the pipeline (currently:
+   * classifier trace appends). Headless callers await this before
+   * `process.exit` so audit-log writes aren't killed mid-flight.
+   */
+  async flush(): Promise<void> {
+    await this.classifier?.flush?.();
   }
 
   /** Current session ID. */
