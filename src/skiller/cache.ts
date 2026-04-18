@@ -1,8 +1,8 @@
-// ── Skill registry (Cache) ──────────────────────────────────────
+// ── Skiller / Cache ─────────────────────────────────────────────
 // Holds the loaded skill set keyed by name with claude < global <
-// project precedence. Cache stage in the PCFACT pipe: takes the raw
-// Skill[] streams produced by perceive/skillDiscovery and indexes them
-// for retrieval-by-name in the Filter (matcher) and Tool layers.
+// project precedence. Cache stage of the skiller sub-pipeline:
+// indexes the Skill[] streams produced by perceive/skillDiscovery
+// for retrieval-by-name by the matcher (Filter) and Tool layers.
 
 import { join } from "path";
 import { homedir } from "os";

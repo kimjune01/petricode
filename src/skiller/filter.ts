@@ -1,4 +1,4 @@
-// ── Skill matcher (Filter) ──────────────────────────────────────
+// ── Skiller / Filter ────────────────────────────────────────────
 // Predicate filter over the indexed skill registry. Two predicates,
 // each producing ActivatedSkill envelopes:
 //   - matchSlashCommand: single_best (one slash → at most one skill)
@@ -6,7 +6,8 @@
 // Manual-trigger skills are not selected here — the LLM picks them
 // itself via the Skill tool.
 
-import type { Skill, ActivatedSkill } from "../core/types.js";
+import type { Skill } from "../core/types.js";
+import type { ActivatedSkill } from "./types.js";
 
 /**
  * Try to match input against a slash-command skill.

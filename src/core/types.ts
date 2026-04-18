@@ -81,16 +81,6 @@ export interface Skill {
   trigger: "slash_command" | "auto" | "manual";
 }
 
-// Output of the skill matcher (Filter): a Skill paired with the
-// arguments captured at activation time and the trigger that fired.
-// Lives here so Filter and Consolidate can share it without circular
-// imports through a skills/ subdir.
-export interface ActivatedSkill {
-  skill: Skill;
-  arguments: string;
-  via: "slash_command" | "auto_trigger" | "manual";
-}
-
 export interface CandidateSkill {
   name: string;
   body: string;

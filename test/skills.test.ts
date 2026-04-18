@@ -2,9 +2,9 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { loadSkillsFromDirs } from "../src/cache/skillRegistry.js";
-import { matchSlashCommand, matchAutoTriggers } from "../src/filter/skillMatcher.js";
-import { substituteArguments } from "../src/consolidate/skillSubstitution.js";
+import { loadSkillsFromDirs } from "../src/skiller/cache.js";
+import { matchSlashCommand, matchAutoTriggers } from "../src/skiller/filter.js";
+import { substituteArguments } from "../src/skiller/consolidator.js";
 import { listSkills } from "../src/commands/skills.js";
 
 // ── Helpers ─────────────────────────────────────────────────────
