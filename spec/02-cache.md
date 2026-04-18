@@ -61,8 +61,8 @@ Master state object for interactive rendering: history items, streaming state, p
 Three distinct operations, each with different lossiness:
 
 - **Compact:** lossless, reversible, in-cache restructuring. Graduate old messages from hot to cold (union-find merge). Full data preserved through parent pointers. Reversible via `expand()`.
-- **Suppress:** remove clusters from the active retrieval set without deleting data. Suppressed clusters remain in Remember and can be re-activated. Reclaims context tokens without losing data.
-- **Prune:** actual durable deletion. Only happens in Remember via Filter @ Remember (see 03-filter.md). Cache never prunes.
+- **Suppress:** remove clusters from the active retrieval set without deleting data. Suppressed clusters remain in Transmit and can be re-activated. Reclaims context tokens without losing data.
+- **Prune:** actual durable deletion. Only happens in Transmit via Filter @ Transmit (see 03-filter.md). Cache never prunes.
 
 The distinction from consolidation: compaction is ops, consolidation is learning.
 
@@ -70,7 +70,7 @@ The distinction from consolidation: compaction is ops, consolidation is learning
 - **Order:** compaction MUST run before overflow rejection. Never reject a message without attempting compaction first.
 - **Strategy:**
   1. Compact: graduate oldest hot messages to cold via union-find merge.
-  2. Suppress: exclude oldest/smallest cold clusters from retrieval index. They stay in Remember, recoverable.
+  2. Suppress: exclude oldest/smallest cold clusters from retrieval index. They stay in Transmit, recoverable.
   3. Only if suppression is insufficient: report overflow to the user.
 
 ## Unlocks

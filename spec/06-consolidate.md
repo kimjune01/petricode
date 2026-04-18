@@ -1,6 +1,6 @@
 # 06 — Consolidate
 
-The backward pass. Read from Remember, write procedures back to the substrate. The role that makes the agent learn.
+The backward pass. Read from Transmit, write procedures back to the substrate. The role that makes the agent learn.
 
 Reference: [Consolidation Codec](https://june.kim/consolidate-codec), [The Consolidate Pipe](https://june.kim/consolidate-pipe), [The Compression Tower](https://june.kim/compression-tower).
 
@@ -17,11 +17,11 @@ MVP ships one method. The human does the rest.
 
 ```
 Consolidate:  persisted → policy′
-              Guarantee: backward pass. Reads from Remember asynchronously,
+              Guarantee: backward pass. Reads from Transmit asynchronously,
               writes to the substrate. Lossy. Reshapes how each stage processes.
 ```
 
-- **Reads from:** Remember (session logs, decision records, tool outcomes)
+- **Reads from:** Transmit (session logs, decision records, tool outcomes)
 - **Writes to:** procedural memory (skills, instructions, preferences)
 - **Does not:** modify the current session. Consolidate affects the *next* session.
 - **Requires human approval:** the human decides what the agent learns. No unsupervised learning.
@@ -30,13 +30,13 @@ Consolidate:  persisted → policy′
 ## How it works (MVP)
 
 1. User invokes `/consolidate`.
-2. The fast model reads accumulated sessions and decision records from Remember.
+2. The fast model reads accumulated sessions and decision records from Transmit.
 3. It extracts problem→approach→outcome triples — what problem was being solved, what approach was taken, what happened.
 4. Similar triples across sessions are grouped.
 5. Each group is presented to the human as a candidate skill.
 6. Each candidate runs through Volley (reviewer cross-checks) before presentation.
 7. Human approves, rejects, or edits each candidate.
-8. Approved candidates are written as skill files via `Remember.write_skill()`.
+8. Approved candidates are written as skill files via `Transmit.write_skill()`.
 
 The human is doing the ranking, the convergence detection, and the quality judgment. The model is doing the extraction and grouping. This is Consolidate with the human filling most of the inner roles.
 
@@ -57,6 +57,6 @@ Automatic triggers (end-of-session, threshold-based, adaptive) are experiments f
 - No trigger (Consolidate exists but never fires)
 - Unsupervised learning (agent writes skills without human approval)
 - Consolidate that modifies the current session (that's Cache compaction)
-- Reading from the current context window instead of from Remember (that's in-context learning, not Consolidate)
+- Reading from the current context window instead of from Transmit (that's in-context learning, not Consolidate)
 - Extracting tool sequences instead of decision heuristics (compresses labor, not intellect)
 - Frequency-based promotion (promotes habits, not invariants)

@@ -4,7 +4,7 @@
 
 ## What this is
 
-A harness for experimenting with agent architectures. Every automated role (Perceive, Cache, Filter, Remember, Consolidate) has a slot. Every slot has a clean interface. Algorithms, data structures, and entire inner towers can be swapped in and out without touching the rest of the pipe. Attend stays with the human.
+A harness for experimenting with agent architectures. Every automated role (Perceive, Cache, Filter, Transmit, Consolidate) has a slot. Every slot has a clean interface. Algorithms, data structures, and entire inner towers can be swapped in and out without touching the rest of the pipe. Attend stays with the human.
 
 The goal is to **experiment our way into a full-6-slotted harness** — one that actually learns, actually evicts, actually discloses context progressively. The kind of pipe that vendors won't build because it would reduce token consumption.
 
@@ -45,7 +45,7 @@ Each automated role is an interface, not an implementation. The harness ships wi
 Perceive:     (raw_input) → PerceivedEvent | RetryableError
 Cache:        .append(turn) / .read() / .compact() / .load_context(path) / .token_count()
 Filter:       (subject) → Pass | Reject(reason)
-Remember:     .append(event) / .read(session_id) / .list(filter) / .prune(policy) / .write_skill(skill)
+Transmit:     .append(event) / .read(session_id) / .list(filter) / .prune(policy) / .write_skill(skill)
 Consolidate:  .run(sessions) → CandidateSkill[]
 ```
 
@@ -66,7 +66,7 @@ The harness serves the person at the keyboard. Period.
 
 ### 5. Inner towers are first-class
 
-The composition spec (07-composition.md) defines four tower levels. Each level's pipeline is composed from the same slot interfaces. An experiment that improves Filter @ Remember (eviction inside the session store) uses the same Filter interface as Filter @ top (content validation).
+The composition spec (07-composition.md) defines four tower levels. Each level's pipeline is composed from the same slot interfaces. An experiment that improves Filter @ Transmit (eviction inside the session store) uses the same Filter interface as Filter @ top (content validation).
 
 This means the tower is recursive by construction, not by convention.
 
@@ -103,7 +103,7 @@ Listed in order of impact, informed by the SOAP diagnosis:
 
 1. **Consolidate** — the missing role. Extract patterns from past sessions, distill into skills, fire on a trigger. This is the experiment that matters most.
 2. **Cache** — tune union-find parameters (merge threshold, cluster cap, graduation policy). Measure token usage per task, recall, overflow frequency.
-3. **Filter @ Remember** — automatic eviction policies. Measure disk growth, startup time, OOM frequency.
+3. **Filter @ Transmit** — automatic eviction policies. Measure disk growth, startup time, OOM frequency.
 4. **Inner towers** — swap the tool execution subpipe, measure tool success rate. Swap the streaming subpipe, measure retry frequency.
 
 ## Success criteria

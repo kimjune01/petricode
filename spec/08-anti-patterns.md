@@ -12,11 +12,11 @@ Diagnosed failures from real systems. Each anti-pattern maps to a missing or bro
 
 **Fix:** Tree-shaped context with geometric token decay (see 02-cache.md).
 
-## 2. No automatic eviction (Filter @ Remember)
+## 2. No automatic eviction (Filter @ Transmit)
 
 **Symptom:** Session logs grow without bound. Multi-GB disk usage. OOM on startup from indexing all sessions.
 
-**Root cause:** Remember stores everything. Filter @ Remember is absent — no automatic eviction policy.
+**Root cause:** Transmit stores everything. Filter @ Transmit is absent — no automatic eviction policy.
 
 **Consequence:** Crash. Or: vendor ships heap size increase (band-aid) instead of eviction policy (fix).
 
@@ -42,11 +42,11 @@ Diagnosed failures from real systems. Each anti-pattern maps to a missing or bro
 
 **Fix:** Six-component backward pass with explicit trigger (see 06-consolidate.md).
 
-## 5. Inline binary in session logs (Remember @ top)
+## 5. Inline binary in session logs (Transmit @ top)
 
 **Symptom:** Base64-encoded binary data stored inline in session JSON. 19MB per file attachment.
 
-**Root cause:** Remember serializes everything it receives, including binary parts, without a size gate.
+**Root cause:** Transmit serializes everything it receives, including binary parts, without a size gate.
 
 **Consequence:** Session files bloat → feeds into anti-pattern #2 (unbounded growth).
 

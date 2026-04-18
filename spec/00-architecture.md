@@ -10,8 +10,8 @@ A coding agent harness is a pipe around inference. The pipe has five automated r
 | Cache | forward | Store and retrieve working state. Conversation history, UI state, token counts. Tree-shaped, not flat. | Yes |
 | Filter | forward | Gate: accept or reject. Content validation, policy checks, eviction, loop detection. Every gate is a predicate. | Yes |
 | Attend | forward | Select among alternatives with human judgment. Tool approval, plan confirmation, elicitation. | **No — human only** |
-| Remember | forward | Persist to durable store. Session logs, filesystem writes. CRUD interface, lossless. | Yes |
-| Consolidate | backward | Read from Remember, write procedures back to the substrate. Skill extraction, memory distillation. | Yes (triggered) |
+| Transmit | forward | Persist to durable store. Session logs, filesystem writes. CRUD interface, lossless. | Yes |
+| Consolidate | backward | Read from Transmit, write procedures back to the substrate. Skill extraction, memory distillation. | Yes (triggered) |
 
 ## Attend is a human job
 
@@ -36,7 +36,7 @@ Streaming:  P → C → F → [inference] → R
 Context:    P → C → F
 ```
 
-Gaps at lower levels propagate upward. A missing Filter inside Remember (no eviction) causes Remember at the top level to grow without bound.
+Gaps at lower levels propagate upward. A missing Filter inside Transmit (no eviction) causes Transmit at the top level to grow without bound.
 
 **Subpipes may be partial.** The top-level loop completes all roles. Subpipes complete a prefix and stop — this is documented, not a gap. The context subpipe stops at Filter because progressive disclosure (Cache) handles what Attend would do.
 
@@ -75,10 +75,10 @@ Every composition in the pipe converges — running the same operation twice pro
 
 ## Invariants
 
-1. The top-level loop completes Perceive through Remember on every turn. Subpipes may be partial (documented prefixes).
+1. The top-level loop completes Perceive through Transmit on every turn. Subpipes may be partial (documented prefixes).
 2. Consolidate is optional per turn but mandatory per system. A system that never consolidates cannot learn.
 3. Filter is the only role that can reject. All other roles transform or present.
-4. Remember is lossless. Lossy operations belong to Filter (eviction) or Cache (compaction).
+4. Transmit is lossless. Lossy operations belong to Filter (eviction) or Cache (compaction).
 
 ## Interfaces
 
@@ -100,15 +100,15 @@ Filter:       indexed → selected
               Minimum: (subject) → Pass | Reject(reason)
               See 03-filter.md for gate catalog.
 
-Remember:     selected → persisted
+Transmit:     selected → persisted
               Guarantee: retrievable on next cycle's Perceive. Lossless.
               Minimum: .append(event) / .read(session_id) / .list(filter?)
               Extensions: .prune(policy) / .write_skill(skill) / .read_skills() / .delete_skill(name)
               Extensions: .list_decisions(filter?) → DecisionRecord[]
-              See 05-remember.md for full interface.
+              See 05-transmit.md for full interface.
 
 Consolidate:  persisted → policy′
-              Guarantee: backward pass. Reads from Remember, writes to substrate. Lossy.
+              Guarantee: backward pass. Reads from Transmit, writes to substrate. Lossy.
               Minimum: .run(sessions) → CandidateSkill[]
               Extensions: .classify_frame() / .extract_keyframes() / .detect_convergence() / .rank()
               See 06-consolidate.md for full interface.

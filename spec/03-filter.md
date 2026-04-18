@@ -48,7 +48,7 @@ Detect repeated identical behavior and break the loop.
 - **Tier 3:** LLM-based. Sample recent history, query a cheap model: "is this conversation stuck?" Confidence threshold (e.g., 0.9) before declaring loop.
 - Recovery: inject "you are looping" message, then abort if loop persists.
 
-### Eviction (Filter @ Remember)
+### Eviction (Filter @ Transmit)
 
 Automatic eviction of old session data from persistent storage.
 

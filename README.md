@@ -2,7 +2,7 @@
 
 Experimental coding agent harness. AGPL-3.0. TypeScript + Bun.
 
-A laboratory for agent architectures with six [Natural Framework](https://june.kim/the-natural-framework) roles: Perceive, Cache, Filter, Attend (human), Remember, Consolidate. Each automated role is a swappable interface. The goal is to experiment our way into a harness that actually learns between sessions.
+A laboratory for agent architectures with six [Natural Framework](https://june.kim/the-natural-framework) roles: Perceive, Cache, Filter, Attend (human), Transmit, Consolidate. Each automated role is a swappable interface. The goal is to experiment our way into a harness that actually learns between sessions.
 
 ## Quick start
 
@@ -27,7 +27,7 @@ bun run test-drive.ts       # one-shot pipeline test with real providers
 Five automated slots, one human slot. Every slot is an interface in `src/core/contracts.ts`.
 
 ```
-User input → Perceive → Cache → Filter → [human decides] → Remember → Consolidate
+User input → Perceive → Cache → Filter → [human decides] → Transmit → Consolidate
 ```
 
 Three model tiers: primary (Anthropic), reviewer (OpenAI), fast (cheap). The reviewer is a [Maxwell's demon](https://june.kim/forge) — it sits at the gate between volley rounds, selects which changes pass, and the artifact's entropy decreases. Paid for honestly in reviewer tokens.
@@ -42,7 +42,7 @@ src/
   cache/          union-find hot/cold zones, TF-IDF, LRU eviction
   filter/         content validation, policy, loop detection, tool masking, circuit breaker
   perceive/       context discovery, @file refs, skill discovery
-  remember/       SQLite sessions, skill store, decision store
+  transmit/       SQLite sessions, skill store, decision store
   consolidate/    triple extraction, candidate generation
   convergence/    volley protocol
   tools/          file read/write, shell, grep, glob, registry

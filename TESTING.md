@@ -20,7 +20,7 @@ bun test
 | Agent loop | `test/agent.loop.test.ts` | Turn assembly, tool detection, loop iteration |
 | Tools | `test/tools.test.ts` | Each tool + registry dispatch + schema validation |
 | Perceive | `test/perceive.test.ts` | Context discovery, @file refs, skill parsing |
-| Remember | `test/remember.test.ts` | SQLite round-trip, skills, decisions, blobs |
+| Transmit | `test/transmit.test.ts` | SQLite round-trip, skills, decisions, blobs |
 | Cache | `test/cache.test.ts` | Union-find, LRU eviction, hot/cold zones |
 | Filter | `test/filter.test.ts` | Content validation, masking, policy, loop detection |
 | Volley | `test/volley.test.ts` | Convergence, round counting, input validation |

@@ -1,11 +1,11 @@
-# 05 — Remember
+# 05 — Transmit
 
-Persist to durable store. Remember is the CRUD interface to persistent storage. The store is the substrate; Remember is the API.
+Persist to durable store. Transmit is the CRUD interface to persistent storage. The store is the substrate; Transmit is the API.
 
 ## Interface
 
 ```
-Remember:
+Transmit:
   .append(event: SessionEvent) → void
   .read(session_id: string) → Session | null
   .list(filter?: SessionFilter) → SessionSummary[]
@@ -31,7 +31,7 @@ Full conversation transcripts persisted to disk. Default implementation: SQLite 
 
 ### Filesystem (the primary store)
 
-The agent reads and writes files as its primary Remember mechanism. The filesystem is shared with the human — the agent does not own it exclusively.
+The agent reads and writes files as its primary Transmit mechanism. The filesystem is shared with the human — the agent does not own it exclusively.
 
 - **Write:** via tool execution (file write, shell commands)
 - **Read:** via Perceive (context discovery, @-references, tool results)
@@ -49,7 +49,7 @@ project/.agents/instructions      ← project-specific instructions
 
 - **Write:** by Consolidate (skill extraction, memory distillation)
 - **Read:** by Perceive (context discovery)
-- **Contract:** Remember provides CRUD. Consolidate decides what to write.
+- **Contract:** Transmit provides CRUD. Consolidate decides what to write.
 
 ### Decision records
 
@@ -68,7 +68,7 @@ DecisionRecord:
 ```
 
 ```
-Remember (extension):
+Transmit (extension):
   .append_decision(record: DecisionRecord) → void
   .list_decisions(filter?: DecisionFilter) → DecisionRecord[]
 ```
@@ -77,14 +77,14 @@ Without typed decision records, Consolidate's convergence detection has no struc
 
 ## Contract
 
-- **Lossless:** Remember does not discard data. Lossy operations belong to Filter (eviction) or Cache (compaction).
+- **Lossless:** Transmit does not discard data. Lossy operations belong to Filter (eviction) or Cache (compaction).
 - **Durable:** data survives process exit
 - **CRUD:** create, read, update, delete — all four operations available
-- **No eviction logic:** eviction is Filter's job (see 03-filter.md). Remember just stores.
+- **No eviction logic:** eviction is Filter's job (see 03-filter.md). Transmit just stores.
 
 ## Anti-patterns
 
 - Inline base64 binary in session logs (OOM)
 - No separation between session data and procedural memory
 - Write-only (no read path for Consolidate)
-- Remember without Filter @ Remember (unbounded growth)
+- Transmit without Filter @ Transmit (unbounded growth)

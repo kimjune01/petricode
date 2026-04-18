@@ -10,13 +10,13 @@ Ordered by expected impact, not effort.
 End-of-session review, threshold-based (N new I-frames), adaptive GOP. The manual trigger proves the pipe works; automatic triggers prove it can learn without being asked.
 
 ### Consolidate inner pipeline
-Replace the human-powered extraction with a full inner pipe (P→C→F→A→Con→R). Inner Perceive classifies episodes as I/P/B frames (codec). Inner Cache stores structured decision logs with problem frames. Inner Filter detects convergence via independent rediscovery, not frequency. Inner Scoring ranks by `time_saved × quality_preserved`. Inner Consolidate tunes its own extraction parameters (meta-learning). Inner Remember writes approved skills. Each level operates at diminishing bits until passthrough. Reference: [Consolidation Codec](https://june.kim/consolidate-codec), [The Compression Tower](https://june.kim/compression-tower).
+Replace the human-powered extraction with a full inner pipe (P→C→F→A→Con→R). Inner Perceive classifies episodes as I/P/B frames (codec). Inner Cache stores structured decision logs with problem frames. Inner Filter detects convergence via independent rediscovery, not frequency. Inner Scoring ranks by `time_saved × quality_preserved`. Inner Consolidate tunes its own extraction parameters (meta-learning). Inner Transmit writes approved skills. Each level operates at diminishing bits until passthrough. Reference: [Consolidation Codec](https://june.kim/consolidate-codec), [The Compression Tower](https://june.kim/compression-tower).
 
 ### Compression tower
 Skills stack into levels. Level 0: episodes. Level 1: skills (fixed-point operators). Level 2: compositions (`/copyedit` = `/humanize` → `/tighten` → `/readability` → `/flavor`). Level 3: self-improving compositions (output of one becomes input context for next — monoid becomes monad). The ranking metric across all levels: time saved × quality preserved.
 
 ### Forgetting as bitrate adaptation
-Under memory pressure, drop B-frames first (most reconstructible), P-frames next (reconstruct from nearest I-frame), I-frames last (self-contained, no recovery). Eviction policy for Filter @ Remember, informed by the codec structure.
+Under memory pressure, drop B-frames first (most reconstructible), P-frames next (reconstruct from nearest I-frame), I-frames last (self-contained, no recovery). Eviction policy for Filter @ Transmit, informed by the codec structure.
 
 ### Self-improving PRs
 Consolidate generates PRs against petricode itself. The pipe inspects its own spec, finds where assumptions broke, proposes fixes. Human reviews. AGPL keeps improvements in the commons.
@@ -73,7 +73,7 @@ Specialized agents as markdown files with restricted tools, specific model tier,
 ### Plugin system
 Bundle skills, agents, hooks, and MCP servers into distributable packages. Install via command. Namespaced to prevent conflicts.
 
-### Automatic eviction (Filter @ Remember)
+### Automatic eviction (Filter @ Transmit)
 Age × size scoring, threshold-based pruning, safety floor. The band-aid for unbounded session growth. Ship after enough sessions accumulate to test eviction policies.
 
 ## Tier 4 — Reach (network effects)

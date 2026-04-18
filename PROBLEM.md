@@ -2,7 +2,7 @@
 
 ## Context
 
-petricode is an AGPL-3.0 experimental coding agent harness with swappable slots for five automated roles (Perceive, Cache, Filter, Remember, Consolidate) and one human role (Attend). The full spec is in `spec/`. The goal is in `GOAL.md`. Post-MVP features are in `beyond-mvp.md`.
+petricode is an AGPL-3.0 experimental coding agent harness with swappable slots for five automated roles (Perceive, Cache, Filter, Transmit, Consolidate) and one human role (Attend). The full spec is in `spec/`. The goal is in `GOAL.md`. Post-MVP features are in `beyond-mvp.md`.
 
 ## The task
 
@@ -50,7 +50,7 @@ When in doubt: keep it simple, no regressions, UX improvement. Defer anything th
 - `spec/00-architecture.md`
 - `spec/02-cache.md`
 - `spec/04-skills.md`
-- `spec/05-remember.md`
+- `spec/05-transmit.md`
 - `spec/06-consolidate.md`
 - `spec/09-convergence.md`
 - `reference/features.md` (for provenance-clean reference implementations)

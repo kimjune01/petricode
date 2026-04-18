@@ -4,7 +4,7 @@ Experimental coding agent harness. AGPL-3.0. TypeScript + Bun.
 
 ## What this is
 
-A laboratory for agent architectures with six Natural Framework roles: Perceive, Cache, Filter, Attend (human), Remember, Consolidate. Each automated role is a swappable interface. The spec is in `spec/`. The work plan is in `WORKPLAN.md`.
+A laboratory for agent architectures with six Natural Framework roles: Perceive, Cache, Filter, Attend (human), Transmit, Consolidate. Each automated role is a swappable interface. The spec is in `spec/`. The work plan is in `WORKPLAN.md`.
 
 ## Ambiguity heuristic
 
@@ -46,7 +46,7 @@ For sanity checks with real models, see [TESTING.md](TESTING.md).
 Five automated slots, one human slot. Every slot is an interface in `src/core/contracts.ts`.
 
 ```
-User input → Perceive → Cache → Filter → [human decides] → Remember → Consolidate
+User input → Perceive → Cache → Filter → [human decides] → Transmit → Consolidate
 ```
 
 Three model tiers configured at startup — primary (Anthropic), reviewer (OpenAI), fast (cheap). Every call site declares which tier. No silent fallback. Provider trait in `src/providers/provider.ts`.

@@ -22,7 +22,7 @@ Sequence of work items for v0.1. First item produces a running process. Last ite
 
 ## 2. Slot Contracts
 
-**What it does.** Define TypeScript interfaces for all five automated roles (`Perceive`, `Cache`, `Filter`, `Remember`, `Consolidate`) plus shared domain types (`Turn`, `ToolCall`, `Skill`, `Session`, `Decision`). Add a runtime container that wires slots by interface so callers never reference concrete implementations.
+**What it does.** Define TypeScript interfaces for all five automated roles (`Perceive`, `Cache`, `Filter`, `Transmit`, `Consolidate`) plus shared domain types (`Turn`, `ToolCall`, `Skill`, `Session`, `Decision`). Add a runtime container that wires slots by interface so callers never reference concrete implementations.
 
 **Depends on:** 1
 
@@ -103,7 +103,7 @@ Sequence of work items for v0.1. First item produces a running process. Last ite
 
 ---
 
-## 7. Remember (SQLite)
+## 7. Transmit (SQLite)
 
 **What it does.** Session persistence in SQLite. Tables: `sessions`, `messages`, `tool_calls`, `decisions`. Every turn appended to DB. `--resume <session_id>` reloads. `--list` shows recent sessions. Binary tool output stored as file pointer, not inline (anti-pattern #5). Skill CRUD writes to `~/.config/petricode/skills/` on disk. Typed decision records (`decision_type`, `subject_ref`, `presented_context`, `problem_frame`, `outcome_ref`) persisted here — Consolidate reads these as structured input.
 
@@ -112,12 +112,12 @@ Sequence of work items for v0.1. First item produces a running process. Last ite
 **Test:** Run a session with two turns. Kill. Relaunch with `--resume`. Conversation history intact. Unit tests: append/read/list/prune/write_skill round-trip. Binary attachment stored as pointer, not base64. Decision record round-trip: write a structured decision, read it back, assert all fields present.
 
 **Files:**
-- `src/remember/sqlite.ts` (interface impl)
-- `src/remember/schema.sql`
-- `src/remember/sessionStore.ts`
-- `src/remember/skillStore.ts`
-- `src/remember/decisionStore.ts`
-- `test/remember.test.ts`
+- `src/transmit/sqlite.ts` (interface impl)
+- `src/transmit/schema.sql`
+- `src/transmit/sessionStore.ts`
+- `src/transmit/skillStore.ts`
+- `src/transmit/decisionStore.ts`
+- `test/transmit.test.ts`
 
 ---
 
@@ -182,11 +182,11 @@ Sequence of work items for v0.1. First item produces a running process. Last ite
 
 ## 11. Wire the Forward Pipe
 
-**What it does.** Connect all five forward roles into the top-level agent loop. Each turn: Perceive (expand @-refs, load context) → Cache (append, read context window via union-find) → primary model → Filter (content validation) → tool calls through Filter (policy) → Attend (TUI confirmation) → tool execution → Remember (append to SQLite + Cache hot zone). Volley fires before every human gate. Status line shows `token_count()` from Cache.
+**What it does.** Connect all five forward roles into the top-level agent loop. Each turn: Perceive (expand @-refs, load context) → Cache (append, read context window via union-find) → primary model → Filter (content validation) → tool calls through Filter (policy) → Attend (TUI confirmation) → tool execution → Transmit (append to SQLite + Cache hot zone). Volley fires before every human gate. Status line shows `token_count()` from Cache.
 
 **Depends on:** 6, 7, 8, 9, 10
 
-**Test:** Full integration in a temp project with `.agents/instructions.md`. Ask it to read a file and edit it. Observe: instruction context loaded (Perceive), token count displayed (Cache), file-write triggers confirmation (Filter + Attend), edit persisted (Remember), turn recorded in SQLite. Kill and resume — conversation intact.
+**Test:** Full integration in a temp project with `.agents/instructions.md`. Ask it to read a file and edit it. Observe: instruction context loaded (Perceive), token count displayed (Cache), file-write triggers confirmation (Filter + Attend), edit persisted (Transmit), turn recorded in SQLite. Kill and resume — conversation intact.
 
 **Files:**
 - `src/agent/loop.ts` (major update — wires all roles)
@@ -216,7 +216,7 @@ Sequence of work items for v0.1. First item produces a running process. Last ite
 
 ## 13. Manual Consolidate
 
-**What it does.** `/consolidate` reads all sessions and decision records from Remember for the current project. Extracts problem→approach→outcome triples using the fast model. Groups similar triples across sessions. Presents candidate skills to the human in TUI for approval/rejection/editing. Each candidate runs through Volley before presentation. Approved skills written via `Remember.write_skill()`. MVP scope is simple extraction + human approval — full codec (I/P/B classification), ranked scoring (`time_saved × quality_preserved`), and convergence detection via independent rediscovery are deferred to beyond-MVP experimentation.
+**What it does.** `/consolidate` reads all sessions and decision records from Transmit for the current project. Extracts problem→approach→outcome triples using the fast model. Groups similar triples across sessions. Presents candidate skills to the human in TUI for approval/rejection/editing. Each candidate runs through Volley before presentation. Approved skills written via `Transmit.write_skill()`. MVP scope is simple extraction + human approval — full codec (I/P/B classification), ranked scoring (`time_saved × quality_preserved`), and convergence detection via independent rediscovery are deferred to beyond-MVP experimentation.
 
 **Depends on:** 7, 9, 12
 
@@ -257,7 +257,7 @@ Sequence of work items for v0.1. First item produces a running process. Last ite
 │
 2  Slot Contracts
 ├───────────┬───────────┐
-3  Providers 6  Perceive  7  Remember
+3  Providers 6  Perceive  7  Transmit
 │           │           │
 4  Loop    8  Cache ────┘
 │           │
@@ -293,4 +293,4 @@ Items 6, 7 depend on 2. Item 8 depends on 3 (fast tier for compaction). Item 10 
 
 ## Deferred
 
-MCP, automatic Consolidate triggers, hooks, path-scoped rules, git worktree isolation, plan mode, recursive inner towers, automatic eviction (Filter @ Remember), subagents, plugin system, session branching, multiplayer forests. Full consolidation codec (I/P/B classification, keyframe extraction, independent rediscovery detection, `time_saved × quality_preserved` ranking).
+MCP, automatic Consolidate triggers, hooks, path-scoped rules, git worktree isolation, plan mode, recursive inner towers, automatic eviction (Filter @ Transmit), subagents, plugin system, session branching, multiplayer forests. Full consolidation codec (I/P/B classification, keyframe extraction, independent rediscovery detection, `time_saved × quality_preserved` ranking).

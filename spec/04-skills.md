@@ -86,7 +86,7 @@ Consolidate generates candidate skills
     ↓
 Human approves / rejects / edits candidates
     ↓
-Remember.write_skill(skill) persists to disk
+Transmit.write_skill(skill) persists to disk
     ↓
 Perceive discovers skill at next session start
     ↓
@@ -95,7 +95,7 @@ Filter loads skill when trigger matches
 Skill changes how the agent processes
 ```
 
-Skills are created by Consolidate, stored by Remember, discovered by Perceive, and activated by Filter. The human approves at the creation step (Attend).
+Skills are created by Consolidate, stored by Transmit, discovered by Perceive, and activated by Filter. The human approves at the creation step (Attend).
 
 ## Interface
 
@@ -109,7 +109,7 @@ Skill:
   model: string | null
   body: string
 
-SkillStore (part of Remember):
+SkillStore (part of Transmit):
   .write_skill(skill: Skill) → void
   .read_skills() → Skill[]
   .delete_skill(name: string) → void
