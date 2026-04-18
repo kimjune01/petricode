@@ -24,6 +24,9 @@ export interface HeadlessResult {
   exitCode: number;
   stdout: string;
   stderr: string;
+  // Resolved session ID — present when bootstrap succeeded. cli.ts uses
+  // this to write the sticky-session token back to --session-file.
+  sessionId?: string;
 }
 
 /** Pure: extract the assistant's plain text from a Turn. */
@@ -83,6 +86,7 @@ export async function runHeadless(opts: HeadlessOptions): Promise<HeadlessResult
   // tells the user "Crash logged to .petricode/crash.log" with no hint
   // of what actually went wrong.
   let pipeline;
+  let sessionId: string;
   try {
     const { bootstrap } = await import("./session/bootstrap.js");
     const result = await bootstrap({
@@ -91,9 +95,11 @@ export async function runHeadless(opts: HeadlessOptions): Promise<HeadlessResult
       // No onConfirm — tools requiring confirmation auto-allow.
     });
     pipeline = result.pipeline;
+    sessionId = result.sessionId;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return { exitCode: 1, stdout: "", stderr: `petricode: ${msg}\n` };
   }
-  return runHeadlessTurn(pipeline, opts.prompt, opts.format ?? "text");
+  const turnResult = await runHeadlessTurn(pipeline, opts.prompt, opts.format ?? "text");
+  return { ...turnResult, sessionId };
 }

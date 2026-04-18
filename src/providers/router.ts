@@ -15,11 +15,11 @@ function defaultFactory(providerName: string, model: string): Provider {
     case "openai":
       return new OpenAIProvider(model);
     case "google":
-      return new GoogleProvider(model, {
-        vertexai: process.env.GOOGLE_GENAI_USE_VERTEXAI === "true",
-        project: process.env.GOOGLE_CLOUD_PROJECT,
-        location: process.env.GOOGLE_CLOUD_LOCATION,
-      });
+      // GoogleProvider auto-detects Vertex vs API-key from env (ADC,
+      // GOOGLE_GENAI_USE_VERTEXAI, GOOGLE_API_KEY). Pass-through is
+      // unnecessary and used to result in `vertexai: false` clobbering
+      // the auto-detect path.
+      return new GoogleProvider(model);
     default:
       throw new Error(`Unknown provider '${providerName}'`);
   }

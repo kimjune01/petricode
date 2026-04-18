@@ -448,4 +448,31 @@ describe("parseArgs", () => {
     expect(a.errors).toContain("Unknown flag: json");
     expect(a.errors.some((e) => e.includes("requires a prompt string"))).toBe(false);
   });
+
+  test("--session-file <path> parses cleanly", () => {
+    const a = parseArgs(["-p", "hi", "--session-file", "/tmp/petricode-session"]);
+    expect(a.sessionFile).toBe("/tmp/petricode-session");
+    expect(a.errors).toEqual([]);
+  });
+
+  test("--session-file with no value reports missing-value", () => {
+    const a = parseArgs(["--session-file"]);
+    expect(a.sessionFile).toBeUndefined();
+    expect(a.errors.some((e) => e.includes("--session-file requires a path"))).toBe(true);
+  });
+
+  test("--session-file rejects a leading-dash next token", () => {
+    const a = parseArgs(["--session-file", "-p", "hi"]);
+    expect(a.sessionFile).toBeUndefined();
+    expect(a.errors.some((e) => e.includes("--session-file requires a path"))).toBe(true);
+  });
+
+  test("--session-file and --resume together are mutually exclusive", () => {
+    const a = parseArgs([
+      "-p", "hi",
+      "--session-file", "/tmp/x",
+      "--resume", "abc-123",
+    ]);
+    expect(a.errors.some((e) => e.includes("--session-file and --resume are mutually exclusive"))).toBe(true);
+  });
 });

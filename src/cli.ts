@@ -1,9 +1,25 @@
 // Ink is loaded lazily — headless mode (`-p`) skips the import entirely
 // so non-TTY scripts don't pay for the React/Ink boot or hit raw-mode
 // errors when stdin isn't a terminal.
-import { appendFileSync, mkdirSync, existsSync } from "fs";
+import { appendFileSync, mkdirSync, existsSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import { parseArgs } from "./argv.js";
+
+// ── Session-file helpers ─────────────────────────────────────────
+// --session-file <path> turns headless into a persistent back-and-
+// forth without manual --list/--resume. The file holds one line:
+// the resolved session ID. Missing/empty file ⇒ start fresh; present
+// file ⇒ resume that session.
+
+function readSessionFile(path: string): string | undefined {
+  if (!existsSync(path)) return undefined;
+  const raw = readFileSync(path, "utf-8").trim();
+  return raw.length > 0 ? raw : undefined;
+}
+
+function writeSessionFile(path: string, sessionId: string): void {
+  writeFileSync(path, sessionId + "\n");
+}
 
 // ── Crash log ────────────────────────────────────────────────────
 const logDir = join(process.cwd(), ".petricode");
@@ -76,12 +92,18 @@ Options:
   -p, --prompt <text>   Headless: run one turn against <text>, write result
                         to stdout, exit. No TUI. Tools auto-allow.
   --format <text|json>  With -p: output format. Default: text.
+  --session-file <path> Sticky session: read the session ID from <path> and
+                        resume it; write the resolved session ID back when
+                        done. Mutually exclusive with --resume. Missing
+                        file ⇒ start fresh.
   --                    Treat the rest of the arguments as positional.
 
 Examples:
   petricode -p "summarize README.md"
   petricode -p "fix the failing test" --format json
   petricode --resume abc123
+  petricode -p "first" --session-file /tmp/petricode-session
+  petricode -p "follow-up" --session-file /tmp/petricode-session
 
 Exit codes:
   0   success
@@ -131,7 +153,13 @@ if (parsed.list) {
   process.exit(0);
 }
 
-const resumeSessionId = parsed.resume;
+// --session-file resolves to a session ID iff the file exists with
+// content. Done here (not inside headless/bootstrap) so the same path
+// also feeds the TUI bootstrap below.
+const sessionFileResume = parsed.sessionFile
+  ? readSessionFile(parsed.sessionFile)
+  : undefined;
+const resumeSessionId = parsed.resume ?? sessionFileResume;
 
 // Headless mode — `-p` / `--prompt`. Routed BEFORE the TUI bootstrap so
 // the Ink import and raw-mode setup never run for non-interactive callers.
@@ -146,6 +174,18 @@ if (parsed.prompt !== undefined) {
     resumeSessionId,
     format,
   });
+  // Persist the resolved session ID before exit so the next invocation
+  // with the same --session-file resumes the same conversation. Only
+  // write on success — a failed bootstrap leaves the file untouched so
+  // a stale ID isn't overwritten with garbage.
+  if (parsed.sessionFile && result.sessionId && result.exitCode === 0) {
+    try {
+      writeSessionFile(parsed.sessionFile, result.sessionId);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      result.stderr += `petricode: failed to write --session-file ${parsed.sessionFile}: ${msg}\n`;
+    }
+  }
   // Drain via the shared helper so the truncation behavior is covered by
   // test/headless.test.ts's fixture, not just inlined here.
   //
@@ -194,6 +234,18 @@ const { pipeline, sessionId, resumed, mode } = await bootstrap({
 
 if (resumed) {
   console.log(`Resumed session ${sessionId}`);
+}
+
+// Update the sticky-session file as soon as we have a resolved session
+// ID, so a TUI crash mid-conversation still leaves the file pointing
+// at recoverable state.
+if (parsed.sessionFile) {
+  try {
+    writeSessionFile(parsed.sessionFile, sessionId);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`petricode: failed to write --session-file ${parsed.sessionFile}: ${msg}`);
+  }
 }
 
 // Workaround for Bun stdin bug with Ink's useInput

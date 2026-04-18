@@ -16,7 +16,6 @@ MVP v0.1 complete. All 14 work plan items implemented. 176 tests passing.
 
 **Not wired yet:**
 - CLI doesn't bootstrap the pipeline (TUI shows stub response). Deferred — TUI-only for now.
-- `--resume` not end-to-end. Deferred.
 - PerceivedEvent is planned to become an episodic memory node (frequency counter, source provenance, cheap-model merge). Not yet implemented.
 
 ## Stack

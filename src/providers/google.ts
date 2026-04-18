@@ -1,6 +1,24 @@
 import { GoogleGenAI } from "@google/genai";
+import { execSync } from "child_process";
 import type { Content, Message, StreamChunk } from "../core/types.js";
 import type { Provider, ModelConfig } from "./provider.js";
+
+// Cache the gcloud lookup so a config with multiple google tiers (e.g.
+// reviewer + fast) doesn't fork+exec twice during bootstrap.
+let cachedGcloudProject: string | null | undefined;
+function detectGcloudProject(): string | undefined {
+  if (cachedGcloudProject !== undefined) return cachedGcloudProject ?? undefined;
+  try {
+    const out = execSync("gcloud config get-value project 2>/dev/null", {
+      encoding: "utf-8",
+      timeout: 2000,
+    }).trim();
+    cachedGcloudProject = out.length > 0 ? out : null;
+  } catch {
+    cachedGcloudProject = null;
+  }
+  return cachedGcloudProject ?? undefined;
+}
 
 const MODEL_TOKEN_LIMITS: Record<string, number> = {
   "gemini-2.5-pro": 1_048_576,
@@ -105,17 +123,41 @@ export class GoogleProvider implements Provider {
   constructor(model: string, options: GoogleProviderOptions = {}) {
     this.model = model;
 
-    if (options.vertexai) {
+    // Auto-detect Vertex when ADC is available so users with
+    // GOOGLE_APPLICATION_CREDENTIALS set don't also have to export
+    // GOOGLE_GENAI_USE_VERTEXAI=true. Without this the SDK constructs in
+    // Generative Language API mode with no apiKey and emits "API key
+    // should be set when using the Gemini API." on every construction.
+    //
+    // Vertex needs a project. We resolve in order: explicit option →
+    // GOOGLE_CLOUD_PROJECT env → `gcloud config get-value project`.
+    const explicitVertex = options.vertexai === true
+      || process.env.GOOGLE_GENAI_USE_VERTEXAI === "true";
+    const apiKey = options.apiKey ?? process.env.GOOGLE_API_KEY;
+    const project = options.project
+      ?? process.env.GOOGLE_CLOUD_PROJECT
+      ?? detectGcloudProject();
+    const hasADC = !!process.env.GOOGLE_APPLICATION_CREDENTIALS;
+    const useVertex = (explicitVertex || (!apiKey && (hasADC || !!project)))
+      && !!project;
+
+    if (useVertex) {
       this.client = new GoogleGenAI({
         vertexai: true,
-        project: options.project ?? process.env.GOOGLE_CLOUD_PROJECT,
+        project,
         location: options.location ?? process.env.GOOGLE_CLOUD_LOCATION ?? "global",
       });
-    } else {
-      this.client = new GoogleGenAI({
-        apiKey: options.apiKey ?? process.env.GOOGLE_API_KEY ?? "",
-      });
+      return;
     }
+    if (apiKey) {
+      this.client = new GoogleGenAI({ apiKey });
+      return;
+    }
+    // No usable auth. Construct an empty client so startup still
+    // completes — the actual call fails with a clear permission error
+    // if/when this tier is ever invoked. Matches prior behavior, which
+    // always constructed Google providers even when never called.
+    this.client = new GoogleGenAI({});
   }
 
   async *generate(

@@ -24,6 +24,11 @@ export type ParsedArgs = {
   // validation can report "--format requires -p" when the user
   // passes --format but no prompt.
   formatExplicit: boolean;
+  // Path to a sticky-session token file. If the file exists, its
+  // contents are used as the session ID to resume; after the run, the
+  // resolved session ID is written back. Designed for headless
+  // back-and-forth: `petricode -p "..." --session-file /tmp/foo`.
+  sessionFile?: string;
   errors: string[];
 };
 
@@ -87,6 +92,17 @@ export function parseArgs(input: string[]): ParsedArgs {
       }
       continue;
     }
+    if (arg === "--session-file") {
+      const next = input[i + 1];
+      if (!next || next.startsWith("-")) {
+        out.errors.push("--session-file requires a path. Example: --session-file /tmp/petricode-session");
+        i++;
+      } else {
+        out.sessionFile = next;
+        i += 2;
+      }
+      continue;
+    }
     out.errors.push(`Unknown flag: ${arg}`);
     i++;
   }
@@ -97,6 +113,12 @@ export function parseArgs(input: string[]): ParsedArgs {
   // of silently dropping the flag and launching the TUI.
   if (out.formatExplicit && out.prompt === undefined) {
     out.errors.push("--format requires -p/--prompt (it only affects headless output).");
+  }
+
+  // --session-file and --resume both nominate a session to resume; if
+  // they disagree, the user's intent is unclear. Reject the combo.
+  if (out.sessionFile && out.resume) {
+    out.errors.push("--session-file and --resume are mutually exclusive.");
   }
 
   return out;

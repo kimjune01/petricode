@@ -8,8 +8,8 @@ A laboratory for agent architectures with six [Natural Framework](https://june.k
 
 ```bash
 bun install
-bun test                    # 176 tests, no API keys needed
-bun run src/cli.ts          # TUI shell (stub response — pipeline not wired to CLI yet)
+bun test                    # 269 tests, no API keys needed
+bun run src/cli.ts          # TUI shell (interactive, full pipeline)
 ```
 
 ## Sanity check (requires API keys)
@@ -19,8 +19,19 @@ See [TESTING.md](TESTING.md) for the full testing guide, including how to run sa
 ```bash
 export ANTHROPIC_API_KEY=sk-...
 export OPENAI_API_KEY=sk-...
-bun run test-drive.ts       # one-shot pipeline test with real providers
+
+# One-shot headless turn
+bun run src/cli.ts -p "summarize README.md"
+
+# Sticky-session back-and-forth (file holds the session ID)
+bun run src/cli.ts -p "pick a number 1–10" --session-file /tmp/pc
+bun run src/cli.ts -p "what number did you pick?" --session-file /tmp/pc
 ```
+
+Auth: Anthropic + OpenAI accept `*_API_KEY` env vars. Google goes through
+Vertex AI when `GOOGLE_APPLICATION_CREDENTIALS` is set (project resolved
+from `GOOGLE_CLOUD_PROJECT` or `gcloud config get-value project`), or
+through the Gemini API when `GOOGLE_API_KEY` is set.
 
 ## Architecture
 

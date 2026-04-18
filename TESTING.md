@@ -8,7 +8,7 @@ Petricode has three levels of verification: tests, sanity checks, and evals. Tes
 bun test
 ```
 
-176 tests across 16 files. All use mock providers — no API calls, no cost, fast. Run these after every change.
+269 tests across 20 files. All use mock providers — no API calls, no cost, fast. Run these after every change.
 
 ### What's tested
 
@@ -82,41 +82,14 @@ Tests verify contracts with mocks. Sanity checks verify the real providers, real
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 export OPENAI_API_KEY=sk-...
+# Or, for Vertex auth: export GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json
+# (project is resolved from GOOGLE_CLOUD_PROJECT or `gcloud config get-value project`)
 ```
 
-### One-shot pipeline test
-
-Create `test-drive.ts` at the project root:
-
-```typescript
-import { Pipeline } from "./src/agent/pipeline.js";
-import { TierRouter } from "./src/providers/router.js";
-import { createDefaultRegistry } from "./src/tools/registry.js";
-import { DEFAULT_TIERS } from "./src/config/models.js";
-
-const router = new TierRouter(DEFAULT_TIERS);
-const pipeline = new Pipeline();
-await pipeline.init({
-  router,
-  projectDir: process.cwd(),
-  registry: createDefaultRegistry(),
-});
-
-const turn = await pipeline.turn("Read the README.md and tell me what this project is.");
-for (const block of turn.content) {
-  if (block.type === "text") console.log(block.text);
-}
-
-if (turn.tool_calls) {
-  console.log("\nTool calls:");
-  for (const tc of turn.tool_calls) {
-    console.log(`  ${tc.name}(${JSON.stringify(tc.args)})`);
-  }
-}
-```
+### One-shot headless turn
 
 ```bash
-bun run test-drive.ts
+bun run src/cli.ts -p "Read the README.md and tell me what this project is."
 ```
 
 **What to look for:**
@@ -125,18 +98,32 @@ bun run test-drive.ts
 - The response references actual content from README.md
 - No stack traces
 
-### TUI sanity check
+### Sticky-session back-and-forth
 
-The TUI currently shows a stub response (pipeline not wired to CLI). To test the TUI shell itself:
+```bash
+bun run src/cli.ts -p "pick a number between 1 and 10" --session-file /tmp/pc
+bun run src/cli.ts -p "what number did you pick?"      --session-file /tmp/pc
+```
+
+The file at `/tmp/pc` holds the resolved session ID. Delete it to start
+fresh; pass the same path to resume. Mutually exclusive with `--resume`.
+
+### Resuming an arbitrary session
+
+```bash
+bun run src/cli.ts --list                       # find a session ID
+bun run src/cli.ts --resume <id> -p "follow-up" # resume it headless
+```
+
+### TUI sanity check
 
 ```bash
 bun run src/cli.ts
 ```
 
 - 🧫 logo and status bar appear
-- `q` exits cleanly (exit 0)
-- `/help` lists commands
-- `/exit` exits cleanly
+- Streaming response, tool confirmations, slash commands all wired
+- `q` or `/exit` exits cleanly
 
 ## Evals (future)
 

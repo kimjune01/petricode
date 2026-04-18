@@ -80,11 +80,10 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<BootstrapR
         provider = new OpenAIProvider(model);
         break;
       case "google":
-        provider = new GoogleProvider(model, {
-          vertexai: process.env.GOOGLE_GENAI_USE_VERTEXAI === "true",
-          project: process.env.GOOGLE_CLOUD_PROJECT,
-          location: process.env.GOOGLE_CLOUD_LOCATION,
-        });
+        // GoogleProvider auto-detects Vertex vs API-key from env. See
+        // src/providers/google.ts and src/providers/router.ts for why
+        // we no longer pass options through here.
+        provider = new GoogleProvider(model);
         break;
       default:
         throw new Error(`Unknown provider '${providerName}'`);
