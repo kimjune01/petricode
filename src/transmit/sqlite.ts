@@ -4,7 +4,7 @@ import { join, dirname } from "path";
 import type { TransmitSlot } from "../core/contracts.js";
 import type { PerceivedEvent, Session, Skill, DecisionRecord } from "../core/types.js";
 import { SessionStore } from "./sessionStore.js";
-import { SkillStore } from "./skillStore.js";
+import { SkillStore } from "../skiller/transmit.js";
 import { DecisionStore } from "./decisionStore.js";
 
 const SCHEMA_PATH = join(dirname(import.meta.path), "schema.sql");

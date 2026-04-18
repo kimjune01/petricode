@@ -2,7 +2,7 @@ import type { PerceiveSlot } from "../core/contracts.js";
 import type { PerceivedEvent, RetryableError } from "../core/types.js";
 import { expandFileRefs } from "./fileRefs.js";
 import { discoverContext } from "./contextDiscovery.js";
-import { discoverSkills } from "./skillDiscovery.js";
+import { discoverSkills } from "../skiller/perceive.js";
 
 export interface PerceiverOptions {
   projectDir: string;

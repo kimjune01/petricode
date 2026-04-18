@@ -1,8 +1,8 @@
 // ── Skiller / Types ─────────────────────────────────────────────
 // Sub-pipeline-local types. Skill itself stays in core/types.ts —
-// it crosses sub-pipeline boundaries (perceive/discovery, transmit/
-// skillStore, the Skill tool). ActivatedSkill is the matcher's output
-// envelope and lives only inside the skiller sub-pipeline.
+// it's a public domain type referenced by the Skill tool, the slash
+// commands listing, and persisted SQLite rows. ActivatedSkill is the
+// matcher's output envelope and lives only inside the skiller pipe.
 
 import type { Skill } from "../core/types.js";
 

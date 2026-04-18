@@ -1,3 +1,9 @@
+// ── Skiller / Transmit ──────────────────────────────────────────
+// Persist skills to disk. Last stage of the skiller sub-pipeline:
+// takes Skill objects (typically minted by consolidator from session
+// candidates) and durably writes them as <name>.md files for the
+// next session's perceive stage to pick up.
+
 import type { Skill } from "../core/types.js";
 import { mkdirSync, existsSync, writeFileSync, readFileSync, readdirSync, unlinkSync } from "fs";
 import { join, resolve, sep } from "path";

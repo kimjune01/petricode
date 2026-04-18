@@ -1,12 +1,12 @@
 // ── Skiller / Cache ─────────────────────────────────────────────
 // Holds the loaded skill set keyed by name with claude < global <
 // project precedence. Cache stage of the skiller sub-pipeline:
-// indexes the Skill[] streams produced by perceive/skillDiscovery
-// for retrieval-by-name by the matcher (Filter) and Tool layers.
+// indexes the Skill[] streams produced by `./perceive` for retrieval
+// -by-name by the matcher (Filter) and Tool layers.
 
 import { join } from "path";
 import { homedir } from "os";
-import { discoverSkills } from "../perceive/skillDiscovery.js";
+import { discoverSkills } from "./perceive.js";
 import type { Skill } from "../core/types.js";
 
 const GLOBAL_SKILLS_DIR = join(homedir(), ".config", "petricode", "skills");

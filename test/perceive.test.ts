@@ -4,7 +4,7 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { expandFileRefs } from "../src/perceive/fileRefs.js";
 import { discoverContext } from "../src/perceive/contextDiscovery.js";
-import { discoverSkills } from "../src/perceive/skillDiscovery.js";
+import { discoverSkills } from "../src/skiller/perceive.js";
 import { Perceiver } from "../src/perceive/perceiver.js";
 
 // ── Helpers ─────────────────────────────────────────────────────

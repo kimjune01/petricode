@@ -1,3 +1,8 @@
+// ── Skiller / Perceive ──────────────────────────────────────────
+// Scan a directory for skill files and parse them. First stage of
+// the skiller sub-pipeline: raw filesystem → Skill[] streams that
+// `cache.ts` then merges + indexes by precedence.
+
 import { readFile, readdir } from "fs/promises";
 import type { Dirent } from "fs";
 import { join } from "path";
