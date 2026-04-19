@@ -245,7 +245,14 @@ function patternToRegex(pattern: string): RegExp {
   regex = regex
     .replace(/\\\[/g, ESC_LBRACK)
     .replace(/\\\]/g, ESC_RBRACK);
-  regex = regex.replace(/\[((?:\\.|[^\]/])+)\]/g, (_m, body: string) => {
+  // Allow `/` inside the character-class body. Pre-fix `[^\]/]` excluded
+  // `/`, so a pattern like `log[0-9/]` failed to match as a class and the
+  // `[` `]` fell through to the metachar-escape step below, becoming a
+  // literal-string match against `[0-9/]` that never fired. `/` as a path
+  // separator can't appear within a single component anyway, so allowing
+  // it in the class body is safe — the regex just never matches it in
+  // practice. Keep the negated-class `/` exclusion below intact.
+  regex = regex.replace(/\[((?:\\.|[^\]])+)\]/g, (_m, body: string) => {
     // Negation: gitignore `!` → regex `^`. Append `/` to the exclusion
     // set so `[!a-z]` doesn't match a directory separator (gitignore
     // wildcards must never cross `/`). Positive classes can't match

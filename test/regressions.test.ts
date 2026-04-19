@@ -1664,6 +1664,113 @@ describe("matchAutoTriggers ignores non-path tokens", () => {
   });
 });
 
+// ── Round 49 #1: tool error path uses DENY (not ALLOW) ──────────
+// The general tool-error catch was a sibling of round 48's
+// interruptedResult fix — same hazard (headless failure summary
+// filters by outcome === "DENY"), different branch.
+
+describe("non-abort tool error outcome", () => {
+  test("tool error catch sets outcome DENY", () => {
+    const { readFileSync } = require("fs");
+    const src = readFileSync(
+      join(__dirname, "../src/agent/toolSubpipe.ts"),
+      "utf-8",
+    );
+    // Find the catch block that handles general (non-AbortError) errors
+    // and confirm it pushes outcome: "DENY". Walk from the errMsg
+    // assignment to the next `});` — single regex with a generous
+    // bound to absorb future comments.
+    const errBlock = src.match(/const errMsg = err instanceof Error[\s\S]{0,1500}?\}\);/);
+    expect(errBlock).not.toBeNull();
+    expect(errBlock![0]).toContain('outcome: "DENY"');
+    // ALLOW must not appear as the assigned value — comment text
+    // mentioning "ALLOW would have…" is fine, so check the literal
+    // assignment shape.
+    expect(/outcome:\s*"ALLOW"/.test(errBlock![0])).toBe(false);
+  });
+});
+
+// ── Round 49 #2: parseTriples is greedy, survives `|` in body ────
+
+describe("parseTriples handles pipe in PROBLEM/APPROACH", () => {
+  test("triple with `|` inside fields still parses", async () => {
+    const { parseTriples } = await import("../src/consolidate/extractor.js");
+    const line = "PROBLEM: handle X | Y | APPROACH: add A | B | OUTCOME: stable";
+    const triples = parseTriples(line, "s1");
+    expect(triples).toHaveLength(1);
+    expect(triples[0]!.problem).toBe("handle X | Y");
+    expect(triples[0]!.approach).toBe("add A | B");
+    expect(triples[0]!.outcome).toBe("stable");
+  });
+});
+
+// ── Round 49 #3: slash command args trim leading whitespace ─────
+
+describe("matchSlashCommand strips extra spaces in args", () => {
+  test("`/greet  Alice` → args 'Alice', not ' Alice'", async () => {
+    const { matchSlashCommand } = await import("../src/skiller/filter.js");
+    const skill = {
+      name: "greet",
+      body: "Hi $ARGUMENTS",
+      frontmatter: {},
+      trigger: "slash_command" as const,
+    };
+    const result = matchSlashCommand("/greet  Alice", [skill]);
+    expect(result).not.toBeNull();
+    expect(result!.arguments).toBe("Alice");
+  });
+});
+
+// ── Round 49 #4: matchAutoTriggers warns when paths missing ─────
+
+describe("matchAutoTriggers warns on missing paths", () => {
+  test("auto-trigger skill with no paths emits warn", async () => {
+    const { matchAutoTriggers } = await import("../src/skiller/filter.js");
+    const calls: string[] = [];
+    const orig = console.warn;
+    console.warn = (...args: unknown[]) => {
+      calls.push(args.join(" "));
+    };
+    try {
+      // Use a unique name so dedupe doesn't suppress this test.
+      const uniqueName = "no-paths-skill-" + Date.now();
+      const skill = {
+        name: uniqueName,
+        body: "",
+        frontmatter: {},
+        trigger: "auto" as const,
+      };
+      matchAutoTriggers("anything", [skill]);
+      expect(calls.some((c) => c.includes(uniqueName) && c.includes("never fire"))).toBe(true);
+    } finally {
+      console.warn = orig;
+    }
+  });
+});
+
+// ── Round 49 #5: gitignore character class with `/` ─────────────
+// Pre-fix `[a/b]` silently became a literal-string match; post-fix
+// it's parsed as a real character class.
+
+describe("gitignore character class with `/` in body", () => {
+  test("[a/b] is parsed as a class, not literal text", () => {
+    const isIgnored = buildIgnorePredicate(["log[0-9]"]);
+    // Sanity: regular class still works
+    expect(isIgnored("log5")).toBe(true);
+    expect(isIgnored("logA")).toBe(false);
+    // The bug case: a class with `/` in the body. Pre-fix this would
+    // become a literal `[a/b]` matcher that never fired. Post-fix it
+    // is a class matching a, /, or b — but `/` won't appear within a
+    // path component during matching, so effectively matches `a` or `b`.
+    const isIgnoredSlash = buildIgnorePredicate(["x[a/b]"]);
+    expect(isIgnoredSlash("xa")).toBe(true);
+    expect(isIgnoredSlash("xb")).toBe(true);
+    expect(isIgnoredSlash("xc")).toBe(false);
+    // Pre-fix: this would have matched the literal `x[a/b]` only.
+    expect(isIgnoredSlash("x[a/b]")).toBe(false);
+  });
+});
+
 // ── Round 48 #3: interruptedResult outcome is DENY (not ALLOW) ────
 // Pre-fix interruptedResult set outcome="ALLOW", so headless's
 // partial-results filter (`r.outcome === "DENY"`) silently dropped

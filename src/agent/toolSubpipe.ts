@@ -525,7 +525,11 @@ export async function runToolSubpipe(
       results.push({
         toolUseId,
         name: tc.name,
-        outcome: "ALLOW",
+        // DENY: tool threw, so it didn't successfully execute. Round 48
+        // fixed the same hazard for AbortError → interruptedResult; this
+        // is the parallel general-error path. ALLOW would have headless's
+        // failure summary count crashed tools as successes.
+        outcome: "DENY",
         content: `Error: ${errMsg}`,
       });
     }

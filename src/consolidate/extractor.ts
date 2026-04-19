@@ -56,7 +56,12 @@ export function parseTriples(raw: string, sessionId: string): Triple[] {
     const trimmed = line.trim();
     if (!trimmed) continue;
 
-    const problemMatch = trimmed.match(/PROBLEM:\s*(.+?)\s*\|\s*APPROACH:\s*(.+?)\s*\|\s*OUTCOME:\s*(.+)/i);
+    // Greedy `(.+)` for PROBLEM and APPROACH so a `|` inside the
+    // free-form text doesn't bisect the line and silently drop the
+    // whole triple. The APPROACH/OUTCOME keywords are anchored, so
+    // greedy matching still terminates correctly — the regex consumes
+    // up to the rightmost `| APPROACH:` and `| OUTCOME:`.
+    const problemMatch = trimmed.match(/PROBLEM:\s*(.+)\s*\|\s*APPROACH:\s*(.+)\s*\|\s*OUTCOME:\s*(.+)/i);
     if (problemMatch) {
       triples.push({
         problem: problemMatch[1]!.trim(),

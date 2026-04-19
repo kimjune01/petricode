@@ -9,6 +9,17 @@
 import type { Skill } from "../core/types.js";
 import type { ActivatedSkill } from "./types.js";
 
+// Module-level dedupe set so the per-turn matchAutoTriggers call
+// doesn't spam the same warning every cycle.
+const _warnedNoPaths = new Set<string>();
+function warnNoPaths(skillName: string): void {
+  if (_warnedNoPaths.has(skillName)) return;
+  _warnedNoPaths.add(skillName);
+  console.warn(
+    `skiller: auto-trigger skill '${skillName}' has no 'paths' frontmatter — it will never fire`,
+  );
+}
+
 /**
  * Try to match input against a slash-command skill.
  * Input like "/greet Alice" matches skill named "greet".
@@ -23,7 +34,10 @@ export function matchSlashCommand(
 
   const spaceIdx = trimmed.indexOf(" ");
   const commandName = spaceIdx === -1 ? trimmed.slice(1) : trimmed.slice(1, spaceIdx);
-  const args = spaceIdx === -1 ? "" : trimmed.slice(spaceIdx + 1);
+  // Strip any extra whitespace between the command and its args so
+  // `/greet  Alice` (double space, easy typo) doesn't render as
+  // `Greet  Alice!` after $ARGUMENTS substitution.
+  const args = spaceIdx === -1 ? "" : trimmed.slice(spaceIdx + 1).trimStart();
 
   const skill = skills.find(
     (s) => s.trigger === "slash_command" && s.name === commandName,
@@ -51,7 +65,15 @@ export function matchAutoTriggers(
 
   for (const skill of autoSkills) {
     const rawPaths = skill.frontmatter.paths;
-    if (typeof rawPaths !== "string") continue;
+    if (typeof rawPaths !== "string") {
+      // An auto-trigger skill with no `paths` field can never fire,
+      // but `/skills` still lists it as if healthy. Surface this once
+      // so users can see why their skill is inert. Module-level
+      // dedupe keeps the noise low when matchAutoTriggers runs every
+      // turn.
+      warnNoPaths(skill.name);
+      continue;
+    }
     // Strip surrounding quotes from YAML value (simple parser keeps them)
     const paths = rawPaths.replace(/^["']|["']$/g, "");
 
