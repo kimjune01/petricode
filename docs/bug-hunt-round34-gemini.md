@@ -1,0 +1,15 @@
+# Bug Hunt Round 34 (gemini)
+
+### 1. `Composer.tsx` `onRawInput` discards typed characters arriving in the same chunk as a bracketed paste
+- **Description**: In `src/app/components/Composer.tsx`, the `onRawInput` handler manually intercepts `stdin` chunks to extract bracketed paste regions (`\x1b[200~...`). If a paste sequence starts at an index `> 0` within the chunk, the prefix before `PASTE_START` is permanently discarded via `pasteBuffer = pasteBuffer.substring(startIdx + PASTE_START.length);` without being appended to `combined`. Because the handler then sets `isPasting.current = true`, the synchronous `useInput` hook ignores the entire chunk. Any text the user typed immediately before the paste in the same chunk is lost.
+- **File/Line**: `src/app/components/Composer.tsx` at `pasteBuffer = pasteBuffer.substring(startIdx + PASTE_START.length);` (approx line 81)
+- **User-Visible Impact**: If a user's terminal transmits text typing and a paste sequence in a single `stdin` chunk (e.g., via a macro, terminal buffer, or piped input), the typed characters preceding the paste are swallowed and never appear in the prompt.
+- **Suggested Fix**: Append the cleaned prefix to `combined` before slicing `pasteBuffer`, e.g., `if (startIdx > 0) combined += pasteBuffer.substring(0, startIdx).replace(/.../g, "");`
+- **Severity**: Low (edge case dependent on terminal chunking behavior, but results in silent data loss).
+
+### 2. `Composer.tsx` `useInput` cursor navigation and deletion break UTF-16 surrogate pairs
+- **Description**: The `useInput` callback in `Composer.tsx` manipulates the text `input` string and the `cursor` by adding or subtracting `1`, and then using `slice(0, cursor)`. In JavaScript, astral plane characters (like emojis `🌎` or certain CJK ideographs) take up 2 length units (a high and low surrogate). Moving the cursor by `+1` or `-1` over an emoji places the logical cursor *inside* the surrogate pair. Subsequent typing or backspacing will slice between the surrogates, corrupting the input (e.g. leaving a lone `\uD83C`). Furthermore, inserting an emoji increments the cursor by `1` instead of `ch.length`, meaning typing after an emoji immediately corrupts the text.
+- **File/Line**: `src/app/components/Composer.tsx` in `useInput` (e.g., `nextCursor = prev.cursor + 1;` around line 249, and the `leftArrow`/`backspace` branches).
+- **User-Visible Impact**: Navigating with left/right arrow keys across emojis, backspacing over emojis, or simply typing any character immediately after inserting an emoji results in visually corrupted text rendering (`?` or unprintable characters) and broken prompt state.
+- **Suggested Fix**: Change cursor math to account for `ch.length` on insertion, and use string iterators, `Array.from()`, or `Intl.Segmenter` to advance the cursor by actual grapheme cluster/codepoint boundaries rather than primitive string indices during navigation and deletion.
+- **Severity**: Medium (emojis and special characters are commonly pasted or typed in prompts).All tests pass.

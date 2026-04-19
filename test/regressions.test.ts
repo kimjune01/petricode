@@ -11,6 +11,7 @@ import { WriteFileTool } from "../src/tools/writeFile.js";
 import { EditTool } from "../src/tools/edit.js";
 import { ShellTool } from "../src/tools/shell.js";
 import { maskToolOutput } from "../src/filter/toolMasking.js";
+import { stepLeft, stepRight } from "../src/app/components/Composer.js";
 import type { Turn } from "../src/core/types.js";
 
 // ── Round 20 #3: gitignore globstar `?` corruption ───────────────
@@ -411,5 +412,44 @@ describe("@file refs skip binary content", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+// ── Round 34 #C2: Composer cursor respects UTF-16 surrogate pairs ─
+// Cursor math used `+1`/`-1` and `slice(cursor, cursor+1)` over raw
+// JS string indices. Astral chars (most emoji) are 2 code units, so
+// the cursor used to land between the high and low surrogate, and
+// the next edit sliced the pair apart and rendered U+FFFD. stepLeft
+// /stepRight now jump 2 across surrogate boundaries.
+
+describe("Composer cursor stepping over surrogate pairs", () => {
+  const emoji = "\uD83C\uDF0E"; // 🌎 — 2 code units
+
+  test("stepRight jumps past a surrogate pair as one unit", () => {
+    expect(stepRight(emoji, 0)).toBe(2);
+    expect(stepRight(`a${emoji}b`, 1)).toBe(3);
+  });
+
+  test("stepLeft jumps back over a surrogate pair as one unit", () => {
+    expect(stepLeft(emoji, 2)).toBe(0);
+    expect(stepLeft(`a${emoji}b`, 3)).toBe(1);
+  });
+
+  test("BMP characters still step by 1", () => {
+    expect(stepRight("abc", 1)).toBe(2);
+    expect(stepLeft("abc", 2)).toBe(1);
+  });
+
+  test("clamps at string boundaries", () => {
+    expect(stepLeft("", 0)).toBe(0);
+    expect(stepLeft("a", 0)).toBe(0);
+    expect(stepRight("a", 1)).toBe(1);
+    expect(stepRight("", 0)).toBe(0);
+  });
+
+  test("lone surrogate (no pair) steps by 1", () => {
+    // Defensive: malformed input shouldn't trap the cursor.
+    expect(stepRight("\uD83C", 0)).toBe(1);
+    expect(stepLeft("\uDC00", 1)).toBe(0);
   });
 });

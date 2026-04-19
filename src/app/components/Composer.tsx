@@ -7,6 +7,31 @@ import { useSpinner } from "../spinner.js";
 const PASTE_START = "\x1b[200~";
 const PASTE_END = "\x1b[201~";
 
+// Cursor stepping that respects UTF-16 surrogate pairs. Astral chars (most
+// emoji, some CJK) take 2 code units; naive +1/-1 lands the cursor between
+// the high and low surrogate, which then gets sliced apart on the next edit
+// and renders as U+FFFD. Step by 2 when we see a surrogate boundary.
+const isHighSurrogate = (code: number) => code >= 0xd800 && code <= 0xdbff;
+const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff;
+
+export const stepLeft = (s: string, idx: number): number => {
+  if (idx <= 0) return 0;
+  const prev = s.charCodeAt(idx - 1);
+  if (isLowSurrogate(prev) && idx >= 2 && isHighSurrogate(s.charCodeAt(idx - 2))) {
+    return idx - 2;
+  }
+  return idx - 1;
+};
+
+export const stepRight = (s: string, idx: number): number => {
+  if (idx >= s.length) return s.length;
+  const cur = s.charCodeAt(idx);
+  if (isHighSurrogate(cur) && idx + 1 < s.length && isLowSurrogate(s.charCodeAt(idx + 1))) {
+    return idx + 2;
+  }
+  return idx + 1;
+};
+
 interface ComposerState {
   input: string;
   cursor: number;
@@ -85,6 +110,17 @@ export default function Composer({ onSubmit, disabled, clearSignal, phase, onEof
             // are post-paste keypresses already delivered by useInput.
             pasteBuffer = "";
             break;
+          }
+          // Pre-paste prefix bytes were keypress events from the same
+          // stdin chunk. Ink's listener will fire them synchronously
+          // AFTER us, but we're about to set isPasting=true which gates
+          // useInput from inserting them. Capture them here as cleaned
+          // printable text so they aren't silently dropped.
+          if (startIdx > 0) {
+            combined += pasteBuffer.substring(0, startIdx).replace(
+              /\x1b\[[0-9;]*[a-zA-Z]|[\x00-\x08\x0b-\x1f\x7f]/g,
+              "",
+            );
           }
           pasteBuffer = pasteBuffer.substring(startIdx + PASTE_START.length);
           isPasting.current = true;
@@ -182,13 +218,15 @@ export default function Composer({ onSubmit, disabled, clearSignal, phase, onEof
         else if (key.ctrl && ch === "e") {
           nextCursor = prev.input.length;
         }
-        // Left arrow / Ctrl+B — cursor left
+        // Left arrow / Ctrl+B — cursor left.
+        // stepLeft jumps 2 over a surrogate pair so the cursor never lands
+        // between the high and low halves of an emoji.
         else if (key.leftArrow || (key.ctrl && ch === "b")) {
-          nextCursor = Math.max(0, prev.cursor - 1);
+          nextCursor = stepLeft(prev.input, prev.cursor);
         }
         // Right arrow / Ctrl+F — cursor right
         else if (key.rightArrow || (key.ctrl && ch === "f")) {
-          nextCursor = Math.min(prev.input.length, prev.cursor + 1);
+          nextCursor = stepRight(prev.input, prev.cursor);
         }
         // Backspace — delete char before cursor.
         // Ink 5.2.1's parseKeypress maps macOS Backspace (\x7f) to
@@ -197,8 +235,12 @@ export default function Composer({ onSubmit, disabled, clearSignal, phase, onEof
         // key actually works on macOS terminals.
         else if (key.backspace || key.delete) {
           if (prev.cursor > 0) {
-            nextInput = prev.input.slice(0, prev.cursor - 1) + prev.input.slice(prev.cursor);
-            nextCursor = prev.cursor - 1;
+            // Use stepLeft so backspace deletes the entire emoji (2 code
+            // units) rather than the trailing low surrogate, which would
+            // leave a dangling high surrogate that renders as U+FFFD.
+            const start = stepLeft(prev.input, prev.cursor);
+            nextInput = prev.input.slice(0, start) + prev.input.slice(prev.cursor);
+            nextCursor = start;
           }
         }
         // Ctrl+D — forward delete at cursor; empty input + Ctrl+D = EOF
@@ -209,7 +251,8 @@ export default function Composer({ onSubmit, disabled, clearSignal, phase, onEof
             return prev;
           }
           if (prev.cursor < prev.input.length) {
-            nextInput = prev.input.slice(0, prev.cursor) + prev.input.slice(prev.cursor + 1);
+            const end = stepRight(prev.input, prev.cursor);
+            nextInput = prev.input.slice(0, prev.cursor) + prev.input.slice(end);
           }
         }
         // Multi-char chunk — a paste that escaped bracketed-paste detection
@@ -235,10 +278,13 @@ export default function Composer({ onSubmit, disabled, clearSignal, phase, onEof
         else if (key.ctrl || key.meta) {
           return prev;
         }
-        // Regular character — insert at cursor
+        // Regular character — insert at cursor.
+        // ch.length (not 1) because a single typed astral char (e.g. emoji
+        // delivered as a 2-code-unit string) needs the cursor to advance
+        // past both surrogates; otherwise the next keystroke splits the pair.
         else if (ch) {
           nextInput = prev.input.slice(0, prev.cursor) + ch + prev.input.slice(prev.cursor);
-          nextCursor = prev.cursor + 1;
+          nextCursor = prev.cursor + ch.length;
         }
 
         return { input: nextInput, cursor: nextCursor };
@@ -252,9 +298,13 @@ export default function Composer({ onSubmit, disabled, clearSignal, phase, onEof
   const lines = input.split("\n");
   const isMultiline = lines.length > 1;
 
+  // Use stepRight to find the end of the cursor-highlighted character so a
+  // surrogate pair (emoji) renders as a single inverted glyph instead of
+  // splitting across `at`/`after` and producing two replacement characters.
   const before = input.slice(0, cursor);
-  const at = input[cursor] ?? "";
-  const after = input.slice(cursor + 1);
+  const atEnd = stepRight(input, cursor);
+  const at = input.slice(cursor, atEnd);
+  const after = input.slice(atEnd);
 
   return (
     <Box flexDirection="column">
