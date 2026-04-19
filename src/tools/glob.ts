@@ -38,7 +38,13 @@ export const GlobTool: Tool = {
 
     const glob = new BunGlob(pattern);
     const results: string[] = [];
-    for await (const path of glob.scan({ cwd, dot: false })) {
+    // dot: true so `**/*.yml` traverses .github/, .circleci/, etc.
+    // Pre-fix `dot: false` silently dropped every hidden directory
+    // even when it wasn't gitignored — the model running glob to
+    // discover CI config got an empty result and concluded the
+    // project had none. Gitignore filtering still excludes
+    // .git/, .petricode/, and any user-ignored hidden dir below.
+    for await (const path of glob.scan({ cwd, dot: true })) {
       // Reconstruct root-relative path for ignore matching. BunGlob.scan
       // yields files only by default, so dir-only patterns must not match.
       const rootRelative = cwdPrefix === "." || cwdPrefix === ""

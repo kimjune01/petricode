@@ -2303,6 +2303,75 @@ describe("cautious TUI offers move-to-trash alternative on rm -rf", () => {
   });
 });
 
+// ── Round 55 #1: GlobTool traverses non-gitignored hidden dirs ───
+// Pre-fix `glob.scan({dot: false})` silently dropped every hidden
+// directory even when not gitignored. A model issuing `**/*.yml`
+// to discover CI config got an empty result and concluded the
+// project had none. dot:true + gitignore filter still excludes
+// .git/, .petricode/, etc.
+
+describe("GlobTool returns matches inside non-gitignored hidden dirs", () => {
+  test("**/*.yml finds files inside .github/workflows/", async () => {
+    const { GlobTool } = await import("../src/tools/glob.js");
+    const dir = await mkdtemp(join(tmpdir(), "glob-dot-"));
+    try {
+      const wf = join(dir, ".github", "workflows");
+      await mkdir(wf, { recursive: true });
+      await writeFile(join(wf, "ci.yml"), "name: ci\n", "utf-8");
+      const result = await GlobTool.execute(
+        { pattern: "**/*.yml" },
+        { cwd: dir },
+      );
+      expect(result).toContain(".github/workflows/ci.yml");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("gitignored hidden dirs are still excluded", async () => {
+    const { GlobTool } = await import("../src/tools/glob.js");
+    const dir = await mkdtemp(join(tmpdir(), "glob-dot-ign-"));
+    try {
+      await writeFile(join(dir, ".gitignore"), ".secrets/\n", "utf-8");
+      const secrets = join(dir, ".secrets");
+      await mkdir(secrets, { recursive: true });
+      await writeFile(join(secrets, "key.yml"), "x\n", "utf-8");
+      const wf = join(dir, ".github");
+      await mkdir(wf, { recursive: true });
+      await writeFile(join(wf, "ok.yml"), "x\n", "utf-8");
+      const result = await GlobTool.execute(
+        { pattern: "**/*.yml" },
+        { cwd: dir },
+      );
+      expect(result).toContain(".github/ok.yml");
+      expect(result).not.toContain(".secrets/key.yml");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ── Round 55 #2: contextDiscovery TextDecoder stream flag matches truncated ─
+// Pre-fix the decoder ran with `{ stream: bytesRead >= MAX_READ_BYTES }`,
+// but the truncated-marker flag had a stricter condition. For a file
+// exactly MAX_READ_BYTES bytes on disk that ended mid-codepoint, the
+// decoder buffered the partial UTF-8 sequence and never flushed it —
+// silently dropping the last char with no [truncated] marker.
+
+describe("contextDiscovery decoder stream flag aligns with truncated", () => {
+  test("source ties { stream: truncated } to the same condition", async () => {
+    const { readFileSync } = await import("fs");
+    const src = readFileSync("src/perceive/contextDiscovery.ts", "utf-8");
+    expect(src).toContain("{ stream: truncated }");
+    expect(src).not.toContain("{ stream: bytesRead >= MAX_READ_BYTES }");
+    // And only ONE declaration of `truncated` (not the two that
+    // briefly existed during the fix).
+    const matches = src.match(/const truncated =/g);
+    expect(matches).not.toBeNull();
+    expect(matches!.length).toBe(1);
+  });
+});
+
 describe("ToolConfirmation argsPreview tolerates circular ToolCall args", () => {
   test("source wraps the JSON.stringify call in try/catch", async () => {
     const { readFileSync } = await import("fs");

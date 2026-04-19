@@ -119,23 +119,25 @@ async function tryRead(path: string): Promise<string | null> {
     // and silently injected into the system context every turn.
     const head = buf.slice(0, Math.min(bytesRead, 4096));
     if (head.indexOf(0) !== -1) return null;
+    // Same gate for the truncation flag and the TextDecoder stream
+    // mode: `stream: true` buffers an incomplete trailing UTF-8
+    // sequence (we'd flush it on the next decode call), but for an
+    // exact-cap file we never call decode again, so the partial
+    // codepoint silently disappears. Match the truncated condition
+    // so stream-mode only kicks in for genuine overflows. Mirrors
+    // readFile.ts and fileRefs.ts.
+    const truncated =
+      bytesRead >= MAX_READ_BYTES &&
+      !(statSize > 0 && statSize <= MAX_READ_BYTES);
     const decoded = new TextDecoder("utf-8").decode(
       buf.slice(0, bytesRead),
-      { stream: bytesRead >= MAX_READ_BYTES },
+      { stream: truncated },
     );
     // Strip a leading UTF-8 BOM so files saved by Windows editors
     // (Notepad, VS Code with BOM-on-save) don't inject U+FEFF as the
     // first character of the model's system context. Mirrors the
     // BOM strip in skiller/perceive.ts.
     const clean = decoded.charCodeAt(0) === 0xfeff ? decoded.slice(1) : decoded;
-    // Only flag as truncated if bytesRead hit the cap AND stats.size
-    // confirms the on-disk file actually exceeds the cap. A file
-    // exactly MAX_READ_BYTES bytes long fills the buffer too but lost
-    // no content — flagging it would mislead the model into thinking
-    // its instructions were cut off every turn. Mirrors readFile.ts.
-    const truncated =
-      bytesRead >= MAX_READ_BYTES &&
-      !(statSize > 0 && statSize <= MAX_READ_BYTES);
     return truncated
       ? `${clean}\n[truncated — context fragment exceeded ${MAX_READ_BYTES} bytes]`
       : clean;
