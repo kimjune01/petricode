@@ -1333,6 +1333,61 @@ describe("isDangerousShell catches interleaved-flag rm forms", () => {
 // requiring at least one intermediate slash and silently dropping
 // direct children like `src/foo.ts`.
 
+// ── Round 43 #1: rewriteRmToMv bails on brace expansion ─────────
+// `rm -rf {foo,bar}` previously slipped past the bailout regex and
+// produced `mv '{foo,bar}' …`. Single quotes suppress brace expansion,
+// so mv looked for a literal file `{foo,bar}` and failed at runtime.
+// User picks the "safe move" and gets a confusing error with nothing
+// deleted. Bail on `{`/`}` so the normal allow/deny prompt fires.
+
+describe("rewriteRmToMv refuses brace-expansion targets", () => {
+  const { rewriteRmToMv } = require("../src/filter/shellRewrite.js") as typeof import("../src/filter/shellRewrite.js");
+  const opts = { sessionId: "s1", nowIso: "2026-01-01T00:00:00.000Z" };
+
+  test("`rm -rf {foo,bar}` returns null (no broken rewrite)", () => {
+    expect(rewriteRmToMv("rm -rf {foo,bar}", opts)).toBeNull();
+  });
+  test("`rm -rf foo{1,2}.txt` returns null", () => {
+    expect(rewriteRmToMv("rm -rf foo{1,2}.txt", opts)).toBeNull();
+  });
+  test("plain `rm -rf foo` still rewrites", () => {
+    expect(rewriteRmToMv("rm -rf foo", opts)).not.toBeNull();
+  });
+});
+
+// ── Round 43 #2: trailing-slash catastrophic targets blocked ─────
+// `rm -rf ./` and `rm -rf ../` previously bypassed the catastrophic-
+// path guard (which only matched bare `.` and `..`) and produced
+// `mv './' …` / `mv '../' …`. The `../` rewrite can SUCCEED on POSIX
+// and relocates the parent of the project to /tmp — wider blast
+// radius than the user expects from a soft delete.
+
+describe("rewriteRmToMv blocks trailing-slash catastrophic targets", () => {
+  const { rewriteRmToMv } = require("../src/filter/shellRewrite.js") as typeof import("../src/filter/shellRewrite.js");
+  const opts = { sessionId: "s1", nowIso: "2026-01-01T00:00:00.000Z" };
+
+  test("`rm -rf ./` returns null", () => {
+    expect(rewriteRmToMv("rm -rf ./", opts)).toBeNull();
+  });
+  test("`rm -rf ../` returns null", () => {
+    expect(rewriteRmToMv("rm -rf ../", opts)).toBeNull();
+  });
+  test("`rm -rf /` returns null (already covered, but re-affirm with strip)", () => {
+    expect(rewriteRmToMv("rm -rf /", opts)).toBeNull();
+  });
+  test("`rm -rf ~/` returns null", () => {
+    expect(rewriteRmToMv("rm -rf ~/", opts)).toBeNull();
+  });
+  test("multiple trailing slashes also blocked", () => {
+    expect(rewriteRmToMv("rm -rf ..///", opts)).toBeNull();
+  });
+  test("safe target with trailing slash still rewrites", () => {
+    const r = rewriteRmToMv("rm -rf build/", opts);
+    expect(r).not.toBeNull();
+    expect(r!.rewrittenCmd).toContain("mv 'build/'");
+  });
+});
+
 describe("skiller matchAutoTriggers handles `?` and `**` correctly", () => {
   const { matchAutoTriggers } = require("../src/skiller/filter.js") as typeof import("../src/skiller/filter.js");
   const mkSkill = (paths: string) => ({

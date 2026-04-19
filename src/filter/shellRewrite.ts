@@ -37,7 +37,13 @@ export function rewriteRmToMv(cmd: string, opts: RewriteOptions): ShellRewrite |
   // expansion. We're rewriting a single rm call, not a pipeline. Globs
   // (`*`, `?`) get bailed too — the model said `rm -rf build/*`, we
   // don't know how to enumerate the matches without running shell.
-  if (/[|;&<>`$()*?\n]/.test(cmd)) return null;
+  // Brace expansion (`{a,b}`) is bailed for the same reason: the
+  // tokenizer captures `{a,b}` as one bare word, the rewriter quotes
+  // it for mv, and bash then suppresses the brace expansion (single
+  // quotes block it) — leaving mv to look for a literal file named
+  // `{a,b}` and fail at runtime. Better to refuse the rewrite than
+  // hand the user a "safe move" that errors with no file deleted.
+  if (/[|;&<>`$()*?{}\n]/.test(cmd)) return null;
 
   const tokens = tokenize(cmd);
   if (tokens === null || tokens.length < 2) return null;
@@ -60,7 +66,7 @@ export function rewriteRmToMv(cmd: string, opts: RewriteOptions): ShellRewrite |
       continue;
     }
     if (t.startsWith("--")) {
-      if (t === "--recursive" || t === "-r" || t === "-R") {
+      if (t === "--recursive") {
         recursive = true;
         continue;
       }
@@ -92,14 +98,20 @@ export function rewriteRmToMv(cmd: string, opts: RewriteOptions): ShellRewrite |
   const target = positionals[0]!;
   // Refuse to mv catastrophic targets. `/`, `.`, `..` and `~` are the
   // ones that would cause the most damage if rewritten — moving `/`
-  // anywhere is nonsense and `.` would relocate the project. The user
-  // can still pick "allow" if they really mean it.
+  // anywhere is nonsense and `.` would relocate the project, and `..`
+  // would move the parent of the working directory into trash (often
+  // succeeds on POSIX, with a much wider blast radius than the user
+  // expects from a "soft delete"). The user can still pick "allow" if
+  // they really mean it. Strip trailing slashes first so the trailing-
+  // slash forms (`./`, `../`, `/`, `~/`) hit the same guard — bash
+  // treats them as the same target.
+  const normTarget = target.replace(/\/+$/, "") || "/";
   if (
-    target === "/"
-    || target === "."
-    || target === ".."
-    || target === "~"
-    || target === ""
+    normTarget === "/"
+    || normTarget === "."
+    || normTarget === ".."
+    || normTarget === "~"
+    || normTarget === ""
   ) return null;
 
   const tmpRoot = opts.tmpRoot ?? "/tmp";
