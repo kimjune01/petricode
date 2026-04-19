@@ -7,6 +7,18 @@ import { useSpinner } from "../spinner.js";
 const PASTE_START = "\x1b[200~";
 const PASTE_END = "\x1b[201~";
 
+// Strip terminal control sequences from raw input. Mirrors App.tsx's
+// rationale sanitizer:
+//  - CSI (\x1b[…) and OSC (\x1b]…ST) sequences must come first;
+//    \x1b lives inside the single-char range below, so listing the
+//    range first would eat the ESC and leave the payload visible.
+//  - C1 range (\x80-\x9f) blocks 8-bit CSI bypass — pasting raw
+//    `\x9b2J` would clear the screen if we only filtered \x1b[.
+//  - Preserve \t (\x09), \n (\x0a), \r (\x0d) so multi-line pastes
+//    keep their formatting in the composer.
+// eslint-disable-next-line no-control-regex
+const STRIP_TERM_CTRL = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g;
+
 // Cursor stepping that respects UTF-16 surrogate pairs. Astral chars (most
 // emoji, some CJK) take 2 code units; naive +1/-1 lands the cursor between
 // the high and low surrogate, which then gets sliced apart on the next edit
@@ -121,10 +133,7 @@ export default function Composer({ onSubmit, disabled, clearSignal, phase, onEof
           // useInput from inserting them. Capture them here as cleaned
           // printable text so they aren't silently dropped.
           if (startIdx > 0) {
-            combined += pasteBuffer.substring(0, startIdx).replace(
-              /\x1b\[[0-9;]*[a-zA-Z]|[\x00-\x08\x0b-\x1f\x7f]/g,
-              "",
-            );
+            combined += pasteBuffer.substring(0, startIdx).replace(STRIP_TERM_CTRL, "");
           }
           pasteBuffer = pasteBuffer.substring(startIdx + PASTE_START.length);
           isPasting.current = true;
@@ -143,7 +152,7 @@ export default function Composer({ onSubmit, disabled, clearSignal, phase, onEof
       // those via the isPasting nextTick gate, so inject them here.
       // Strip ANSI/control to avoid leaking terminal codes.
       if (!isPasting.current && pasteBuffer && !pasteBuffer.includes(PASTE_START)) {
-        combined += pasteBuffer.replace(/\x1b\[[0-9;]*[a-zA-Z]|[\x00-\x08\x0b-\x1f\x7f]/g, "");
+        combined += pasteBuffer.replace(STRIP_TERM_CTRL, "");
         pasteBuffer = "";
       }
 
@@ -273,10 +282,7 @@ export default function Composer({ onSubmit, disabled, clearSignal, phase, onEof
         // don't leak into the input. Checked BEFORE the ctrl/meta drop so
         // Cmd+V's meta flag doesn't swallow the payload.
         else if (ch && ch.length > 1) {
-          const cleaned = ch.replace(
-            /\x1b\[[0-9;]*[a-zA-Z]|[\x00-\x08\x0b-\x1f\x7f]/g,
-            "",
-          );
+          const cleaned = ch.replace(STRIP_TERM_CTRL, "");
           if (cleaned) {
             nextInput =
               prev.input.slice(0, prev.cursor) +

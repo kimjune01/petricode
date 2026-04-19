@@ -36,7 +36,14 @@ export async function expandFileRefs(input: string, projectDir: string): Promise
     // mention as-is. Sentence-end punctuation kept from the original.
     const trailingMatch = rawPath.match(/[.,;:!?)\]}>"'`]+$/);
     const trailing = trailingMatch ? trailingMatch[0] : "";
-    const filePath = trailing ? rawPath.slice(0, -trailing.length) : rawPath;
+    // Leading openers handle `@"src/foo.ts"` style references, where
+    // the user puts the @ outside the quote. Captured as `"src/foo.ts"`,
+    // trailing strip removes `"`, but the leading `"` would still poison
+    // the lookup path. Strip mirrored opener punctuation.
+    const leadingMatch = rawPath.match(/^["'(\[{<`]+/);
+    const leading = leadingMatch ? leadingMatch[0] : "";
+    const trimmedRaw = trailing ? rawPath.slice(0, -trailing.length) : rawPath;
+    const filePath = leading ? trimmedRaw.slice(leading.length) : trimmedRaw;
     if (validateFilePath(filePath, projectDir)) continue;
     // validateFilePath confirms projectDir-relative resolution stays inside
     // projectDir, but readFile resolves relative paths against process.cwd().
@@ -58,11 +65,15 @@ export async function expandFileRefs(input: string, projectDir: string): Promise
         // U+FFFD-mangled garbage into the prompt, evicting useful
         // context. We read up to MAX_READ_BYTES once and decide based
         // on the prefix; small files are returned verbatim.
-        const bufSize = Math.min(stats.size, MAX_READ_BYTES);
+        // Virtual files (e.g. /proc/cpuinfo, sysfs entries, FUSE mounts)
+        // report stats.size === 0 but yield real content on read. Cap
+        // by MAX_READ_BYTES rather than stats.size when size is 0 so
+        // those don't get inlined as empty strings.
+        const bufSize = stats.size > 0
+          ? Math.min(stats.size, MAX_READ_BYTES)
+          : MAX_READ_BYTES;
         const buf = Buffer.alloc(bufSize);
-        const { bytesRead } = bufSize > 0
-          ? await fh.read(buf, 0, bufSize, 0)
-          : { bytesRead: 0 };
+        const { bytesRead } = await fh.read(buf, 0, bufSize, 0);
         const head = buf.slice(0, Math.min(bytesRead, 4096));
         if (head.indexOf(0) !== -1) continue; // binary — skip silently
         // Truncating exactly at MAX_READ_BYTES can bisect a multibyte
@@ -71,23 +82,32 @@ export async function expandFileRefs(input: string, projectDir: string): Promise
         // buffers the partial trailing bytes instead of decoding them
         // to U+FFFD; for non-truncated files it behaves identically to
         // a plain toString.
+        // Truncation flag based on bytesRead, not stats.size — virtual
+        // files report size 0 but can fill the buffer, so a stats-only
+        // check would silently drop trailing bytes without marking the
+        // truncation. If bytesRead hit the cap, we treat the read as
+        // potentially truncated.
+        const truncated = bytesRead >= MAX_READ_BYTES;
         const decoder = new TextDecoder("utf-8");
         const decoded = decoder.decode(
           buf.slice(0, bytesRead),
-          { stream: stats.size > MAX_READ_BYTES },
+          { stream: truncated },
         );
-        contents = stats.size > MAX_READ_BYTES
-          ? `${decoded}\n[truncated — file is ${stats.size} bytes, showing first ${MAX_READ_BYTES}]`
+        contents = truncated
+          ? stats.size > 0
+            ? `${decoded}\n[truncated — file is ${stats.size} bytes, showing first ${MAX_READ_BYTES}]`
+            : `${decoded}\n[truncated — showing first ${MAX_READ_BYTES} bytes]`
           : decoded;
       } finally {
         await fh.close();
       }
-      // Reattach the trailing punctuation we stripped from the path —
-      // otherwise `What about @README.md, @LICENSE?` would lose the
-      // comma and the question mark from the user's prose.
+      // Reattach the leading and trailing punctuation we stripped from
+      // the path — otherwise `What about @README.md, @LICENSE?` would
+      // lose the comma and question mark, and `@"foo"` would lose its
+      // quotes from the user's prose.
       replacements.set(
         fullMatch,
-        `\n<file path="${filePath}">\n${contents}\n</file>${trailing}`,
+        `${leading}\n<file path="${filePath}">\n${contents}\n</file>${trailing}`,
       );
     } catch {
       // Do nothing, leave as-is

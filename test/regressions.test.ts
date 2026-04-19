@@ -569,3 +569,98 @@ describe("grep filters ignored matches before hitting byte cap", () => {
     }
   });
 });
+
+// ── Round 37 #2: @file refs strip leading wrap punctuation ───────
+// `@"src/foo.ts"` was matched as `"src/foo.ts"` — trailing strip
+// removed the closing `"` but the leading `"` poisoned the lookup
+// path. Mirror the trailing strip with a leading-opener strip.
+
+describe("@file refs allow leading wrap punctuation", () => {
+  test("@\"path\" — quotes around the path are stripped", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "petricode-fileref-leadq-"));
+    try {
+      const path = join(dir, "note.md");
+      await writeFile(path, "hi");
+      const out = await expandFileRefs(`see @"${path}" thanks`, dir);
+      expect(out).toContain('<file path="');
+      expect(out).toContain("hi");
+      expect(out).toContain('"\n<file');
+      expect(out).toContain('</file>"');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("@(path) — paren around the path is stripped", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "petricode-fileref-leadp-"));
+    try {
+      const path = join(dir, "note.md");
+      await writeFile(path, "x");
+      const out = await expandFileRefs(`see @(${path}) here`, dir);
+      expect(out).toContain('<file path="');
+      expect(out).toContain("x");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ── Round 37 #3: gitignore character classes ────────────────────
+// patternToRegex used to backslash-escape `[` and `]`, breaking
+// gitignore's native character-class support (e.g. `[a-z]`,
+// `[!abc]`). Mask classes before the metachar pass and restore
+// them after globs; map gitignore `!` negation to regex `^`.
+
+describe("gitignore character class patterns", () => {
+  test("`[abc]` matches only listed chars", () => {
+    const isIgnored = buildIgnorePredicate(["log[abc].txt"]);
+    expect(isIgnored("loga.txt")).toBe(true);
+    expect(isIgnored("logb.txt")).toBe(true);
+    expect(isIgnored("logz.txt")).toBe(false);
+  });
+
+  test("`[a-z]` range matches lowercase letters", () => {
+    const isIgnored = buildIgnorePredicate(["x[a-z].dat"]);
+    expect(isIgnored("xa.dat")).toBe(true);
+    expect(isIgnored("xm.dat")).toBe(true);
+    expect(isIgnored("x1.dat")).toBe(false);
+  });
+
+  test("`[!abc]` (gitignore negation) excludes listed chars", () => {
+    const isIgnored = buildIgnorePredicate(["log[!abc].txt"]);
+    expect(isIgnored("loga.txt")).toBe(false);
+    expect(isIgnored("logz.txt")).toBe(true);
+  });
+
+  test("character class composes with globs", () => {
+    const isIgnored = buildIgnorePredicate(["**/*.[oa]"]);
+    expect(isIgnored("src/foo.o")).toBe(true);
+    expect(isIgnored("src/foo.a")).toBe(true);
+    expect(isIgnored("src/foo.c")).toBe(false);
+  });
+});
+
+// ── Round 37 #1: Composer ANSI sanitizer covers C1 controls ──────
+// Pasted text passes through one of three sanitizers in Composer
+// (pre-paste prefix, post-paste trailing, multi-char chunk insert).
+// All three used to drop only \x00-\x1f \x7f, leaving the C1 range
+// \x80-\x9f intact — pasting `\x9b2J` would inject an 8-bit CSI
+// clear-screen. Each sanitizer is now driven by a shared regex
+// that mirrors App.tsx's rationale strip.
+
+describe("Composer paste sanitizer drops C1 controls", () => {
+  // eslint-disable-next-line no-control-regex
+  const STRIP_TERM_CTRL = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g;
+
+  test("8-bit CSI bypass (\\x9b…) is stripped", () => {
+    expect("a\x9b2Jb".replace(STRIP_TERM_CTRL, "")).toBe("a2Jb");
+  });
+
+  test("DEL (\\x7f) is stripped", () => {
+    expect("a\x7fb".replace(STRIP_TERM_CTRL, "")).toBe("ab");
+  });
+
+  test("plain CSI sequence is fully removed", () => {
+    expect("a\x1b[31mb".replace(STRIP_TERM_CTRL, "")).toBe("ab");
+  });
+});

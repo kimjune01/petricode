@@ -211,6 +211,21 @@ function patternToRegex(pattern: string): RegExp {
     .replace(/\\!/g, ESC_BANG)
     .replace(/\\#/g, ESC_HASH);
 
+  // Mask gitignore character classes before metachar escaping so the
+  // `[` and `]` aren't backslash-escaped into literals. Per gitignore
+  // spec, `*[a-z]*.js` and `[!abc]` are valid patterns; without
+  // preserving them, `[a-z]` would collapse to literal `\[a-z\]`.
+  // Body matches anything except `/` and `]` (with `\.` escapes
+  // permitted so `[\]]` matches a literal `]` and `[\\]` matches `\`).
+  // Leading `!` becomes regex `^` for negation, mirroring the gitignore
+  // semantics (`[!abc]` = "any char except a, b, or c").
+  const charClasses: string[] = [];
+  regex = regex.replace(/\[((?:\\.|[^\]/])+)\]/g, (_m, body: string) => {
+    const cleaned = body.startsWith("!") ? `^${body.slice(1)}` : body;
+    charClasses.push(`[${cleaned}]`);
+    return `⟨CC${charClasses.length - 1}⟩`;
+  });
+
   // Escape regex special chars except * and ?
   regex = regex.replace(/[.+^${}()|[\]\\]/g, "\\$&");
 
@@ -244,6 +259,13 @@ function patternToRegex(pattern: string): RegExp {
     .replaceAll(ESC_QMARK, "\\?")
     .replaceAll(ESC_BANG, "!")
     .replaceAll(ESC_HASH, "#");
+
+  // Restore character classes after the glob pass — placeholders had
+  // no special chars in them, so the metachar escape, the `?`→`[^/]`
+  // pass, and the globstar substitutions all left them untouched.
+  charClasses.forEach((cc, i) => {
+    regex = regex.replaceAll(`⟨CC${i}⟩`, cc);
+  });
 
   if (anchored) {
     return new RegExp(`^${regex}(/|$)`);
