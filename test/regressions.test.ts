@@ -2073,12 +2073,129 @@ describe("pipeline max-rounds cleanup AbortError commits placeholder", () => {
     // The cleanup assembleTurn call must be inside a try block whose
     // catch commits an assistant placeholder before re-throwing on
     // AbortError. Match a window around the cleanup call.
-    const idx = src.indexOf("primary.generate(finalConvo");
+    const idx = src.indexOf("primary.generate(cleanupConvo");
     expect(idx).toBeGreaterThan(-1);
-    const window = src.slice(Math.max(0, idx - 200), idx + 600);
+    const window = src.slice(Math.max(0, idx - 400), idx + 600);
     expect(window).toContain("try {");
     expect(window).toContain("AbortError");
     expect(window).toContain('role: "assistant"');
     expect(window).toMatch(/throw err/);
+  });
+
+  test("cleanupConvo is declared (no ReferenceError regression)", async () => {
+    // Round 52 #1: an earlier round 51 edit dropped the `const
+    // finalConvo = ...` declaration when wrapping the cleanup call
+    // in try/catch — leaving a ReferenceError that crashed every
+    // session that hit maxToolRounds. Renamed to cleanupConvo and
+    // re-declared from the post-syntheticTurn cache.
+    const { readFileSync } = await import("fs");
+    const src = readFileSync("src/agent/pipeline.ts", "utf-8");
+    expect(src).toContain("const cleanupConvo: Message[]");
+    expect(src).toContain("primary.generate(cleanupConvo");
+    expect(src).not.toContain("primary.generate(finalConvo");
+  });
+});
+
+// ── Round 52 #2: fileRefs no false-truncation on exact-cap files ─
+// Pre-fix `truncated = bytesRead >= MAX_READ_BYTES` flagged a file
+// whose disk size was exactly 256 KB as truncated even though no
+// content was lost. Mirrors readFile.ts's two-clause check.
+
+describe("fileRefs does not flag exact-cap files as truncated", () => {
+  test("@file ref on a file of exactly 256KB has no [truncated] marker", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "fileref-exactcap-"));
+    try {
+      const path = join(dir, "exact.txt");
+      // Exactly 262144 bytes — fills the read buffer to the brim,
+      // but stats.size === MAX_READ_BYTES so no content was dropped.
+      const body = "a".repeat(262144);
+      await writeFile(path, body, "utf-8");
+      const result = await expandFileRefs(`@${path}`, dir);
+      expect(result).not.toContain("[truncated");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ── Round 52 #3: contextDiscovery no false truncation marker ─────
+// Pre-fix the same pattern in contextDiscovery.tryRead injected a
+// false [truncated…] marker into the system context every turn for
+// any CLAUDE.md / .agents/* file that happened to be exactly 256KB.
+
+describe("contextDiscovery does not flag exact-cap files as truncated", () => {
+  test("CLAUDE.md of exactly 256KB has no truncation marker", async () => {
+    const { discoverContext } = await import("../src/perceive/contextDiscovery.js");
+    const dir = await mkdtemp(join(tmpdir(), "ctx-exactcap-"));
+    try {
+      const body = "a".repeat(262144);
+      await writeFile(join(dir, "CLAUDE.md"), body, "utf-8");
+      const fragments = await discoverContext(dir);
+      const claude = fragments.find((f) => f.source.endsWith("CLAUDE.md"));
+      expect(claude).toBeDefined();
+      expect(claude!.content).not.toContain("[truncated");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ── Round 52 #4: volley NO_ISSUES tolerates punctuation/case ─────
+// Pre-fix strict equality forced extra revision rounds whenever the
+// reviewer responded "NO_ISSUES." (with period) or "no_issues" —
+// pure waste at primary-tier cost.
+
+describe("volley NO_ISSUES check tolerates punctuation and case", () => {
+  test("source uses case-insensitive regex with optional punctuation", async () => {
+    const { readFileSync } = await import("fs");
+    const src = readFileSync("src/convergence/volley.ts", "utf-8");
+    // Both bare and punctuated forms should match.
+    const re = /\/\^no_issues\[\.!\]\?\$\/i/;
+    expect(re.test(src)).toBe(true);
+    // Sanity-check the regex behavior we shipped.
+    const liveRe = /^no_issues[.!]?$/i;
+    expect(liveRe.test("NO_ISSUES")).toBe(true);
+    expect(liveRe.test("NO_ISSUES.")).toBe(true);
+    expect(liveRe.test("NO_ISSUES!")).toBe(true);
+    expect(liveRe.test("no_issues")).toBe(true);
+    expect(liveRe.test("NO ISSUES")).toBe(false);
+    expect(liveRe.test("NO_ISSUES, see line 3")).toBe(false);
+  });
+});
+
+// ── Round 52 #5: skiller filter doesn't strip unmatched quotes ───
+// Pre-fix filter.ts ran a second `replace(/^["']|["']$/g, "")` on
+// rawPaths after perceive.ts had already done a matched-pair strip.
+// For a typo'd skill `paths: "*.ts` (missing close quote), perceive
+// keeps the lone leading `"` (inert glob), but filter strips it,
+// turning the skill into a broad `*.ts` auto-trigger that fires on
+// every TypeScript file.
+
+describe("skiller filter does not silently rescue malformed paths globs", () => {
+  test("malformed `paths: \"*.ts` does not auto-trigger on .ts files", async () => {
+    const { matchAutoTriggers } = await import("../src/skiller/filter.js");
+    // Simulate what perceive.ts hands off: a malformed glob with
+    // the leading quote retained because there's no matching pair.
+    const skill = {
+      name: "broad",
+      body: "do thing",
+      frontmatter: { name: "broad", trigger: "auto", paths: '"*.ts' },
+      trigger: "auto" as const,
+    };
+    const activated = matchAutoTriggers("edit src/foo.ts", [skill]);
+    expect(activated).toHaveLength(0);
+  });
+
+  test("well-formed `paths: \"*.ts\"` (matched pair) still triggers", async () => {
+    const { matchAutoTriggers } = await import("../src/skiller/filter.js");
+    // perceive.ts strips the matched pair so filter sees the bare glob.
+    const skill = {
+      name: "ts",
+      body: "do thing",
+      frontmatter: { name: "ts", trigger: "auto", paths: "*.ts" },
+      trigger: "auto" as const,
+    };
+    const activated = matchAutoTriggers("edit src/foo.ts", [skill]);
+    expect(activated).toHaveLength(1);
   });
 });

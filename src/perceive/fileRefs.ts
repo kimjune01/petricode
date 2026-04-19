@@ -82,12 +82,17 @@ export async function expandFileRefs(input: string, projectDir: string): Promise
         // buffers the partial trailing bytes instead of decoding them
         // to U+FFFD; for non-truncated files it behaves identically to
         // a plain toString.
-        // Truncation flag based on bytesRead, not stats.size — virtual
-        // files report size 0 but can fill the buffer, so a stats-only
-        // check would silently drop trailing bytes without marking the
-        // truncation. If bytesRead hit the cap, we treat the read as
-        // potentially truncated.
-        const truncated = bytesRead >= MAX_READ_BYTES;
+        // Truncation flag: bytesRead hitting the cap is necessary but
+        // not sufficient. A file of EXACTLY MAX_READ_BYTES on disk
+        // fills the buffer too, but no content was dropped — flagging
+        // it `[truncated]` would mislead the model into thinking
+        // instructions were cut off when they weren't. When stats.size
+        // is reliable (positive and ≤ cap), it disambiguates. Virtual
+        // files report size 0 but can fill the buffer; for those we
+        // still mark truncated. Mirrors readFile.ts.
+        const truncated =
+          bytesRead >= MAX_READ_BYTES &&
+          !(stats.size > 0 && stats.size <= MAX_READ_BYTES);
         const decoder = new TextDecoder("utf-8");
         const decoded = decoder.decode(
           buf.slice(0, bytesRead),

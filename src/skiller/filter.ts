@@ -74,10 +74,13 @@ export function matchAutoTriggers(
       warnNoPaths(skill.name);
       continue;
     }
-    // Strip surrounding quotes from YAML value (simple parser keeps them)
-    const paths = rawPaths.replace(/^["']|["']$/g, "");
-
-    if (matchesGlob(input, paths)) {
+    // perceive.ts already strips matched quote pairs from YAML
+    // values, so rawPaths is the canonical glob. Doing a second
+    // strip here that nukes ANY leading/trailing quote (matched or
+    // not) flips a typo'd `paths: "*.ts` from inert (perceive keeps
+    // the lone leading `"`, glob never matches) into a broad
+    // auto-trigger (`*.ts` matches every TypeScript file).
+    if (matchesGlob(input, rawPaths)) {
       activated.push({
         skill,
         arguments: input,

@@ -381,16 +381,25 @@ export class Pipeline {
           timestamp: Date.now(),
         };
         commitTurn(syntheticTurn);
-        // Get a final text response from the provider. If Ctrl+C fires
-        // during this cleanup generate(), assembleTurn throws AbortError.
-        // We MUST commit a placeholder assistant turn before re-throwing —
-        // otherwise the cache ends with [assistant tool_calls, user
-        // tool_results] and the next user submit appends a second user
-        // turn, producing a "messages must alternate" 400 from the
-        // provider on every subsequent send. Session is unrecoverable
-        // without /clear.
+        // Get a final text response from the provider. Build the
+        // cleanup conversation from the cache AFTER the synthetic
+        // turn was committed so the provider sees [..., assistant
+        // tool_calls, user tool_results] and produces a sensible
+        // wrap-up.
+        const cleanupConvo: Message[] = [
+          ...systemMessages,
+          ...this.cache.read().map(t => ({ role: t.role, content: t.content })),
+        ];
+        // If Ctrl+C fires during this cleanup generate(),
+        // assembleTurn throws AbortError. We MUST commit a
+        // placeholder assistant turn before re-throwing — otherwise
+        // the cache ends with [assistant tool_calls, user
+        // tool_results] and the next user submit appends a second
+        // user turn, producing a "messages must alternate" 400 from
+        // the provider on every subsequent send. Session is
+        // unrecoverable without /clear.
         try {
-          currentTurn = await assembleTurn(primary.generate(finalConvo, { signal }), signal, onText);
+          currentTurn = await assembleTurn(primary.generate(cleanupConvo, { signal }), signal, onText);
         } catch (err) {
           if (err instanceof DOMException && err.name === "AbortError") {
             commitTurn({

@@ -90,6 +90,19 @@ async function collectFromDir(
 
 async function tryRead(path: string): Promise<string | null> {
   let fh;
+  // stat first so we can disambiguate "file is exactly MAX_READ_BYTES
+  // on disk" from "first MAX_READ_BYTES of a larger file" — both fill
+  // the buffer to the brim, but only the latter actually truncated.
+  // Mirrors readFile.ts. If stat fails (race / permissions), fall back
+  // to size 0 which means "treat any cap-filling read as truncated".
+  let statSize = 0;
+  try {
+    const st = await stat(path);
+    if (!st.isFile()) return null;
+    statSize = st.size;
+  } catch {
+    // tolerate — fh.open below will report the real failure
+  }
   try {
     fh = await open(path, "r");
   } catch {
@@ -114,7 +127,15 @@ async function tryRead(path: string): Promise<string | null> {
     // first character of the model's system context. Mirrors the
     // BOM strip in skiller/perceive.ts.
     const clean = decoded.charCodeAt(0) === 0xfeff ? decoded.slice(1) : decoded;
-    return bytesRead >= MAX_READ_BYTES
+    // Only flag as truncated if bytesRead hit the cap AND stats.size
+    // confirms the on-disk file actually exceeds the cap. A file
+    // exactly MAX_READ_BYTES bytes long fills the buffer too but lost
+    // no content — flagging it would mislead the model into thinking
+    // its instructions were cut off every turn. Mirrors readFile.ts.
+    const truncated =
+      bytesRead >= MAX_READ_BYTES &&
+      !(statSize > 0 && statSize <= MAX_READ_BYTES);
+    return truncated
       ? `${clean}\n[truncated — context fragment exceeded ${MAX_READ_BYTES} bytes]`
       : clean;
   } catch {

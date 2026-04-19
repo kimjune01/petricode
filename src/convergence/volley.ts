@@ -98,8 +98,11 @@ export async function volley(
     const reviewResponse = await collectResponse(reviewer, reviewPrompt);
     findings.push(reviewResponse);
 
-    // Check convergence
-    if (reviewResponse.trim() === "NO_ISSUES") {
+    // Check convergence. Accept "NO_ISSUES" with optional trailing
+    // punctuation (LLMs often add `.` or `!`) and any case — strict
+    // equality forced extra revision rounds at primary-tier cost when
+    // the reviewer was already satisfied.
+    if (/^no_issues[.!]?$/i.test(reviewResponse.trim())) {
       return {
         content: current,
         rounds: round,
