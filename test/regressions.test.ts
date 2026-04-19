@@ -1289,3 +1289,76 @@ describe("grep handles filenames containing :\\d+:", () => {
     }
   });
 });
+
+// ── Round 42 #2: rm regex catches interleaved-flag invocations ───
+// The original `\brm\s+(?:-[a-zA-Z]*[rRfF]…)` required the dangerous
+// flag to be the *very first* token after `rm`. LLM-generated commands
+// like `rm build/ -rf`, `rm -i -r foo`, and `rm * -f` slipped past
+// the regex entirely and auto-ran in --permissive mode. The fix
+// mirrors the git-push pattern: allow `(?:[^;&|\n]*\s)?` between
+// `rm` and the flag, while still refusing to leak the match across
+// shell separators (`;`, `&`, `|`, newline).
+
+describe("isDangerousShell catches interleaved-flag rm forms", () => {
+  const { isDangerousShell } = require("../src/filter/shellDanger.js") as typeof import("../src/filter/shellDanger.js");
+
+  test("flags `rm build/ -rf` (target before flag)", () => {
+    expect(isDangerousShell("rm build/ -rf").dangerous).toBe(true);
+  });
+  test("flags `rm -i -r foo` (harmless flag before -r)", () => {
+    expect(isDangerousShell("rm -i -r foo").dangerous).toBe(true);
+  });
+  test("flags `rm * -f` (glob target before -f)", () => {
+    expect(isDangerousShell("rm * -f").dangerous).toBe(true);
+  });
+  test("flags `rm dist node_modules -rf` (multiple targets)", () => {
+    expect(isDangerousShell("rm dist node_modules -rf").dangerous).toBe(true);
+  });
+  test("does NOT flag plain `rm foo.txt` (no recursive flag anywhere)", () => {
+    expect(isDangerousShell("rm foo.txt").dangerous).toBe(false);
+  });
+  test("does NOT leak across shell separators", () => {
+    // `ls -l && something -rf` shouldn't trigger the rm pattern just
+    // because `-rf` appears after a separator. The exclusion class on
+    // the gap (`[^;&|\n]`) blocks that crossing.
+    expect(isDangerousShell("rm safe.txt; ls -rf").dangerous).toBe(false);
+  });
+});
+
+// ── Round 42 #4: skiller glob handles `?` and `**` direct children ─
+// matchesGlob's escape class omitted `?`, so `?` survived as a regex
+// quantifier and `src/foo?.ts` matched `src/fo.ts` (zero chars) while
+// failing on `src/fooX.ts` (one char). And `**` was naively replaced
+// with `.*`, so `src/**/*.ts` compiled to `^src/.*/[^/]*\.ts$` —
+// requiring at least one intermediate slash and silently dropping
+// direct children like `src/foo.ts`.
+
+describe("skiller matchAutoTriggers handles `?` and `**` correctly", () => {
+  const { matchAutoTriggers } = require("../src/skiller/filter.js") as typeof import("../src/skiller/filter.js");
+  const mkSkill = (paths: string) => ({
+    name: "auto",
+    description: "",
+    body: "",
+    trigger: "auto" as const,
+    frontmatter: { paths },
+    source: "test",
+  });
+
+  test("`src/foo?.ts` matches single-char substitutions, not zero", () => {
+    const skills = [mkSkill("src/foo?.ts")];
+    expect(matchAutoTriggers("touch src/fooX.ts", skills)).toHaveLength(1);
+    expect(matchAutoTriggers("touch src/foo.ts", skills)).toHaveLength(0);
+    // `?` is one char only, never a slash.
+    expect(matchAutoTriggers("touch src/foo/.ts", skills)).toHaveLength(0);
+  });
+
+  test("`src/**/*.ts` matches direct children too", () => {
+    const skills = [mkSkill("src/**/*.ts")];
+    // Pre-fix bug: this case returned zero matches because `**` forced
+    // an intermediate slash.
+    expect(matchAutoTriggers("editing src/foo.ts here", skills)).toHaveLength(1);
+    expect(matchAutoTriggers("editing src/sub/foo.ts here", skills)).toHaveLength(1);
+    expect(matchAutoTriggers("editing src/a/b/c/foo.ts here", skills)).toHaveLength(1);
+    expect(matchAutoTriggers("editing src/foo.js here", skills)).toHaveLength(0);
+  });
+});

@@ -81,18 +81,36 @@ function matchesGlob(input: string, glob: string): boolean {
   //   paths: "src/(foo|bar)/**.ts"
   // doesn't end up with live alternation (or worse, an invalid regex
   // that throws and breaks auto-trigger for ALL skills).
-  // Step 2: re-introduce wildcard meaning for * and ** (they were escaped
-  // to \* in step 1, so we look for the escaped form).
+  // Step 2: re-introduce wildcard meaning for *, **, and ? (they were
+  // escaped to \*, \? in step 1, so we look for the escaped form).
   const hasSlash = glob.includes("/");
-  // Include `*` in the escape class so step 2's `\*\*` / `\*` lookups
-  // actually find their targets — without this, `*` characters survived
-  // unescaped and either threw on `**/*.ts` or matched the wrong shape
-  // on `src/*.ts` (degenerate `0+ /` quantifier).
-  const escaped = glob.replace(/[.+^${}()|[\]\\*]/g, "\\$&");
+  // Include `*` and `?` in the escape class so step 2's `\*\*` / `\*` /
+  // `\?` lookups actually find their targets — without `*`, patterns
+  // like `**/*.ts` either threw or matched the wrong shape; without `?`,
+  // `?` survived as a regex quantifier and a glob like `src/foo?.ts`
+  // matched `src/fo.ts` (zero chars) instead of `src/fooX.ts` (one char).
+  const escaped = glob.replace(/[.+^${}()|[\]\\*?]/g, "\\$&");
   const regexStr = escaped
-    .replace(/\\\*\\\*/g, "{{DOUBLESTAR}}")
+    // Glob `?` → exactly one non-slash char. Done first so the globstar
+    // expansions below (which emit literal `?` regex quantifiers) aren't
+    // mangled by a later pass.
+    .replace(/\\\?/g, "[^/]")
+    // Globstar handled with sentinels so each pass doesn't trample the
+    // next. Mirrors the gitignore globstar logic (filter/gitignore.ts):
+    //   `/**/` → `(/.*?)?/`  — slash-optional so `src/**/*.ts` matches
+    //                          BOTH `src/foo.ts` (direct child) AND
+    //                          `src/sub/foo.ts`. Without this, the prior
+    //                          `.*` form forced a slash and silently
+    //                          dropped direct-child matches.
+    //   `**/`  → `(.*?/)?`   — leading globstar
+    //   `**`   → `.*?`       — solo globstar
+    .replace(/\/\\\*\\\*\//g, "{{SLASHGLOBSTAR}}")
+    .replace(/\\\*\\\*\//g, "{{LEADGLOBSTAR}}")
+    .replace(/\\\*\\\*/g, "{{GLOBSTAR}}")
     .replace(/\\\*/g, "[^/]*")
-    .replace(/\{\{DOUBLESTAR\}\}/g, ".*");
+    .replace(/\{\{SLASHGLOBSTAR\}\}/g, "(/.*?)?/")
+    .replace(/\{\{LEADGLOBSTAR\}\}/g, "(.*?/)?")
+    .replace(/\{\{GLOBSTAR\}\}/g, ".*?");
   // Basename globs like *.ts match any path ending with that pattern
   const pattern = hasSlash ? `^${regexStr}$` : `(?:^|/)${regexStr}$`;
   let regex: RegExp;

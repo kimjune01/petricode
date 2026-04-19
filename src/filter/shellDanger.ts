@@ -32,8 +32,15 @@ const PATTERNS: Pattern[] = [
   // work and have no kernel-level undo. We gate any recursive rm, not
   // just `-rf`, because `rm -r build/` will still smoke local untracked
   // edits inside `build/`.
+  //
+  // The intervening `(?:[^;&|\n]*\s)?` lets the dangerous flag appear
+  // anywhere in the rm invocation, not just immediately after `rm `.
+  // Without it, common LLM phrasings like `rm build/ -rf`, `rm -i -r`,
+  // and `rm * -f` slipped past the guard and auto-executed in permissive
+  // mode. The subshell-separator exclusion stops the match from leaking
+  // across `; rm safe_thing && something -rf`.
   {
-    re: /\brm\s+(?:-[a-zA-Z]*[rRfF][a-zA-Z]*|--(?:recursive|force))\b/,
+    re: /\brm\s+(?:[^;&|\n]*\s)?(?:-[a-zA-Z]*[rRfF][a-zA-Z]*|--(?:recursive|force))\b/,
     reason: "rm with -r/-f deletes files irretrievably (un-tracked work bypasses git)",
   },
   // `git push --force`, `-f`, `--force-with-lease`. Lease is safer than
