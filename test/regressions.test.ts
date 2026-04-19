@@ -1626,3 +1626,71 @@ describe("skiller matchAutoTriggers handles `?` and `**` correctly", () => {
     expect(matchAutoTriggers("editing src/foo.js here", skills)).toHaveLength(0);
   });
 });
+
+// ── Round 47 #2: auto-trigger doesn't fire on version strings / IPs ───
+// Pre-fix `t.includes(".")` accepted v1.2.3, 192.168.1.1, example.com
+// as path-like tokens, so a skill with `paths: "*.3"` would silently
+// activate on "upgrade to v1.2.3". Tightened to require either a
+// `/` or a single-dot identifier+alpha-extension shape.
+
+describe("matchAutoTriggers ignores non-path tokens", () => {
+  const { matchAutoTriggers } = require("../src/skiller/filter.js") as typeof import("../src/skiller/filter.js");
+  const mkSkill = (paths: string) => ({
+    name: "x",
+    body: "",
+    frontmatter: { paths },
+    trigger: "auto" as const,
+  });
+
+  test("version strings don't auto-trigger `*.3` skill", () => {
+    const skills = [mkSkill("*.3")];
+    expect(matchAutoTriggers("upgrade to v1.2.3 today", skills)).toHaveLength(0);
+  });
+
+  test("IP addresses don't auto-trigger `*.1` skill", () => {
+    const skills = [mkSkill("*.1")];
+    expect(matchAutoTriggers("ssh 192.168.1.1 reboot", skills)).toHaveLength(0);
+  });
+
+  test("real filenames still trigger basename globs", () => {
+    const skills = [mkSkill("*.ts")];
+    expect(matchAutoTriggers("edit foo.ts please", skills)).toHaveLength(1);
+    expect(matchAutoTriggers("edit MyClass.tsx please", skills)).toHaveLength(0);
+  });
+
+  test("path-style tokens still trigger", () => {
+    const skills = [mkSkill("src/**/*.ts")];
+    expect(matchAutoTriggers("look at src/foo.ts", skills)).toHaveLength(1);
+  });
+});
+
+// ── Round 47 #3: file_read truncates at UTF-8 char boundary ──────
+// Pre-fix `Buffer.toString("utf-8")` on a slice that bisected a
+// multi-byte UTF-8 sequence emitted U+FFFD at the truncation cap.
+// Now uses TextDecoder with stream:true (mirroring fileRefs.ts) so
+// the incomplete trailing bytes are dropped instead of garbled.
+
+describe("file_read truncation respects UTF-8 boundaries", () => {
+  test("no U+FFFD at truncation cap when char straddles 256KB", async () => {
+    // 256 KB = 262144 bytes. Fill to 262143 ASCII bytes, then place
+    // the leading byte of a 3-byte CJK char (e.g. '中' = E4 B8 AD) at
+    // position 262143, with continuation bytes spilling past the cap.
+    // Pre-fix: TextDecoder/toString would emit U+FFFD just before the
+    // truncation marker. Post-fix: the partial char is held back.
+    const dir = await mkdtemp(join(tmpdir(), "readfile-utf8-"));
+    try {
+      const path = join(dir, "big.txt");
+      // 262143 ASCII 'a' chars + '中' (3 bytes) + tail
+      const head = "a".repeat(262143);
+      const body = head + "中" + "tail";
+      await writeFile(path, body, "utf-8");
+      const out = await ReadFileTool.execute({ path }, { cwd: dir });
+      // Truncation marker must be present (file > 256KB)
+      expect(out).toContain("[truncated");
+      // Critically: no replacement char ahead of the marker
+      expect(out).not.toContain("\uFFFD");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});

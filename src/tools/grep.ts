@@ -220,7 +220,12 @@ export const GrepTool: Tool = {
       }, timeout);
       const onAbort = () => {
         proc.kill("SIGTERM");
-        cleanup();
+        // Mirror the truncation path: SIGTERM-immune children would
+        // otherwise outlive the abort, leaking processes that hold file
+        // locks across sessions. close handler will cleanup once proc
+        // exits (from SIGTERM or the grace SIGKILL below).
+        killGraceTimer = setTimeout(() => proc.kill("SIGKILL"), 2_000);
+        signal?.removeEventListener("abort", onAbort);
         reject(new DOMException("Aborted", "AbortError"));
       };
       signal?.addEventListener("abort", onAbort, { once: true });

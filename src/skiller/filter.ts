@@ -73,8 +73,21 @@ export function matchAutoTriggers(
  * Supports single-star and double-star wildcards, anchored at end.
  */
 function matchesGlob(input: string, glob: string): boolean {
-  // Extract path-like tokens from input
-  const tokens = input.split(/\s+/).filter((t) => t.includes("/") || t.includes("."));
+  // Extract path-like tokens from input. The dot check used to be a
+  // bare `t.includes(".")`, which silently auto-triggered skills on
+  // version strings (`v1.2.3`), domain names (`example.com`), and IP
+  // addresses (`192.168.1.1`). A skill with `paths: "*.3"` would then
+  // fire on "upgrade to v1.2.3" with no indication to the user.
+  //
+  // Tighten to either:
+  //   - tokens containing `/` (definitely a path)
+  //   - bare filename shape: identifier-style stem + single dot +
+  //     alpha-leading extension. Catches `foo.ts`, `MyClass.tsx`,
+  //     `archive.7z` (well, no — dropped, but rare in skill globs);
+  //     filters `v1.2.3`, `192.168.1.1`, `2.0.1-rc`.
+  const tokens = input.split(/\s+/).filter(
+    (t) => t.includes("/") || /^[A-Za-z_][\w-]*\.[A-Za-z]\w*$/.test(t),
+  );
 
   // Convert glob to regex.
   // Step 1: escape ALL regex metacharacters so a skill author writing

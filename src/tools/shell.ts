@@ -100,7 +100,16 @@ export const ShellTool: Tool = {
 
       const onAbort = () => {
         proc.kill("SIGTERM");
-        cleanup();
+        // Mirror the truncation path: SIGTERM-immune children would
+        // otherwise outlive the abort, leaking processes that hold file
+        // locks across sessions. The reject below settles the promise
+        // immediately; the grace SIGKILL just ensures the OS-level
+        // process actually dies.
+        killGraceTimer = setTimeout(() => proc.kill("SIGKILL"), 2_000);
+        // Don't run cleanup() here — it would clear killGraceTimer
+        // before SIGKILL fires. close handler will cleanup once proc
+        // exits (either from SIGTERM or the grace SIGKILL).
+        signal?.removeEventListener("abort", onAbort);
         reject(new DOMException("Aborted", "AbortError"));
       };
       signal?.addEventListener("abort", onAbort, { once: true });

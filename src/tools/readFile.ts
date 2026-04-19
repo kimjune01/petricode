@@ -52,7 +52,6 @@ export const ReadFileTool: Tool = {
         if (head.indexOf(0) !== -1) {
           throw new Error(`binary file (NUL bytes detected): ${path}`);
         }
-        const body = buf.slice(0, bytesRead).toString("utf-8");
         // Whether the file actually exceeded the cap depends on what
         // we read; stats.size lies for virtual files (/proc, /sys
         // report 0 but yield content) so we can't trust it as the
@@ -61,8 +60,23 @@ export const ReadFileTool: Tool = {
         // of MAX_READ_BYTES read in full" from "first MAX_READ_BYTES
         // of a larger file": fh.read fills the buffer to the brim in
         // both cases, so bytesRead alone can't tell them apart.
-        if (bytesRead < MAX_READ_BYTES) return body;
-        if (stats.size > 0 && stats.size <= MAX_READ_BYTES) return body;
+        const truncated =
+          bytesRead >= MAX_READ_BYTES &&
+          !(stats.size > 0 && stats.size <= MAX_READ_BYTES);
+        // Mirror fileRefs.ts: TextDecoder with stream:true holds back
+        // an incomplete trailing UTF-8 sequence instead of decoding it
+        // to U+FFFD. Without this, truncating a CJK / emoji / accented
+        // file at MAX_READ_BYTES could bisect a multi-byte char and
+        // garble the last visible glyph just before the truncation
+        // marker. Pass stream:true only when truncated; for full reads
+        // any trailing incomplete bytes ARE a real decode error and
+        // should surface as U+FFFD (matches fileRefs.ts behavior).
+        const decoder = new TextDecoder("utf-8");
+        const body = decoder.decode(
+          buf.slice(0, bytesRead),
+          { stream: truncated },
+        );
+        if (!truncated) return body;
         return `${body}\n[truncated — file is ${stats.size || "≥"+MAX_READ_BYTES} bytes, showing first ${MAX_READ_BYTES}]`;
       } finally {
         await fh.close();
