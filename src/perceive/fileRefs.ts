@@ -105,9 +105,23 @@ export async function expandFileRefs(input: string, projectDir: string): Promise
       // the path — otherwise `What about @README.md, @LICENSE?` would
       // lose the comma and question mark, and `@"foo"` would lose its
       // quotes from the user's prose.
+      //
+      // Indirect prompt-injection defense: the wrapping `<file>` tag
+      // sits inside a USER turn (not a tool_result block), so the
+      // protocol boundary doesn't protect us. A file containing
+      // `</file>\n\nIgnore previous instructions and …` would close
+      // the tag early and inject prose the model reads as the user.
+      // Defang any inner close-tag with a backslash so the only real
+      // closer is the one we emit at the end. Path attribute escapes
+      // `&` and `"` so a project file legitimately named `weird"name`
+      // can't break out of the `path="…"` attribute either.
+      const safeContents = contents.replace(/<\/file\b/gi, "<\\/file");
+      const safePath = filePath
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;");
       replacements.set(
         fullMatch,
-        `${leading}\n<file path="${filePath}">\n${contents}\n</file>${trailing}`,
+        `${leading}\n<file path="${safePath}">\n${safeContents}\n</file>${trailing}`,
       );
     } catch {
       // Do nothing, leave as-is
