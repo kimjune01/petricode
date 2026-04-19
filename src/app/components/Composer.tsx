@@ -69,37 +69,55 @@ export default function Composer({ onSubmit, disabled, clearSignal, phase, onEof
     let pasteBuffer = "";
 
     const onRawInput = (data: string) => {
-      const s = String(data);
+      pasteBuffer += String(data);
 
-      if (s.includes(PASTE_START)) {
-        isPasting.current = true;
-        pasteBuffer = s.substring(s.indexOf(PASTE_START) + PASTE_START.length);
-      } else if (isPasting.current) {
-        pasteBuffer += s;
+      // Drain as many complete <PASTE_START>…<PASTE_END> regions as we
+      // have in the buffer. The previous indexOf-based slicer collapsed
+      // when two pastes arrived in one stdin chunk: it kept only the
+      // first payload and stripped the rest as raw escape bytes.
+      let combined = "";
+      let madeProgress = false;
+      while (true) {
+        if (!isPasting.current) {
+          const startIdx = pasteBuffer.indexOf(PASTE_START);
+          if (startIdx === -1) {
+            // No paste in flight, no start in buffer — leftover bytes
+            // are post-paste keypresses already delivered by useInput.
+            pasteBuffer = "";
+            break;
+          }
+          pasteBuffer = pasteBuffer.substring(startIdx + PASTE_START.length);
+          isPasting.current = true;
+        }
+        const endIdx = pasteBuffer.indexOf(PASTE_END);
+        if (endIdx === -1) break; // wait for more data
+        combined += pasteBuffer.substring(0, endIdx);
+        pasteBuffer = pasteBuffer.substring(endIdx + PASTE_END.length);
+        isPasting.current = false;
+        madeProgress = true;
       }
 
-      if (isPasting.current && pasteBuffer.includes(PASTE_END)) {
-        const endIdx = pasteBuffer.indexOf(PASTE_END);
-        const payload = pasteBuffer.substring(0, endIdx);
-        // Append any printable bytes that arrived in the same stdin chunk
-        // after PASTE_END. Ink's parseKeypress will emit keypress events
-        // for them synchronously, but our useInput drops those (isPasting
-        // stays true through the current tick) — so we'd otherwise lose
-        // them entirely. Strip ANSI escapes and most control chars; keep
-        // tab and newline.
-        const tail = pasteBuffer.substring(endIdx + PASTE_END.length);
-        const tailPrintable = tail.replace(/\x1b\[[0-9;]*[a-zA-Z]|[\x00-\x08\x0b-\x1f\x7f]/g, "");
-        const combined = payload + tailPrintable;
+      // Trailing printable bytes (post-PASTE_END, no further PASTE_START)
+      // are characters typed in the same stdin chunk after the paste
+      // ended. Ink emits keypresses for them synchronously; we suppress
+      // those via the isPasting nextTick gate, so inject them here.
+      // Strip ANSI/control to avoid leaking terminal codes.
+      if (!isPasting.current && pasteBuffer && !pasteBuffer.includes(PASTE_START)) {
+        combined += pasteBuffer.replace(/\x1b\[[0-9;]*[a-zA-Z]|[\x00-\x08\x0b-\x1f\x7f]/g, "");
         pasteBuffer = "";
+      }
 
-        updateState((prev) => ({
-          input: prev.input.slice(0, prev.cursor) + combined + prev.input.slice(prev.cursor),
-          cursor: prev.cursor + combined.length,
-        }));
-
-        // Keep isPasting true through the current tick so useInput ignores
-        // the duplicate keypress events that Ink's parseKeypress fires
-        // synchronously from the same stdin chunk.
+      if (madeProgress) {
+        if (combined) {
+          updateState((prev) => ({
+            input: prev.input.slice(0, prev.cursor) + combined + prev.input.slice(prev.cursor),
+            cursor: prev.cursor + combined.length,
+          }));
+        }
+        // Re-arm isPasting through the current tick so useInput drops
+        // the duplicate keypress events Ink's parseKeypress is about to
+        // fire synchronously from the same stdin chunk.
+        isPasting.current = true;
         process.nextTick(() => {
           isPasting.current = false;
         });

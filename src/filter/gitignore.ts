@@ -2,7 +2,7 @@
 // Parses .gitignore and provides an isIgnored(path) predicate.
 // Hardcodes .git, node_modules, .env, .env.* as always-excluded.
 
-import { readFile } from "fs/promises";
+import { readFile, readdir } from "fs/promises";
 import { join } from "path";
 
 /** Directories/files always excluded regardless of .gitignore content. */
@@ -14,19 +14,81 @@ function isEnvFile(segment: string): boolean {
 }
 
 /**
- * Parse a .gitignore file into an array of patterns.
- * Returns empty array if the file doesn't exist.
+ * Walk projectDir collecting every .gitignore (root and nested) into a
+ * single ordered pattern list. Patterns from nested .gitignore files are
+ * rewritten with their directory prefix so the existing flat-list
+ * predicate matches them only inside the subtree they were authored in,
+ * matching git's "scoped to the .gitignore's directory" semantics.
+ *
+ * Traversal is parent-before-child so the predicate's "last match wins"
+ * behaviour gives nested files precedence over root, as git does. We
+ * skip ALWAYS_EXCLUDED dirs to avoid descending into node_modules/.git
+ * on big trees, and don't follow symlinks to avoid loops.
+ *
+ * Returns empty array if no .gitignore files are found anywhere.
  */
 export async function parseGitignore(projectDir: string): Promise<string[]> {
+  const patterns: string[] = [];
+  await collectGitignores(projectDir, "", patterns);
+  return patterns;
+}
+
+async function collectGitignores(
+  rootDir: string,
+  relDir: string,
+  out: string[],
+): Promise<void> {
+  const fullDir = relDir ? join(rootDir, relDir) : rootDir;
+
   try {
-    const raw = await readFile(join(projectDir, ".gitignore"), "utf-8");
-    return raw
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line && !line.startsWith("#"));
+    const raw = await readFile(join(fullDir, ".gitignore"), "utf-8");
+    for (const rawLine of raw.split("\n")) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith("#")) continue;
+      out.push(rewritePatternForSubdir(line, relDir));
+    }
   } catch {
-    return [];
+    // No .gitignore in this directory — fine, just don't contribute.
   }
+
+  let entries;
+  try {
+    entries = await readdir(fullDir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (isAlwaysExcluded(entry.name)) continue;
+    const sub = relDir ? `${relDir}/${entry.name}` : entry.name;
+    await collectGitignores(rootDir, sub, out);
+  }
+}
+
+// Rewrite a pattern from <rootDir>/<relDir>/.gitignore so it can be
+// evaluated against root-relative paths by buildIgnorePredicate. Per
+// gitignore semantics, a pattern in a subdir's .gitignore is scoped to
+// that subtree: `foo` matches at any depth under relDir, `/foo` matches
+// only relDir/foo, an internal slash anchors as well, a trailing slash
+// stays directory-only, and `!keep.txt` un-ignores within the subtree.
+// (Block-comment form would close early on the literal `**/` example.)
+function rewritePatternForSubdir(pattern: string, relDir: string): string {
+  if (!relDir) return pattern;
+  const negate = pattern.startsWith("!");
+  let body = negate ? pattern.slice(1) : pattern;
+  const dirOnly = body.endsWith("/");
+  if (dirOnly) body = body.slice(0, -1);
+
+  let anchoredHere = body.startsWith("/");
+  if (anchoredHere) body = body.slice(1);
+  // Internal `/` also anchors per gitignore semantics — `a/b` in
+  // `sub/.gitignore` matches `sub/a/b`, not `sub/x/a/b`.
+  if (!anchoredHere && body.includes("/")) anchoredHere = true;
+
+  const prefix = `/${relDir}/`;
+  let rewritten = anchoredHere ? `${prefix}${body}` : `${prefix}**/${body}`;
+  if (dirOnly) rewritten += "/";
+  return (negate ? "!" : "") + rewritten;
 }
 
 /**
@@ -132,10 +194,12 @@ function patternToRegex(pattern: string): RegExp {
   const ESC_STAR = "⟨ESCSTAR⟩";
   const ESC_QMARK = "⟨ESCQMARK⟩";
   const ESC_BANG = "⟨ESCBANG⟩";
+  const ESC_HASH = "⟨ESCHASH⟩";
   let regex = p
     .replace(/\\\*/g, ESC_STAR)
     .replace(/\\\?/g, ESC_QMARK)
-    .replace(/\\!/g, ESC_BANG);
+    .replace(/\\!/g, ESC_BANG)
+    .replace(/\\#/g, ESC_HASH);
 
   // Escape regex special chars except * and ?
   regex = regex.replace(/[.+^${}()|[\]\\]/g, "\\$&");
@@ -168,7 +232,8 @@ function patternToRegex(pattern: string): RegExp {
     // Restore masked gitignore escapes as literal-character regex matches.
     .replaceAll(ESC_STAR, "\\*")
     .replaceAll(ESC_QMARK, "\\?")
-    .replaceAll(ESC_BANG, "!");
+    .replaceAll(ESC_BANG, "!")
+    .replaceAll(ESC_HASH, "#");
 
   if (anchored) {
     return new RegExp(`^${regex}(/|$)`);

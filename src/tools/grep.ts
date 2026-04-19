@@ -81,12 +81,32 @@ export const GrepTool: Tool = {
       let truncated = false;
       const collect = (chunk: string) => {
         if (truncated) return;
-        outputBytes += Buffer.byteLength(chunk, "utf8");
-        if (outputBytes > MAX_OUTPUT_BYTES) {
+        const chunkBytes = Buffer.byteLength(chunk, "utf8");
+        if (outputBytes + chunkBytes > MAX_OUTPUT_BYTES) {
+          // Append the largest UTF-8-safe slice of `chunk` that still
+          // fits under the limit instead of throwing the whole chunk
+          // (up to ~64KB) away. Walk by character so we don't split a
+          // multibyte codepoint mid-sequence — setEncoding gave us a
+          // string of complete codepoints; Buffer.byteLength below
+          // rebuilds the byte cost per char.
+          const remaining = MAX_OUTPUT_BYTES - outputBytes;
+          let kept = "";
+          let keptBytes = 0;
+          for (const ch of chunk) {
+            const n = Buffer.byteLength(ch, "utf8");
+            if (keptBytes + n > remaining) break;
+            kept += ch;
+            keptBytes += n;
+          }
+          if (kept) {
+            output += kept;
+            outputBytes += keptBytes;
+          }
           truncated = true;
           proc.kill("SIGTERM");
           return;
         }
+        outputBytes += chunkBytes;
         output += chunk;
       };
       proc.stdout.on("data", collect);

@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile, mkdir } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
-import { buildIgnorePredicate } from "../src/filter/gitignore.js";
+import { buildIgnorePredicate, parseGitignore } from "../src/filter/gitignore.js";
 import { expandFileRefs } from "../src/perceive/fileRefs.js";
 import { UnionFindCache } from "../src/cache/cache.js";
 import { ReadFileTool } from "../src/tools/readFile.js";
@@ -278,5 +278,116 @@ describe("maskToolOutput threshold respects readFile cap", () => {
     const result = maskToolOutput(out);
     expect(result.masked).toBe(true);
     expect(result.content).toMatch(/\[masked/);
+  });
+});
+
+// ── Round 32 #F7: nested .gitignore precedence ──────────────────
+// parseGitignore used to read only <projectDir>/.gitignore. Patterns
+// in nested .gitignore files were silently ignored, so a sub/.gitignore
+// declaring `secrets/` did nothing and `tools/grep` happily returned
+// hits from that directory. Now the walker collects every .gitignore
+// in the tree and rewrites nested patterns with their subdir prefix.
+
+describe("nested .gitignore precedence", () => {
+  test("sub/.gitignore patterns scope to that subtree only", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "petricode-nested-gi-"));
+    try {
+      await mkdir(join(dir, "sub"), { recursive: true });
+      await mkdir(join(dir, "other"), { recursive: true });
+      await writeFile(join(dir, "sub", ".gitignore"), "secret.txt\n");
+      const patterns = await parseGitignore(dir);
+      const isIgnored = buildIgnorePredicate(patterns);
+      expect(isIgnored("sub/secret.txt")).toBe(true);
+      expect(isIgnored("other/secret.txt")).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("nested negation overrides parent ignore", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "petricode-nested-gi-neg-"));
+    try {
+      await mkdir(join(dir, "sub"), { recursive: true });
+      // Parent ignores all *.log; child un-ignores sub/keep.log.
+      await writeFile(join(dir, ".gitignore"), "*.log\n");
+      await writeFile(join(dir, "sub", ".gitignore"), "!keep.log\n");
+      const patterns = await parseGitignore(dir);
+      const isIgnored = buildIgnorePredicate(patterns);
+      expect(isIgnored("sub/keep.log")).toBe(false);
+      expect(isIgnored("sub/drop.log")).toBe(true);
+      expect(isIgnored("top.log")).toBe(true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("anchored pattern in nested .gitignore stays anchored to its subdir", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "petricode-nested-gi-anc-"));
+    try {
+      await mkdir(join(dir, "sub", "deeper"), { recursive: true });
+      // /foo in sub/.gitignore matches sub/foo only, not sub/deeper/foo.
+      await writeFile(join(dir, "sub", ".gitignore"), "/foo\n");
+      const patterns = await parseGitignore(dir);
+      const isIgnored = buildIgnorePredicate(patterns);
+      expect(isIgnored("sub/foo")).toBe(true);
+      expect(isIgnored("sub/deeper/foo")).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ── Round 32 #F4: @file ref word boundary ───────────────────────
+// FILE_REF_PATTERN used to be /@([^\s]+)/g which matched the
+// @domain.com inside email addresses. With a real file named
+// `domain.com` in the project, the email got mangled into the file's
+// contents. Lookbehind now requires start-of-string or whitespace.
+
+describe("@file refs require leading whitespace", () => {
+  test("email@domain.com is not treated as a file reference", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "petricode-fileref-email-"));
+    try {
+      await writeFile(join(dir, "domain.com"), "SECRET");
+      const out = await expandFileRefs(
+        "contact me at email@domain.com please",
+        dir,
+      );
+      expect(out).not.toContain("SECRET");
+      expect(out).toBe("contact me at email@domain.com please");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("@ref at start-of-string still expands", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "petricode-fileref-start-"));
+    try {
+      await writeFile(join(dir, "x.txt"), "HELLO");
+      const out = await expandFileRefs("@x.txt is interesting", dir);
+      expect(out).toContain("HELLO");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ── Round 32 #F3: @file refs skip binary files ──────────────────
+// fileRefs.expandFileRefs used to inline any non-FIFO file as UTF-8
+// bytes, so `@image.png` dumped 256KB of U+FFFD-mangled garbage into
+// the prompt and evicted real context. We now sniff the head for NUL
+// bytes and silently skip anything that looks binary.
+
+describe("@file refs skip binary content", () => {
+  test("file with NUL byte in head is left as a literal @reference", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "petricode-fileref-bin-"));
+    try {
+      const path = join(dir, "binary.dat");
+      // PNG-like header: starts with 0x89 then NUL.
+      await writeFile(path, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff]));
+      const out = await expandFileRefs(`look at @${path}`, dir);
+      expect(out).toBe(`look at @${path}`);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

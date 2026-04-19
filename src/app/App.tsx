@@ -117,10 +117,16 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
     });
   }, [pipeline]);
 
-  // Abort in-flight pipeline on unmount to prevent process hang
+  // Abort in-flight pipeline on unmount to prevent process hang. Also
+  // clear the Ctrl+C double-tap timer so a pending timeout can't fire
+  // setState() against an unmounted component.
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
+      if (ctrlCTimerRef.current) {
+        clearTimeout(ctrlCTimerRef.current);
+        ctrlCTimerRef.current = null;
+      }
     };
   }, []);
 
@@ -194,9 +200,11 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
       // Strip ANSI from the LLM-generated rationale before rendering —
       // Ink doesn't sanitize, so a crafted rationale could clear the
       // screen or spoof terminal output. C1 range (\x80–\x9f) blocks
-      // 8-bit CSI bypass (\x9b instead of \x1b[).
+      // 8-bit CSI bypass (\x9b instead of \x1b[). Preserve \t (\x09),
+      // \n (\x0a), \r (\x0d) — stripping them squashes multi-line
+      // rationales into one illegible run.
       // eslint-disable-next-line no-control-regex
-      const safe = classification.rationale.replace(/[\x00-\x1f\x7f-\x9f]|\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "");
+      const safe = classification.rationale.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]|\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "");
       addSystemTurn(`[triage ALLOW] ${toolCall.name} — ${safe}`);
     };
     return () => {

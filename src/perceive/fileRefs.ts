@@ -2,7 +2,10 @@ import { open, stat } from "fs/promises";
 import { isAbsolute, resolve } from "path";
 import { validateFilePath } from "../filter/pathValidation.js";
 
-const FILE_REF_PATTERN = /@([^\s]+)/g;
+// Lookbehind keeps the preceding whitespace out of the match so we don't
+// have to re-emit it during replacement. `email@domain.com` no longer
+// triggers a spurious file lookup of `domain.com`.
+const FILE_REF_PATTERN = /(?<=^|\s)@([^\s]+)/g;
 // Mirrors ReadFileTool's MAX_READ_BYTES so an `@huge.log` mention can't
 // dump unbounded bytes into the prompt — the per-tool cap meant nothing
 // when fileRefs.ts inlined files via raw readFile().
@@ -44,13 +47,22 @@ export async function expandFileRefs(input: string, projectDir: string): Promise
       const fh = await open(absPath, "r");
       let contents: string;
       try {
-        if (stats.size <= MAX_READ_BYTES) {
-          contents = await fh.readFile("utf-8");
-        } else {
-          const buf = Buffer.alloc(MAX_READ_BYTES);
-          const { bytesRead } = await fh.read(buf, 0, MAX_READ_BYTES, 0);
-          contents = `${buf.slice(0, bytesRead).toString("utf-8")}\n[truncated — file is ${stats.size} bytes, showing first ${MAX_READ_BYTES}]`;
-        }
+        // Sniff the head for NUL bytes to detect binary content. PNGs,
+        // executables, sqlite dbs etc. will otherwise dump 256KB of
+        // U+FFFD-mangled garbage into the prompt, evicting useful
+        // context. We read up to MAX_READ_BYTES once and decide based
+        // on the prefix; small files are returned verbatim.
+        const bufSize = Math.min(stats.size, MAX_READ_BYTES);
+        const buf = Buffer.alloc(bufSize);
+        const { bytesRead } = bufSize > 0
+          ? await fh.read(buf, 0, bufSize, 0)
+          : { bytesRead: 0 };
+        const head = buf.slice(0, Math.min(bytesRead, 4096));
+        if (head.indexOf(0) !== -1) continue; // binary — skip silently
+        const decoded = buf.slice(0, bytesRead).toString("utf-8");
+        contents = stats.size > MAX_READ_BYTES
+          ? `${decoded}\n[truncated — file is ${stats.size} bytes, showing first ${MAX_READ_BYTES}]`
+          : decoded;
       } finally {
         await fh.close();
       }
