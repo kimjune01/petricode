@@ -54,6 +54,11 @@ export const GrepTool: Tool = {
         // zero matches and leading the model to conclude the pattern is
         // genuinely absent.
         "-rnE",
+        // -I: skip binary files. Without it, grep emits `Binary file X
+        // matches` lines that lack the `path:lineno:text` shape and so
+        // bypass the post-filter's gitignore check (no colon → kept) —
+        // letting `dist/bundle.js` matches flood the LLM context.
+        "-I",
         // -D skip: don't follow into FIFOs/character devices. Without it,
         // grep blocks indefinitely on a named pipe inside the search tree.
         "-D",

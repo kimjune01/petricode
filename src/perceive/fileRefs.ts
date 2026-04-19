@@ -59,7 +59,17 @@ export async function expandFileRefs(input: string, projectDir: string): Promise
           : { bytesRead: 0 };
         const head = buf.slice(0, Math.min(bytesRead, 4096));
         if (head.indexOf(0) !== -1) continue; // binary — skip silently
-        const decoded = buf.slice(0, bytesRead).toString("utf-8");
+        // Truncating exactly at MAX_READ_BYTES can bisect a multibyte
+        // UTF-8 sequence, leaving a trailing replacement char right
+        // before the truncation marker. TextDecoder with stream:true
+        // buffers the partial trailing bytes instead of decoding them
+        // to U+FFFD; for non-truncated files it behaves identically to
+        // a plain toString.
+        const decoder = new TextDecoder("utf-8");
+        const decoded = decoder.decode(
+          buf.slice(0, bytesRead),
+          { stream: stats.size > MAX_READ_BYTES },
+        );
         contents = stats.size > MAX_READ_BYTES
           ? `${decoded}\n[truncated — file is ${stats.size} bytes, showing first ${MAX_READ_BYTES}]`
           : decoded;

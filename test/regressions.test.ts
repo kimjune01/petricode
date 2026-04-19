@@ -321,6 +321,28 @@ describe("nested .gitignore precedence", () => {
     }
   });
 
+  test("walker prunes ignored subdirs — does not collect their .gitignore", async () => {
+    // Round 33 #1: without pruning, a `dist/.gitignore` would be loaded
+    // and its patterns applied even though git itself never looks
+    // inside an ignored tree. Worse, the walker pays the FS cost of
+    // descending — minutes on big monorepos.
+    const dir = await mkdtemp(join(tmpdir(), "petricode-prune-"));
+    try {
+      await writeFile(join(dir, ".gitignore"), "dist/\n");
+      await mkdir(join(dir, "dist"), { recursive: true });
+      // A .gitignore inside the ignored dir un-ignoring something
+      // would let `dist/keep.txt` slip through if the walker descended.
+      await writeFile(join(dir, "dist", ".gitignore"), "!keep.txt\n");
+      const patterns = await parseGitignore(dir);
+      const isIgnored = buildIgnorePredicate(patterns);
+      // dist/ stays ignored; the nested negation never gets loaded.
+      expect(isIgnored("dist", true)).toBe(true);
+      expect(isIgnored("dist/keep.txt")).toBe(true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   test("anchored pattern in nested .gitignore stays anchored to its subdir", async () => {
     const dir = await mkdtemp(join(tmpdir(), "petricode-nested-gi-anc-"));
     try {

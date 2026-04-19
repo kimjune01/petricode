@@ -57,10 +57,20 @@ async function collectGitignores(
   } catch {
     return;
   }
+
+  // Use the patterns collected so far (parent + this dir) to prune
+  // descent into ignored subdirs. Git itself never looks for nested
+  // .gitignore inside an ignored tree, so without this we'd recurse
+  // through `dist/`, `target/`, vendor caches, etc. — turning a
+  // single grep call into thousands of sequential readdir/readFile
+  // hits on big repos.
+  const isIgnoredHere = buildIgnorePredicate(out);
+
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     if (isAlwaysExcluded(entry.name)) continue;
     const sub = relDir ? `${relDir}/${entry.name}` : entry.name;
+    if (isIgnoredHere(sub, true)) continue;
     await collectGitignores(rootDir, sub, out);
   }
 }
