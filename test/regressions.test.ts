@@ -2233,6 +2233,76 @@ describe("App handleSubmit identity-checks abortRef before nulling", () => {
 // would crash the component mid-render and freeze the TUI in
 // 'confirming' with no prompt visible.
 
+// ── Round 54 #1: cautious TUI offers move-to-trash alternative ───
+// Pre-fix the dangerous-shell check only ran in (permissive ALLOW)
+// or (cautious headless ASK_USER + no onConfirm). Cautious TUI
+// (ASK_USER + onConfirm) was missing, so dangerReason stayed
+// undefined and the trash-alternative gate never fired. Default-
+// mode users only saw allow/deny on `rm -rf` and had to manually
+// request a safer form.
+
+describe("cautious TUI offers move-to-trash alternative on rm -rf", () => {
+  const { runToolSubpipe } = require("../src/agent/toolSubpipe.js") as typeof import("../src/agent/toolSubpipe.js");
+  const { ToolRegistry } = require("../src/tools/registry.js") as typeof import("../src/tools/registry.js");
+
+  function mkShellTurn(command: string): Turn {
+    return {
+      id: "t1",
+      role: "assistant",
+      content: [{ type: "tool_use", id: "tu1", name: "shell", input: { command } }],
+      tool_calls: [{ id: "tu1", name: "shell", args: { command } }],
+      timestamp: Date.now(),
+    };
+  }
+
+  test("rm -rf in cautious TUI surfaces an alternative to onConfirm", async () => {
+    const registry = new ToolRegistry();
+    registry.register({
+      name: "shell",
+      description: "Run shell",
+      input_schema: { properties: { command: { type: "string" } }, required: ["command"] },
+      execute: async () => "ran",
+    });
+    let receivedAlternative: unknown = "not-called";
+    await runToolSubpipe(mkShellTurn("rm -rf /tmp/foo"), {
+      registry,
+      sessionId: "s1",
+      onConfirm: async (_tc, _classification, alternative) => {
+        receivedAlternative = alternative;
+        return "deny";
+      },
+    });
+    // Pre-fix this would be undefined (dangerReason never populated).
+    expect(receivedAlternative).not.toBe("not-called");
+    expect(receivedAlternative).toBeDefined();
+    expect((receivedAlternative as { label: string }).label).toMatch(/trash|mv/i);
+  });
+
+  test("safe shell in cautious TUI does not offer an alternative", async () => {
+    const registry = new ToolRegistry();
+    registry.register({
+      name: "shell",
+      description: "Run shell",
+      input_schema: { properties: { command: { type: "string" } }, required: ["command"] },
+      execute: async () => "ok",
+    });
+    let receivedAlternative: unknown = "not-called";
+    await runToolSubpipe(mkShellTurn("ls -la"), {
+      registry,
+      sessionId: "s1",
+      onConfirm: async (_tc, _classification, alternative) => {
+        receivedAlternative = alternative;
+        return "deny";
+      },
+    });
+    // shell defaults to ASK_USER, so onConfirm fires for ls too —
+    // but with no alternative since ls isn't in the danger list.
+    // (Point of this test: the broadened danger-check didn't
+    // start manufacturing alternatives for safe commands.)
+    expect(receivedAlternative).toBeUndefined();
+  });
+});
+
 describe("ToolConfirmation argsPreview tolerates circular ToolCall args", () => {
   test("source wraps the JSON.stringify call in try/catch", async () => {
     const { readFileSync } = await import("fs");

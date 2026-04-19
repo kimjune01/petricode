@@ -319,12 +319,20 @@ export async function runToolSubpipe(
     //      headless DENY block at line ~340 can refuse with a reason.
     // The reason is shown to the user (TUI) or becomes the DENY message
     // for headless callers (no human to ask).
+    // Run the dangerous-shell check for any shell that's about to
+    // ALLOW under permissive (so we re-gate to ASK_USER) or any
+    // shell that's already ASK_USER (so we have a dangerReason for
+    // the headless DENY message AND the cautious-TUI "move to
+    // trash" alternative). Pre-fix the cautious TUI path
+    // (ASK_USER + onConfirm) was missing, so the trash alternative
+    // never surfaced in the default mode — users only saw allow/deny
+    // on `rm -rf build/` and had to manually request a safer form.
     let dangerReason: string | undefined;
     if (
       tc.name === "shell"
       && (
         (permissiveShellGuard && policyOutcome === "ALLOW")
-        || (policyOutcome === "ASK_USER" && !onConfirm)
+        || policyOutcome === "ASK_USER"
       )
     ) {
       const cmd = (tc.args as { command?: unknown } | undefined)?.command;

@@ -12,7 +12,8 @@ const MAX_READ_BYTES = 262_144;
 
 /**
  * Discover context fragments by walking for instruction files.
- * Precedence: global (0.3) < project (0.7) < subdirectory (0.9).
+ * Precedence: global (0.3) < project root (0.5) < project .agents/
+ * (0.7) < subdirectory .agents/ (0.9).
  */
 export async function discoverContext(
   projectDir: string,
