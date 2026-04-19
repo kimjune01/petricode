@@ -103,7 +103,11 @@ export const GrepTool: Tool = {
         // Caller searched outside projectRoot — predicate has no
         // basis for filtering, keep the line.
         if (rel.startsWith("..")) return false;
-        return isIgnored(rel, false);
+        // On Windows, path.normalize/relative emit `\`-separated
+        // paths; the gitignore predicate splits on `/` and would
+        // see the whole path as one segment, missing every
+        // dir-level rule. Normalize to forward slashes.
+        return isIgnored(rel.replace(/\\/g, "/"), false);
       };
 
       const append = (piece: string): boolean => {

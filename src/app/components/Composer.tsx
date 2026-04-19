@@ -7,6 +7,18 @@ import { useSpinner } from "../spinner.js";
 const PASTE_START = "\x1b[200~";
 const PASTE_END = "\x1b[201~";
 
+// Length of the longest suffix of `s` that is also a prefix of
+// PASTE_START. Used to retain a fragmented escape sequence (e.g.
+// chunk 1 ends with "\x1b[20", chunk 2 starts with "0~…") across
+// stdin chunks instead of flushing the partial bytes as input.
+const longestPasteStartPrefix = (s: string): number => {
+  const max = Math.min(s.length, PASTE_START.length - 1);
+  for (let k = max; k >= 1; k--) {
+    if (PASTE_START.startsWith(s.slice(-k))) return k;
+  }
+  return 0;
+};
+
 // Strip terminal control sequences from raw input. Mirrors App.tsx's
 // rationale sanitizer:
 //  - CSI (\x1b[…) and OSC (\x1b]…ST) sequences must come first;
@@ -119,12 +131,17 @@ export default function Composer({ onSubmit, disabled, clearSignal, phase, onEof
           const startIdx = pasteBuffer.indexOf(PASTE_START);
           if (startIdx === -1) {
             // If no paste happened this tick, leftover bytes were already
-            // delivered to useInput as keypresses — drop them.
+            // delivered to useInput as keypresses — drop them, BUT keep
+            // any tail that could be the start of a fragmented PASTE_START
+            // (e.g. chunk ends with "\x1b[20"; the "0~…" arrives next).
             // If we DID just finish a paste, leftover bytes are typed
             // chars from the same chunk that Ink will fire synchronously
             // after us. The post-loop block below captures and inserts
             // them; the nextTick `isPasting` gate suppresses the dupes.
-            if (!madeProgress) pasteBuffer = "";
+            if (!madeProgress) {
+              const keep = longestPasteStartPrefix(pasteBuffer);
+              pasteBuffer = keep > 0 ? pasteBuffer.slice(-keep) : "";
+            }
             break;
           }
           // Pre-paste prefix bytes were keypress events from the same
@@ -152,8 +169,14 @@ export default function Composer({ onSubmit, disabled, clearSignal, phase, onEof
       // those via the isPasting nextTick gate, so inject them here.
       // Strip ANSI/control to avoid leaking terminal codes.
       if (!isPasting.current && pasteBuffer && !pasteBuffer.includes(PASTE_START)) {
-        combined += pasteBuffer.replace(STRIP_TERM_CTRL, "");
-        pasteBuffer = "";
+        // Same fragmented-PASTE_START guard as above: any tail that
+        // could be the start of a future paste stays in pasteBuffer
+        // for the next chunk; everything else flushes into combined
+        // after sanitization.
+        const keep = longestPasteStartPrefix(pasteBuffer);
+        const flush = keep > 0 ? pasteBuffer.slice(0, -keep) : pasteBuffer;
+        combined += flush.replace(STRIP_TERM_CTRL, "");
+        pasteBuffer = keep > 0 ? pasteBuffer.slice(-keep) : "";
       }
 
       if (madeProgress) {

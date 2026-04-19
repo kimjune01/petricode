@@ -664,3 +664,72 @@ describe("Composer paste sanitizer drops C1 controls", () => {
     expect("a\x1b[31mb".replace(STRIP_TERM_CTRL, "")).toBe("ab");
   });
 });
+
+// ── Round 38 #2: gitignore handles escaped brackets without crash ─
+// `\[abc\]` used to fool the char-class extractor: its body regex
+// consumed `\]` as an escape, so the restored placeholder produced
+// an unterminated `[abc\]` regex and `new RegExp` threw. Mask
+// `\[`/`\]` before the char-class step and restore them as regex
+// literal-bracket escapes after the glob pass.
+
+describe("gitignore escaped brackets are literal", () => {
+  test("`\\[abc\\]` does not crash and matches literal `[abc]`", () => {
+    expect(() => buildIgnorePredicate(["\\[abc\\]"])).not.toThrow();
+    const isIgnored = buildIgnorePredicate(["\\[abc\\]"]);
+    expect(isIgnored("[abc]")).toBe(true);
+    expect(isIgnored("abc")).toBe(false);
+  });
+});
+
+// ── Round 38 #1: gitignore negated char class doesn't cross `/` ──
+// `[!abc]` compiled to `[^abc]`, which matches `/`. That broke
+// directory-aware semantics: a pattern like `[!a-z].txt` would
+// erroneously match `dir/.txt` because the `[^a-z]` ate the `/`.
+// Append `/` to the exclusion set when negating.
+
+describe("gitignore negated character classes exclude /", () => {
+  test("`[!a-z]X.txt` doesn't match across a directory boundary", () => {
+    const isIgnored = buildIgnorePredicate(["[!a-z]X.txt"]);
+    // `1X.txt` — first char is `1` (not lowercase) → matches
+    expect(isIgnored("1X.txt")).toBe(true);
+    // `aX.txt` — first char is `a` (lowercase) → no match
+    expect(isIgnored("aX.txt")).toBe(false);
+    // The character class must not consume `/`. `dir/X.txt` should
+    // not match because we'd need [!a-z] to land on `/`.
+    expect(isIgnored("dir/X.txt")).toBe(false);
+  });
+});
+
+// ── Round 38 #3: Composer retains fragmented PASTE_START ─────────
+// If `\x1b[200~` straddled a chunk boundary (e.g. chunk 1 ends
+// with `\x1b[20`, chunk 2 starts with `0~payload...`), the first
+// chunk's pasteBuffer was cleared as "leftover keystrokes", and
+// the next chunk's `0~payload...` was processed as raw input —
+// leaking `0~` and the paste contents into the prompt. Now we
+// retain any tail that's a prefix of PASTE_START.
+
+describe("Composer fragmented-PASTE_START retention helper", () => {
+  // Helper isn't exported; replicate the logic inline.
+  const PASTE_START = "\x1b[200~";
+  const longestPasteStartPrefix = (s: string): number => {
+    const max = Math.min(s.length, PASTE_START.length - 1);
+    for (let k = max; k >= 1; k--) {
+      if (PASTE_START.startsWith(s.slice(-k))) return k;
+    }
+    return 0;
+  };
+
+  test("recognizes a partial PASTE_START at the buffer tail", () => {
+    expect(longestPasteStartPrefix("hello\x1b[20")).toBe(4); // "\x1b[20"
+    expect(longestPasteStartPrefix("\x1b[2")).toBe(3);
+    expect(longestPasteStartPrefix("\x1b")).toBe(1);
+  });
+
+  test("returns 0 when no PASTE_START prefix is present", () => {
+    expect(longestPasteStartPrefix("hello world")).toBe(0);
+    expect(longestPasteStartPrefix("")).toBe(0);
+    // Full PASTE_START shouldn't be retained — it's not a *prefix*,
+    // it's the whole sequence and should be processed normally.
+    expect(longestPasteStartPrefix(PASTE_START)).toBe(0);
+  });
+});

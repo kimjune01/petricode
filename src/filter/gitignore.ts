@@ -220,8 +220,24 @@ function patternToRegex(pattern: string): RegExp {
   // Leading `!` becomes regex `^` for negation, mirroring the gitignore
   // semantics (`[!abc]` = "any char except a, b, or c").
   const charClasses: string[] = [];
+  // Mask escaped brackets first so they don't fool the char-class
+  // extractor below — `\[abc\]` should be treated as a literal-`[abc]`
+  // string match, not as a malformed character class. Without this,
+  // the body regex's `\\.` rule consumes `\]` as one body char and the
+  // restored placeholder produces an unterminated `[abc\]` regex,
+  // crashing new RegExp().
+  const ESC_LBRACK = "⟨ESCLBRACK⟩";
+  const ESC_RBRACK = "⟨ESCRBRACK⟩";
+  regex = regex
+    .replace(/\\\[/g, ESC_LBRACK)
+    .replace(/\\\]/g, ESC_RBRACK);
   regex = regex.replace(/\[((?:\\.|[^\]/])+)\]/g, (_m, body: string) => {
-    const cleaned = body.startsWith("!") ? `^${body.slice(1)}` : body;
+    // Negation: gitignore `!` → regex `^`. Append `/` to the exclusion
+    // set so `[!a-z]` doesn't match a directory separator (gitignore
+    // wildcards must never cross `/`). Positive classes can't match
+    // `/` unless the user explicitly listed it, so they don't need
+    // the appendage.
+    const cleaned = body.startsWith("!") ? `^${body.slice(1)}/` : body;
     charClasses.push(`[${cleaned}]`);
     return `⟨CC${charClasses.length - 1}⟩`;
   });
@@ -266,6 +282,13 @@ function patternToRegex(pattern: string): RegExp {
   charClasses.forEach((cc, i) => {
     regex = regex.replaceAll(`⟨CC${i}⟩`, cc);
   });
+
+  // Restore escaped brackets as regex literals — `\[` matches the
+  // literal `[` character, `\]` matches `]`. The user wrote `\[abc\]`
+  // intending it to match the literal text `[abc]`.
+  regex = regex
+    .replaceAll(ESC_LBRACK, "\\[")
+    .replaceAll(ESC_RBRACK, "\\]");
 
   if (anchored) {
     return new RegExp(`^${regex}(/|$)`);
