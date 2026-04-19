@@ -1333,6 +1333,82 @@ describe("isDangerousShell catches interleaved-flag rm forms", () => {
 // requiring at least one intermediate slash and silently dropping
 // direct children like `src/foo.ts`.
 
+// ── Round 44 #1: file_write error message has single prefix ─────
+// Inner throw used to embed `file_write:` and the outer catch wrapped
+// it again, surfacing `file_write: file_write: not a regular file: …`.
+// Drop the inner prefix so the outer catch supplies it once.
+
+describe("WriteFileTool error messages aren't double-prefixed", () => {
+  test("writing to a directory surfaces a single `file_write:` prefix", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "writefile-prefix-"));
+    try {
+      // The directory itself is a non-regular file from file_write's POV.
+      // Pre-fix: `file_write: file_write: not a regular file: …`.
+      // Post-fix: `file_write: not a regular file: …` (single prefix).
+      await expect(
+        WriteFileTool.execute({ path: dir, content: "x" }, { cwd: dir }),
+      ).rejects.toThrow(/^file_write: not a regular file:/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ── Round 44 #2: file_read refuses binary files via NUL sniff ────
+// Without this, the model could `file_read` a small PNG / sqlite db /
+// compiled binary and the raw bytes decoded as UTF-8 dumped a kilobyte
+// of replacement chars and garbage into context. Mirror fileRefs.ts:
+// sniff the first 4096 bytes for NUL and refuse with a clear error.
+
+describe("ReadFileTool refuses binary files", () => {
+  test("a file with NUL bytes throws a binary-detected error", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "readfile-binary-"));
+    try {
+      const path = join(dir, "blob.bin");
+      // Synthesize a tiny binary file: a few text bytes plus a NUL.
+      await writeFile(path, Buffer.from([0x68, 0x69, 0x00, 0x21]));
+      await expect(
+        ReadFileTool.execute({ path }, { cwd: dir }),
+      ).rejects.toThrow(/binary file \(NUL bytes detected\)/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a plain UTF-8 file still reads back verbatim", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "readfile-text-"));
+    try {
+      const path = join(dir, "hello.txt");
+      await writeFile(path, "hello world\n");
+      const content = await ReadFileTool.execute({ path }, { cwd: dir });
+      expect(content).toBe("hello world\n");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ── Round 44 #3: shell truncation clears the timeout timer ──────
+// Race: collect() set truncated=true and SIGTERM'd the child but left
+// the timeout timer armed. If the child ignored SIGTERM (shell scripts
+// trapping it), the timer fired, SIGKILL'd, and rejected the promise
+// with a generic timeout error — discarding the megabyte we already
+// kept. Fix clears the timer the moment truncation fires.
+
+describe("ShellTool returns truncated output even when the child ignores SIGTERM", () => {
+  test("`yes` flooded over the cap resolves (truncated), not rejects (timeout)", async () => {
+    // `yes` produces unbounded output and ignores most signals briefly
+    // while flushing buffers; this is the canonical truncation path.
+    // The promise must RESOLVE with the truncated body, not REJECT.
+    const result = await ShellTool.execute(
+      { command: "yes 'x'", timeout: 5000 },
+      {},
+    );
+    expect(result).toContain("[output truncated");
+    expect(result).toContain("x");
+  });
+});
+
 // ── Round 43 #1: rewriteRmToMv bails on brace expansion ─────────
 // `rm -rf {foo,bar}` previously slipped past the bailout regex and
 // produced `mv '{foo,bar}' …`. Single quotes suppress brace expansion,

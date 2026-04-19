@@ -29,7 +29,11 @@ export const WriteFileTool: Tool = {
       try {
         const existing = await stat(resolved);
         if (!existing.isFile()) {
-          throw new Error(`file_write: not a regular file: ${path}`);
+          // Inner throw is unprefixed: the outer catch below adds the
+          // single `file_write:` prefix. Without this we used to surface
+          // `file_write: file_write: not a regular file: …` because the
+          // outer catch wrapped the already-prefixed inner message.
+          throw new Error(`not a regular file: ${path}`);
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);

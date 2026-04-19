@@ -60,6 +60,15 @@ export const ShellTool: Tool = {
         outputBytes += Buffer.byteLength(chunk, "utf8");
         if (outputBytes > MAX_OUTPUT_BYTES) {
           truncated = true;
+          // Clear the timer the moment truncation fires. If the child
+          // ignores SIGTERM (common for shell scripts that trap it),
+          // the still-armed timer would race in, SIGKILL the process,
+          // and reject the promise with a timeout error — discarding
+          // the megabyte of output we already collected. Cleared timer
+          // means the only way out is the close handler, which will
+          // resolve with the truncated body once the eventual SIGKILL
+          // (or graceful exit) lands.
+          clearTimeout(timer);
           proc.kill("SIGTERM");
           return;
         }

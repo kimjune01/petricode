@@ -167,6 +167,13 @@ export const GrepTool: Tool = {
             outputBytes += keptBytes;
           }
           truncated = true;
+          // Clear the timeout the moment truncation fires. If the
+          // grep process ignores SIGTERM, the still-armed timer
+          // would race in, SIGKILL, and reject the promise with a
+          // timeout error — discarding the partial output we just
+          // kept. Cleared timer means the close handler resolves
+          // with truncated content as expected.
+          clearTimeout(timer);
           proc.kill("SIGTERM");
           return false;
         }

@@ -35,20 +35,28 @@ export const ReadFileTool: Tool = {
       if (!stats.isFile()) {
         throw new Error(`not a regular file: ${path}`);
       }
-      if (stats.size <= MAX_READ_BYTES) {
-        const fh = await open(resolved, "r");
-        try {
-          return await fh.readFile("utf-8");
-        } finally {
-          await fh.close();
-        }
-      }
+      // Mirror fileRefs.ts: always read up to MAX_READ_BYTES into a
+      // Buffer, sniff the first 4096 bytes for NUL, and refuse on
+      // binary content. Without this, the model could `file_read` a
+      // 200KB PNG / sqlite db / compiled binary and the raw bytes
+      // decoded as UTF-8 became a string of replacement chars and
+      // garbage that displaced useful context. Always allocating
+      // MAX_READ_BYTES (rather than capping by stats.size) also
+      // handles virtual files (/proc/*, /sys/*) that report size 0
+      // but yield real content.
       const fh = await open(resolved, "r");
       try {
         const buf = Buffer.alloc(MAX_READ_BYTES);
         const { bytesRead } = await fh.read(buf, 0, MAX_READ_BYTES, 0);
-        const head = buf.slice(0, bytesRead).toString("utf-8");
-        return `${head}\n[truncated — file is ${stats.size} bytes, showing first ${MAX_READ_BYTES}]`;
+        const head = buf.slice(0, Math.min(bytesRead, 4096));
+        if (head.indexOf(0) !== -1) {
+          throw new Error(`binary file (NUL bytes detected): ${path}`);
+        }
+        const body = buf.slice(0, bytesRead).toString("utf-8");
+        // Whether the file actually exceeded the cap depends on what
+        // we read, not stats.size (which lies for virtual files).
+        if (bytesRead < MAX_READ_BYTES) return body;
+        return `${body}\n[truncated — file is ${stats.size || "≥"+MAX_READ_BYTES} bytes, showing first ${MAX_READ_BYTES}]`;
       } finally {
         await fh.close();
       }
