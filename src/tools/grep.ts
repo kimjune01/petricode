@@ -177,6 +177,11 @@ export const GrepTool: Tool = {
           // timeout. Schedule a short grace SIGKILL so we always
           // make forward progress; close fires with the truncated
           // body either way.
+          // Defensive: clear any prior grace timer before reassigning
+          // so we don't leak a no-op SIGKILL on a dead pid (could
+          // happen if the abort path armed one then truncation re-
+          // armed). Both paths converge on killing the child.
+          if (killGraceTimer) clearTimeout(killGraceTimer);
           killGraceTimer = setTimeout(() => proc.kill("SIGKILL"), 2_000);
           return false;
         }
@@ -224,6 +229,9 @@ export const GrepTool: Tool = {
         // otherwise outlive the abort, leaking processes that hold file
         // locks across sessions. close handler will cleanup once proc
         // exits (from SIGTERM or the grace SIGKILL below).
+        // Clear any prior grace timer (e.g. from truncation) before
+        // reassigning so we don't leak a no-op SIGKILL on a dead pid.
+        if (killGraceTimer) clearTimeout(killGraceTimer);
         killGraceTimer = setTimeout(() => proc.kill("SIGKILL"), 2_000);
         signal?.removeEventListener("abort", onAbort);
         reject(new DOMException("Aborted", "AbortError"));

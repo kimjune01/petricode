@@ -1664,6 +1664,75 @@ describe("matchAutoTriggers ignores non-path tokens", () => {
   });
 });
 
+// ── Round 50 #1: shell.ts truncation does partial fill ──────────
+// Pre-fix shell.ts dropped the entire chunk that crossed the cap;
+// grep.ts already filled to the byte-safe boundary. This test
+// confirms shell now retains output up to the cap.
+
+describe("shell truncation partial-fill", () => {
+  test("shell output near 1MB cap preserves bytes up to the boundary", async () => {
+    // Generate ~1.05MB output and confirm the returned body is
+    // close to MAX_OUTPUT_BYTES (1_048_576), not significantly less.
+    const result = await ShellTool.execute(
+      { command: "yes a | head -c 1100000" },
+      { cwd: process.cwd() },
+    );
+    expect(result).toContain("[output truncated");
+    // Count payload bytes (excluding the truncation marker line).
+    const marker = "\n[output truncated";
+    const idx = result.indexOf(marker);
+    const payload = idx >= 0 ? result.slice(0, idx) : result;
+    // Pre-fix: one chunk worth (up to ~64KB) lost. Post-fix: within
+    // a small margin of the 1MB cap.
+    const payloadBytes = Buffer.byteLength(payload, "utf8");
+    expect(payloadBytes).toBeGreaterThan(1_040_000);
+    expect(payloadBytes).toBeLessThanOrEqual(1_048_576);
+  }, 15_000);
+});
+
+// ── Round 50 #2: double killGraceTimer assignment clears prior ───
+// Defensive guard — verify the literal `if (killGraceTimer) clearTimeout`
+// pattern exists in both shell.ts and grep.ts so a future refactor
+// doesn't silently drop the leak fix.
+
+describe("kill-grace timer clears prior assignment", () => {
+  test("shell.ts truncation+abort paths both clear prior timer", () => {
+    const { readFileSync } = require("fs");
+    const src = readFileSync(join(__dirname, "../src/tools/shell.ts"), "utf-8");
+    // Both call sites should be preceded by an `if (killGraceTimer) clearTimeout(killGraceTimer);`
+    const matches = src.match(/if \(killGraceTimer\) clearTimeout\(killGraceTimer\);[\s\S]{0,200}killGraceTimer = setTimeout/g);
+    expect(matches).not.toBeNull();
+    expect(matches!.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test("grep.ts truncation+abort paths both clear prior timer", () => {
+    const { readFileSync } = require("fs");
+    const src = readFileSync(join(__dirname, "../src/tools/grep.ts"), "utf-8");
+    const matches = src.match(/if \(killGraceTimer\) clearTimeout\(killGraceTimer\);[\s\S]{0,200}killGraceTimer = setTimeout/g);
+    expect(matches).not.toBeNull();
+    expect(matches!.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+// ── Round 50 #3: handleToolConfirm guards against race with Ctrl+C ─
+// Pre-fix: a coalesced ^C+y stdin chunk ran Ctrl+C handler (nulls
+// confirmResolveRef, queues "composing" setState) then ToolConfirmation's
+// y handler called handleToolConfirm which still passed the stale
+// pendingToolCall guard, emitted a spurious "Allowed:" turn, and
+// override-set phase to "running" with no pipeline. Now early-returns
+// when confirmResolveRef is null.
+
+describe("handleToolConfirm race guard", () => {
+  test("guard text is in source", () => {
+    const { readFileSync } = require("fs");
+    const src = readFileSync(join(__dirname, "../src/app/App.tsx"), "utf-8");
+    // The guard line follows the existing pendingToolCall guard.
+    const block = src.match(/const handleToolConfirm[\s\S]{0,2000}?confirmResolveRef\.current\.resolve/);
+    expect(block).not.toBeNull();
+    expect(block![0]).toContain("if (!confirmResolveRef.current) return;");
+  });
+});
+
 // ── Round 49 #1: tool error path uses DENY (not ALLOW) ──────────
 // The general tool-error catch was a sibling of round 48's
 // interruptedResult fix — same hazard (headless failure summary

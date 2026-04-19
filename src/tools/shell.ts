@@ -62,8 +62,28 @@ export const ShellTool: Tool = {
         if (truncated) return;
         // Byte length: utf8 strings can be 1–4 bytes per code point and
         // we're protecting against output-size OOM, not character-count.
-        outputBytes += Buffer.byteLength(chunk, "utf8");
-        if (outputBytes > MAX_OUTPUT_BYTES) {
+        const bytes = Buffer.byteLength(chunk, "utf8");
+        if (outputBytes + bytes > MAX_OUTPUT_BYTES) {
+          // Append the largest UTF-8-safe slice that still fits under
+          // the cap instead of dropping the whole overflow chunk
+          // (~64KB). Mirrors grep.ts's append(): setEncoding('utf8')
+          // aligned chunk boundaries to codepoints, iterating
+          // `for (const ch of …)` walks chars not raw bytes, so
+          // Buffer.byteLength gives the cost per codepoint and we
+          // never split a multi-byte sequence.
+          const remaining = MAX_OUTPUT_BYTES - outputBytes;
+          let kept = "";
+          let keptBytes = 0;
+          for (const ch of chunk) {
+            const n = Buffer.byteLength(ch, "utf8");
+            if (keptBytes + n > remaining) break;
+            kept += ch;
+            keptBytes += n;
+          }
+          if (kept) {
+            output += kept;
+            outputBytes += keptBytes;
+          }
           truncated = true;
           // Stop the timeout-rejection path. The child's exit will
           // come from our SIGTERM (or the grace SIGKILL below); the
@@ -71,15 +91,18 @@ export const ShellTool: Tool = {
           clearTimeout(timer);
           proc.kill("SIGTERM");
           // SIGTERM-immune children (shell scripts that `trap '' TERM`)
-          // would otherwise hang the agent forever — the original code
-          // relied on the long-running timeout's SIGKILL to eventually
-          // force exit, but clearTimeout removed that fallback. Schedule
-          // a short grace SIGKILL ourselves so we always make forward
-          // progress; close fires with the truncated body either way.
+          // would otherwise hang the agent forever. Schedule a short
+          // grace SIGKILL ourselves so we always make forward progress;
+          // close fires with the truncated body either way.
+          // If a prior grace timer is somehow already armed (shouldn't
+          // happen on this path, but defends against future re-entry),
+          // clear it so we don't leak a no-op SIGKILL on a dead pid.
+          if (killGraceTimer) clearTimeout(killGraceTimer);
           killGraceTimer = setTimeout(() => proc.kill("SIGKILL"), 2_000);
           return;
         }
         output += chunk;
+        outputBytes += bytes;
       };
       proc.stdout.on("data", collect);
       proc.stderr.on("data", collect);
@@ -105,6 +128,12 @@ export const ShellTool: Tool = {
         // locks across sessions. The reject below settles the promise
         // immediately; the grace SIGKILL just ensures the OS-level
         // process actually dies.
+        // If truncation already armed a grace timer, clear it before
+        // overwriting — otherwise the truncation timer leaks and fires
+        // a no-op SIGKILL on a dead pid 2s later, holding a GC ref
+        // until then. Both paths converge on the same outcome (kill
+        // the child); only one timer is needed at a time.
+        if (killGraceTimer) clearTimeout(killGraceTimer);
         killGraceTimer = setTimeout(() => proc.kill("SIGKILL"), 2_000);
         // Don't run cleanup() here — it would clear killGraceTimer
         // before SIGKILL fires. close handler will cleanup once proc

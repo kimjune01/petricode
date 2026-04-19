@@ -391,11 +391,17 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
   const handleToolConfirm = useCallback((decision: ConfirmDecision) => {
     if (!state.pendingToolCall) return;
 
-    // Resolve the pipeline's ASK_USER promise
-    if (confirmResolveRef.current) {
-      confirmResolveRef.current.resolve(decision);
-      confirmResolveRef.current = null;
-    }
+    // Race guard: if Ctrl+C just fired in the same stdin chunk (terminal
+    // coalesces ^Cy / ^Cn into one read), the Ctrl+C handler already
+    // nulled confirmResolveRef and queued a "composing" setState. We
+    // can't trust state.pendingToolCall here because the setState hasn't
+    // committed yet. Without this guard, we'd emit a spurious
+    // "Allowed: <toolname>" system turn and override the "composing"
+    // setState with "running", leaving the TUI stuck on the spinner
+    // with no pipeline in flight.
+    if (!confirmResolveRef.current) return;
+    confirmResolveRef.current.resolve(decision);
+    confirmResolveRef.current = null;
 
     const name = state.pendingToolCall.name;
     const summary =
