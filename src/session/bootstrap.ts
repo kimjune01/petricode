@@ -125,19 +125,16 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<BootstrapR
   // CLI override (opts.mode) wins over disk config so `--yolo` /
   // `--permissive` work without editing petricode.config.json.
   const mode: ConfirmMode = opts.mode ?? tiersConfig.mode ?? "cautious";
-  // Permissive: ALLOW anything that's reversible — file edits, writes,
-  // reads — but keep `shell` on ASK_USER because shell side effects
-  // (network calls, package installs, `rm -rf`) can't be rolled back
-  // by `git checkout`. First-match-wins, so the shell rule must
-  // precede the wildcard ALLOW.
-  const policyRules: PolicyRule[] = mode === "yolo"
+  // Permissive: ALLOW everything by default; the per-call dangerous-shell
+  // guard (wired below via permissiveShellGuard) re-checks any shell
+  // ALLOW against the un-undoable pattern list (rm -rf, git push --force,
+  // dd, sudo, …) and bumps matches back to ASK_USER. This is what the
+  // mode actually means: yes to anything reversible, no to things that
+  // can't be rolled back.
+  const policyRules: PolicyRule[] = mode === "yolo" || mode === "permissive"
     ? [{ tool: "*", outcome: "ALLOW" }]
-    : mode === "permissive"
-      ? [
-          { tool: "shell", outcome: "ASK_USER" },
-          { tool: "*", outcome: "ALLOW" },
-        ]
-      : [];
+    : [];
+  const permissiveShellGuard = mode === "permissive";
 
   // Classifier is opt-in: bare TiersConfig defaults to no classifier so
   // existing users don't suddenly need GCP creds or eat extra latency.

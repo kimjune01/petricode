@@ -879,6 +879,61 @@ describe("@file refs defang prompt-injection close-tag", () => {
 // post-filter. The fix uses a precise check requiring a separator or
 // exact equality.
 
+// ── Permissive shell-danger predicate ───────────────────────────
+// `--permissive` mode auto-allows reversible operations but escalates
+// shell calls matching the un-undoable pattern list to ASK_USER. The
+// predicate is regex-based so the patterns are the contract: cover
+// rm -r/-rf, git push --force, git reset --hard, git clean -f,
+// git branch -D, dd, mkfs, sudo. Common safe forms must NOT match.
+
+describe("isDangerousShell predicate", () => {
+  const { isDangerousShell } = require("../src/filter/shellDanger.js") as typeof import("../src/filter/shellDanger.js");
+  test("flags rm -rf and variants", () => {
+    expect(isDangerousShell("rm -rf foo").dangerous).toBe(true);
+    expect(isDangerousShell("rm -fr foo").dangerous).toBe(true);
+    expect(isDangerousShell("rm -Rf foo").dangerous).toBe(true);
+    expect(isDangerousShell("rm --recursive --force foo").dangerous).toBe(true);
+    expect(isDangerousShell("rm -r foo").dangerous).toBe(true);
+  });
+  test("does not flag plain rm or unrelated commands", () => {
+    expect(isDangerousShell("rm foo.txt").dangerous).toBe(false);
+    expect(isDangerousShell("ls -la").dangerous).toBe(false);
+    expect(isDangerousShell("npm install").dangerous).toBe(false);
+    expect(isDangerousShell("").dangerous).toBe(false);
+    // Word boundary: `firmly` ≠ `rm`
+    expect(isDangerousShell("echo firmly").dangerous).toBe(false);
+  });
+  test("flags git push --force in all common shapes", () => {
+    expect(isDangerousShell("git push --force").dangerous).toBe(true);
+    expect(isDangerousShell("git push -f origin main").dangerous).toBe(true);
+    expect(isDangerousShell("git push --force-with-lease").dangerous).toBe(true);
+    expect(isDangerousShell("git push origin main --force").dangerous).toBe(true);
+  });
+  test("does not flag plain git push", () => {
+    expect(isDangerousShell("git push").dangerous).toBe(false);
+    expect(isDangerousShell("git push origin main").dangerous).toBe(false);
+  });
+  test("flags git reset --hard, git clean -f, git branch -D", () => {
+    expect(isDangerousShell("git reset --hard HEAD~1").dangerous).toBe(true);
+    expect(isDangerousShell("git clean -fd").dangerous).toBe(true);
+    expect(isDangerousShell("git clean -f").dangerous).toBe(true);
+    expect(isDangerousShell("git branch -D feature").dangerous).toBe(true);
+  });
+  test("does not flag git branch -d (lowercase, safe)", () => {
+    expect(isDangerousShell("git branch -d merged-branch").dangerous).toBe(false);
+  });
+  test("flags dd, mkfs, sudo", () => {
+    expect(isDangerousShell("dd if=/dev/zero of=/dev/sda").dangerous).toBe(true);
+    expect(isDangerousShell("mkfs.ext4 /dev/sda1").dangerous).toBe(true);
+    expect(isDangerousShell("sudo rm something").dangerous).toBe(true);
+  });
+  test("returns the matched reason so the prompt can show WHY", () => {
+    const v = isDangerousShell("rm -rf node_modules");
+    expect(v.dangerous).toBe(true);
+    expect(v.reason).toMatch(/rm/i);
+  });
+});
+
 describe("grep ..-prefix path-escape check is precise", () => {
   test("files named like `..env` inside the project are still gitignore-filtered", async () => {
     const dir = await mkdtemp(join(tmpdir(), "grep-dotdot-"));

@@ -8,6 +8,7 @@ import { evaluatePolicy } from "../filter/policy.js";
 import { LoopDetector } from "../filter/loopDetection.js";
 import { maskToolOutput } from "../filter/toolMasking.js";
 import { validateToolArgs } from "../filter/pathValidation.js";
+import { isDangerousShell } from "../filter/shellDanger.js";
 import type { TriageClassifier, Classification } from "../filter/triageClassifier.js";
 import type { ToolRegistry } from "../tools/registry.js";
 
@@ -31,6 +32,13 @@ export interface ToolSubpipeOptions {
   recentTurns?: Turn[];
   /** Called once per classified call so the TUI can render a banner. */
   onClassified?: ClassifiedNotice;
+  /**
+   * `--permissive` mode opts in here: any shell ALLOW gets re-checked
+   * against the dangerous-pattern predicate. Matches escalate to
+   * ASK_USER with a synthesized rationale, so the user sees WHY a
+   * specific shell call was gated even though the policy says ALLOW.
+   */
+  permissiveShellGuard?: boolean;
 }
 
 export type ToolOutcome = "ALLOW" | "DENY";
@@ -124,6 +132,7 @@ export async function runToolSubpipe(
     classifier,
     recentTurns = [],
     onClassified,
+    permissiveShellGuard = false,
   } = options;
   const results: ToolResult[] = [];
 
@@ -260,7 +269,25 @@ export async function runToolSubpipe(
     }
 
     // Policy evaluation
-    const policyOutcome = evaluatePolicy(tc.name, policyRules);
+    let policyOutcome = evaluatePolicy(tc.name, policyRules);
+    // `--permissive` means "auto-allow anything reversible", so when
+    // shell would otherwise pass through ALLOW we re-check the actual
+    // command against the dangerous-pattern list. Matches promote to
+    // ASK_USER with a reason; the reason is shown to the user (TUI) or
+    // becomes the DENY message for headless callers (no human to ask).
+    let dangerReason: string | undefined;
+    if (
+      permissiveShellGuard
+      && policyOutcome === "ALLOW"
+      && tc.name === "shell"
+    ) {
+      const cmd = (tc.args as { command?: unknown } | undefined)?.command;
+      const verdict = isDangerousShell(typeof cmd === "string" ? cmd : "");
+      if (verdict.dangerous) {
+        policyOutcome = "ASK_USER";
+        dangerReason = verdict.reason;
+      }
+    }
 
     if (policyOutcome === "DENY") {
       results.push({
@@ -268,6 +295,20 @@ export async function runToolSubpipe(
         name: tc.name,
         outcome: "DENY",
         content: `Denied by policy: ${tc.name}`,
+      });
+      continue;
+    }
+
+    // Headless permissive + dangerous shell: no human to confirm, but
+    // the user asked us to gate this. DENY with the reason rather than
+    // halting the whole run via ClassifierEscalation — the LLM sees the
+    // refusal and can pick a safer approach.
+    if (policyOutcome === "ASK_USER" && dangerReason && !onConfirm) {
+      results.push({
+        toolUseId,
+        name: tc.name,
+        outcome: "DENY",
+        content: `Denied by permissive guard: ${dangerReason}`,
       });
       continue;
     }
@@ -285,6 +326,17 @@ export async function runToolSubpipe(
         if (classification && onClassified) {
           try { onClassified(tc, classification); } catch { /* UI errors don't gate execution */ }
         }
+      }
+      // Surface the danger reason in the confirmation prompt. Synthesize
+      // a Classification so ToolConfirmation's existing rationale-render
+      // path lights up — without this the user sees a generic prompt and
+      // has to guess WHICH part of the command tripped the guard.
+      if (dangerReason && !classification) {
+        classification = {
+          verdict: "ASK_USER",
+          rationale: `Permissive guard: ${dangerReason}`,
+          latency_ms: 0,
+        };
       }
 
       // After the classifier returned, re-check abort. If the user hit

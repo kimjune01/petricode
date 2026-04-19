@@ -43,6 +43,9 @@ export interface PipelineOptions {
   /** TUI hook called once per classified call so it can render a banner. */
   onClassified?: ClassifiedNotice;
   maxToolRounds?: number;
+  /** When true, `--permissive` mode escalates dangerous shell commands
+   * (rm -rf, git push --force, …) from ALLOW back to ASK_USER. */
+  permissiveShellGuard?: boolean;
 }
 
 export class Pipeline {
@@ -59,6 +62,7 @@ export class Pipeline {
   private classifier?: TriageClassifier;
   onClassified?: ClassifiedNotice;
   private maxToolRounds: number = 10;
+  private permissiveShellGuard: boolean = false;
   private _sessionId!: string;
   private skills: Skill[] = [];
   // Serializes turn() invocations. The TUI layer can clear its abortRef
@@ -77,6 +81,7 @@ export class Pipeline {
     this.classifier = options.classifier;
     this.onClassified = options.onClassified;
     this.maxToolRounds = options.maxToolRounds ?? 10;
+    this.permissiveShellGuard = options.permissiveShellGuard ?? false;
     this._sessionId = options.sessionId ?? crypto.randomUUID();
 
     // Perceive slot
@@ -421,6 +426,7 @@ export class Pipeline {
           // not the whole transcript, and a tighter slice keeps latency steady.
           recentTurns: this.cache.read().slice(-8),
           onClassified: this.onClassified,
+          permissiveShellGuard: this.permissiveShellGuard,
           signal,
         });
       } catch (err) {
