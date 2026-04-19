@@ -334,14 +334,19 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
         return;
       }
 
+      const controller = new AbortController();
       try {
-        const controller = new AbortController();
         abortRef.current = controller;
         const resultTurn = await pipeline.turn(input, {
           signal: controller.signal,
           onText: (delta) => setStreamingText((prev) => prev + delta),
         });
-        abortRef.current = null;
+        // Identity check: a Ctrl+C-then-Enter race can null this ref
+        // and start turn 2 before turn 1's settle reaches here. If the
+        // ref now points at a different controller, leave it alone —
+        // erasing it would orphan the live turn (no Ctrl+C can reach
+        // it, double-submit guard waved through).
+        if (abortRef.current === controller) abortRef.current = null;
         // Clear streamingText in the same render pass that appends the
         // final turn — React batches both setStates within an event
         // handler, so the user never sees a duplicate of the streamed
@@ -355,7 +360,9 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
           error: null,
         }));
       } catch (err) {
-        abortRef.current = null;
+        // Same identity guard as the success path — a settled abort
+        // for turn 1 must not erase the controller for turn 2.
+        if (abortRef.current === controller) abortRef.current = null;
         setStreamingText("");
         // Abort is not surfaced as an error — but we still need to drop
         // back to "composing" or the composer stays disabled. The

@@ -2199,3 +2199,52 @@ describe("skiller filter does not silently rescue malformed paths globs", () => 
     expect(activated).toHaveLength(1);
   });
 });
+
+// ── Round 53 #1: App handleSubmit nulls abortRef by identity ─────
+// Pre-fix turn 1's late settle blindly nulled abortRef.current,
+// erasing turn 2's controller after a Ctrl+C → Enter race. The
+// running turn 2 then couldn't be Ctrl+C'd and the double-submit
+// guard (abortRef.current === null) waved through a third concurrent
+// submit.
+
+describe("App handleSubmit identity-checks abortRef before nulling", () => {
+  test("source uses identity comparison in success and catch paths", async () => {
+    const { readFileSync } = await import("fs");
+    const src = readFileSync("src/app/App.tsx", "utf-8");
+    // The Ctrl+C handler legitimately blind-nulls (it just aborted the
+    // controller it owns), so we only inspect the handleSubmit region.
+    const handleStart = src.indexOf("const handleSubmit = useCallback");
+    expect(handleStart).toBeGreaterThan(-1);
+    const handleEnd = src.indexOf("}, [", handleStart);
+    expect(handleEnd).toBeGreaterThan(handleStart);
+    const handleBody = src.slice(handleStart, handleEnd);
+    // Two occurrences expected inside handleSubmit: success and catch.
+    const matches = handleBody.match(/if \(abortRef\.current === controller\) abortRef\.current = null/g);
+    expect(matches).not.toBeNull();
+    expect(matches!.length).toBeGreaterThanOrEqual(2);
+    // And no blind nulls remain inside handleSubmit.
+    expect(handleBody).not.toMatch(/^\s*abortRef\.current = null;\s*$/m);
+  });
+});
+
+// ── Round 53 #3: ToolConfirmation argsPreview try/catch ─────────
+// JSON.stringify throws on circular refs. Provider-parsed args
+// can't cycle, but a future code path could; pre-fix the throw
+// would crash the component mid-render and freeze the TUI in
+// 'confirming' with no prompt visible.
+
+describe("ToolConfirmation argsPreview tolerates circular ToolCall args", () => {
+  test("source wraps the JSON.stringify call in try/catch", async () => {
+    const { readFileSync } = await import("fs");
+    const src = readFileSync("src/app/components/ToolConfirmation.tsx", "utf-8");
+    // The argsPreview IIFE must contain a try with JSON.stringify
+    // and a catch that returns a fallback string.
+    const idx = src.indexOf("const argsPreview");
+    expect(idx).toBeGreaterThan(-1);
+    const window = src.slice(idx, idx + 800);
+    expect(window).toContain("try {");
+    expect(window).toContain("JSON.stringify");
+    expect(window).toContain("catch");
+    expect(window).toContain("[args unavailable]");
+  });
+});

@@ -135,8 +135,18 @@ export default function ToolConfirmation({
   // stutter on large confirmations.
   const argsPreview = preview == null
     ? (() => {
-        const s = JSON.stringify(toolCall.args);
-        return s.slice(0, 120) + (s.length > 120 ? " [...]" : "");
+        // JSON.stringify throws on circular references. Provider-
+        // parsed args can't contain cycles in practice, but a future
+        // SDK extension or programmatic test helper that constructed
+        // a cyclic ToolCall would crash this component before the
+        // user could approve/deny — leaving the TUI in `confirming`
+        // with no rendered prompt.
+        try {
+          const s = JSON.stringify(toolCall.args);
+          return s.slice(0, 120) + (s.length > 120 ? " [...]" : "");
+        } catch {
+          return "[args unavailable]";
+        }
       })()
     : null;
 
