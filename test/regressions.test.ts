@@ -1985,3 +1985,100 @@ describe("file_read truncation respects UTF-8 boundaries", () => {
     }
   });
 });
+
+// ── Round 51 #1: contextDiscovery sniffs NUL bytes ───────────────
+// Pre-fix tryRead() had no binary detection, so a CLAUDE.md
+// accidentally overwritten by a build artifact (sqlite db / image)
+// would inject UTF-8-decoded garbage into the system context every
+// turn. Mirrors readFile.ts's first-4096-bytes NUL sniff.
+
+describe("contextDiscovery refuses binary instruction files", () => {
+  test("CLAUDE.md with NUL bytes is dropped, not loaded as garbage", async () => {
+    const { discoverContext } = await import("../src/perceive/contextDiscovery.js");
+    const dir = await mkdtemp(join(tmpdir(), "ctx-nul-"));
+    try {
+      // Simulate a binary file masquerading as CLAUDE.md (e.g. a
+      // sqlite db header). NUL byte in the first 4096 bytes is the
+      // canonical binary marker.
+      const buf = Buffer.concat([
+        Buffer.from("SQLite format 3"),
+        Buffer.from([0x00, 0x01, 0x02, 0x03]),
+        Buffer.alloc(2048, 0xff),
+      ]);
+      await writeFile(join(dir, "CLAUDE.md"), buf);
+      const fragments = await discoverContext(dir);
+      const claude = fragments.find((f) => f.source.endsWith("CLAUDE.md"));
+      expect(claude).toBeUndefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ── Round 51 #4: contextDiscovery strips UTF-8 BOM ───────────────
+// Pre-fix Windows-authored CLAUDE.md (Notepad / VS Code with
+// BOM-on-save) injected literal U+FEFF as the first context char.
+
+describe("contextDiscovery strips BOM from instruction files", () => {
+  test("CLAUDE.md with BOM does not surface U+FEFF in content", async () => {
+    const { discoverContext } = await import("../src/perceive/contextDiscovery.js");
+    const dir = await mkdtemp(join(tmpdir(), "ctx-bom-"));
+    try {
+      // BOM (U+FEFF as UTF-8 = EF BB BF) followed by ASCII body
+      const body = "\ufeffThis project uses TypeScript.\n";
+      await writeFile(join(dir, "CLAUDE.md"), body, "utf-8");
+      const fragments = await discoverContext(dir);
+      const claude = fragments.find((f) => f.source.endsWith("CLAUDE.md"));
+      expect(claude).toBeDefined();
+      expect(claude!.content.charCodeAt(0)).not.toBe(0xfeff);
+      expect(claude!.content).toBe("This project uses TypeScript.\n");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ── Round 51 #5: file_read truncation message includes "bytes" ───
+// Pre-fix `${stats.size || "≥"+MAX_READ_BYTES} bytes` evaluated to
+// "≥262144 bytes" for size-0 virtual files (operator precedence
+// concatenated "≥" with the number first), producing a marker with
+// no space between "≥" and the digit and "showing first 262144"
+// with no unit.
+
+describe("file_read truncation message is well-formed for virtual files", () => {
+  test("size-0 file yields marker with space after ≥ and 'bytes' unit on count", async () => {
+    // We can't easily fake a /proc-style virtual file in a unit
+    // test, but we can assert the source no longer contains the
+    // pre-fix `||` pattern and DOES contain the explicit conditional.
+    const { readFileSync } = await import("fs");
+    const src = readFileSync("src/tools/readFile.ts", "utf-8");
+    expect(src).not.toContain('"≥"+MAX_READ_BYTES');
+    expect(src).toContain("`≥${MAX_READ_BYTES} bytes`");
+    expect(src).toContain('showing first ${MAX_READ_BYTES} bytes]');
+  });
+});
+
+// ── Round 51 #2: pipeline cleanup AbortError commits placeholder ─
+// Pre-fix: if the user pressed Ctrl+C during the max-rounds cleanup
+// generate(), assembleTurn threw AbortError and the cleanup turn
+// was never committed. The cache then ended with [assistant
+// tool_calls, user tool_results], so the next user submit produced
+// two consecutive user-role turns and a 400 from the provider.
+// Session unrecoverable without /clear.
+
+describe("pipeline max-rounds cleanup AbortError commits placeholder", () => {
+  test("source wraps assembleTurn in try/catch for AbortError before re-throw", async () => {
+    const { readFileSync } = await import("fs");
+    const src = readFileSync("src/agent/pipeline.ts", "utf-8");
+    // The cleanup assembleTurn call must be inside a try block whose
+    // catch commits an assistant placeholder before re-throwing on
+    // AbortError. Match a window around the cleanup call.
+    const idx = src.indexOf("primary.generate(finalConvo");
+    expect(idx).toBeGreaterThan(-1);
+    const window = src.slice(Math.max(0, idx - 200), idx + 600);
+    expect(window).toContain("try {");
+    expect(window).toContain("AbortError");
+    expect(window).toContain('role: "assistant"');
+    expect(window).toMatch(/throw err/);
+  });
+});

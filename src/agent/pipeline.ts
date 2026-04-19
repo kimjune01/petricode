@@ -381,12 +381,27 @@ export class Pipeline {
           timestamp: Date.now(),
         };
         commitTurn(syntheticTurn);
-        // Get a final text response from the provider
-        const finalConvo: Message[] = [
-          ...systemMessages,
-          ...this.cache.read().map(t => ({ role: t.role, content: t.content })),
-        ];
-        currentTurn = await assembleTurn(primary.generate(finalConvo, { signal }), signal, onText);
+        // Get a final text response from the provider. If Ctrl+C fires
+        // during this cleanup generate(), assembleTurn throws AbortError.
+        // We MUST commit a placeholder assistant turn before re-throwing —
+        // otherwise the cache ends with [assistant tool_calls, user
+        // tool_results] and the next user submit appends a second user
+        // turn, producing a "messages must alternate" 400 from the
+        // provider on every subsequent send. Session is unrecoverable
+        // without /clear.
+        try {
+          currentTurn = await assembleTurn(primary.generate(finalConvo, { signal }), signal, onText);
+        } catch (err) {
+          if (err instanceof DOMException && err.name === "AbortError") {
+            commitTurn({
+              id: crypto.randomUUID(),
+              role: "assistant",
+              content: [{ type: "text", text: "[max tool rounds reached — interrupted]" }],
+              timestamp: Date.now(),
+            });
+          }
+          throw err;
+        }
         // Defensive: the cleanup turn was generated WITHOUT toolDefs,
         // so it shouldn't carry tool_calls — but providers occasionally
         // emit unsolicited ones. Strip them, and ensure non-empty content

@@ -77,7 +77,13 @@ export const ReadFileTool: Tool = {
           { stream: truncated },
         );
         if (!truncated) return body;
-        return `${body}\n[truncated — file is ${stats.size || "≥"+MAX_READ_BYTES} bytes, showing first ${MAX_READ_BYTES}]`;
+        // For virtual files (/proc, /sys) stats.size is 0 even though
+        // the read returned content; "≥<cap>" is the honest description.
+        // Pre-fix the interpolation used `||` with `+`, which produces
+        // "≥262144" with no space and no "bytes" unit on size-0 files.
+        const sizeDesc =
+          stats.size > 0 ? `${stats.size} bytes` : `≥${MAX_READ_BYTES} bytes`;
+        return `${body}\n[truncated — file is ${sizeDesc}, showing first ${MAX_READ_BYTES} bytes]`;
       } finally {
         await fh.close();
       }

@@ -98,13 +98,25 @@ async function tryRead(path: string): Promise<string | null> {
   try {
     const buf = Buffer.alloc(MAX_READ_BYTES);
     const { bytesRead } = await fh.read(buf, 0, MAX_READ_BYTES, 0);
+    // Mirror readFile.ts: sniff the first 4096 bytes for NUL and
+    // refuse on binary content. A CLAUDE.md or .agents/* file
+    // accidentally overwritten by a build artifact (sqlite db, png,
+    // compiled binary) would otherwise be decoded as UTF-8 garbage
+    // and silently injected into the system context every turn.
+    const head = buf.slice(0, Math.min(bytesRead, 4096));
+    if (head.indexOf(0) !== -1) return null;
     const decoded = new TextDecoder("utf-8").decode(
       buf.slice(0, bytesRead),
       { stream: bytesRead >= MAX_READ_BYTES },
     );
+    // Strip a leading UTF-8 BOM so files saved by Windows editors
+    // (Notepad, VS Code with BOM-on-save) don't inject U+FEFF as the
+    // first character of the model's system context. Mirrors the
+    // BOM strip in skiller/perceive.ts.
+    const clean = decoded.charCodeAt(0) === 0xfeff ? decoded.slice(1) : decoded;
     return bytesRead >= MAX_READ_BYTES
-      ? `${decoded}\n[truncated — context fragment exceeded ${MAX_READ_BYTES} bytes]`
-      : decoded;
+      ? `${clean}\n[truncated — context fragment exceeded ${MAX_READ_BYTES} bytes]`
+      : clean;
   } catch {
     return null;
   } finally {
