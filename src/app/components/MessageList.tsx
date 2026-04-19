@@ -54,6 +54,13 @@ const TurnView = React.memo(function TurnView({ turn }: { turn: Turn }) {
 interface MessageListProps {
   turns: Turn[];
   phase: AppPhase;
+  /**
+   * Live assistant text being streamed by the in-flight pipeline.turn,
+   * before it lands as a settled Turn. Rendered as a transient
+   * assistant block under the dynamic tail; cleared when the pipeline
+   * resolves.
+   */
+  streamingText?: string;
 }
 
 /**
@@ -68,8 +75,8 @@ interface MessageListProps {
  * phase settles back to composing, every turn is committed and the whole
  * list moves into Static.
  */
-export default function MessageList({ turns, phase }: MessageListProps) {
-  if (turns.length === 0) {
+export default function MessageList({ turns, phase, streamingText }: MessageListProps) {
+  if (turns.length === 0 && !streamingText) {
     return (
       <Box flexDirection="column">
         <Text dimColor>Type a message to get started, or /help for commands.</Text>
@@ -89,6 +96,14 @@ export default function MessageList({ turns, phase }: MessageListProps) {
       {liveTurn && (
         <Box flexDirection="column">
           <TurnView turn={liveTurn} />
+        </Box>
+      )}
+      {streamingText && (
+        <Box flexDirection="column" marginBottom={spacing.sm}>
+          <Box>
+            <Text bold color={colors.assistant}>◆ </Text>
+            <Markdown text={streamingText} />
+          </Box>
         </Box>
       )}
     </>

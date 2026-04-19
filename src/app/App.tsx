@@ -33,6 +33,11 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
   });
   const [reviewerFindings, setReviewerFindings] = useState<string[]>([]);
   const [contextSummary, setContextSummary] = useState<string | undefined>(undefined);
+  // Live text the model is currently streaming, before it lands as a full
+  // Turn. Cleared when the pipeline resolves, errors, or aborts. Lets the
+  // user see assistant text appearing character-by-character instead of all
+  // at once when pipeline.turn() resolves.
+  const [streamingText, setStreamingText] = useState("");
   // Ctrl+C during a confirmation prompt must REJECT, not resolve(false).
   // Resolving false reaches toolSubpipe as `allowed=false` and gets recorded
   // as "Denied by user" — making the LLM think the user evaluated and
@@ -291,6 +296,7 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
         timestamp: Date.now(),
       };
 
+      setStreamingText("");
       setState((prev) => ({
         ...prev,
         phase: "running" as AppPhase,
@@ -321,8 +327,16 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
       try {
         const controller = new AbortController();
         abortRef.current = controller;
-        const resultTurn = await pipeline.turn(input, { signal: controller.signal });
+        const resultTurn = await pipeline.turn(input, {
+          signal: controller.signal,
+          onText: (delta) => setStreamingText((prev) => prev + delta),
+        });
         abortRef.current = null;
+        // Clear streamingText in the same render pass that appends the
+        // final turn — React batches both setStates within an event
+        // handler, so the user never sees a duplicate of the streamed
+        // text alongside the settled turn.
+        setStreamingText("");
         setState((prev) => ({
           ...prev,
           phase: "composing" as AppPhase,
@@ -332,6 +346,7 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
         }));
       } catch (err) {
         abortRef.current = null;
+        setStreamingText("");
         // Abort is not surfaced as an error — but we still need to drop
         // back to "composing" or the composer stays disabled. The
         // user-Ctrl+C path already sets phase to "composing" before this
@@ -391,7 +406,7 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
     <Box flexDirection="column" padding={spacing.sm}>
       <Text bold>🧫 petricode</Text>
       <Box flexDirection="column" flexGrow={1} marginY={spacing.sm}>
-        <MessageList turns={state.turns} phase={state.phase} />
+        <MessageList turns={state.turns} phase={state.phase} streamingText={streamingText} />
         <ReviewerNotes findings={reviewerFindings} />
       </Box>
 

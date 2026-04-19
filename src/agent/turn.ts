@@ -38,6 +38,7 @@ function flushTool(
 export async function assembleTurn(
   stream: AsyncGenerator<StreamChunk>,
   signal?: AbortSignal,
+  onText?: (delta: string) => void,
 ): Promise<Turn> {
   const content: Content[] = [];
   const toolCalls: ToolCall[] = [];
@@ -50,6 +51,7 @@ export async function assembleTurn(
     switch (chunk.type) {
       case "content_delta":
         textBuffer += chunk.text;
+        onText?.(chunk.text);
         break;
 
       case "tool_use_start": {

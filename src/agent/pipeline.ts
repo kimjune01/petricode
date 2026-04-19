@@ -122,7 +122,10 @@ export class Pipeline {
    * 8. Transmit — persist
    * 9. Return the final assistant turn
    */
-  async turn(input: string, options?: { signal?: AbortSignal }): Promise<Turn> {
+  async turn(
+    input: string,
+    options?: { signal?: AbortSignal; onText?: (delta: string) => void },
+  ): Promise<Turn> {
     // Reject empty/whitespace input at the boundary so headless callers
     // get a clear error rather than an Anthropic 400 about empty text
     // blocks (or a polluted history on lenient providers).
@@ -159,8 +162,12 @@ export class Pipeline {
     return promise;
   }
 
-  private async _runTurn(input: string, options?: { signal?: AbortSignal }): Promise<Turn> {
+  private async _runTurn(
+    input: string,
+    options?: { signal?: AbortSignal; onText?: (delta: string) => void },
+  ): Promise<Turn> {
     const signal = options?.signal;
+    const onText = options?.onText;
     // Track all turns produced this invocation so persist covers
     // intermediate tool rounds and abort-interrupted state.
     const pendingPersist: Turn[] = [];
@@ -171,7 +178,7 @@ export class Pipeline {
     };
 
     try {
-      return await this._turn(input, signal, commitTurn);
+      return await this._turn(input, signal, commitTurn, onText);
     } finally {
       // Persist everything committed to cache — runs on normal return,
       // break, AND throw (including AbortError). Errors here must NOT
@@ -204,6 +211,7 @@ export class Pipeline {
     input: string,
     signal: AbortSignal | undefined,
     commitTurn: (t: Turn) => void,
+    onText?: (delta: string) => void,
   ): Promise<Turn> {
     // 1. Perceive
     const perceived = await this.perceiver.perceive(input);
@@ -284,7 +292,7 @@ export class Pipeline {
     // 4. Assemble response
     let assistantTurn: Turn;
     try {
-      assistantTurn = await assembleTurn(stream, signal);
+      assistantTurn = await assembleTurn(stream, signal, onText);
     } catch (err) {
       // Cache the user turn on ANY error (abort, rate limit, network)
       // so the user's prompt isn't lost from conversation history.
@@ -373,7 +381,7 @@ export class Pipeline {
           ...systemMessages,
           ...this.cache.read().map(t => ({ role: t.role, content: t.content })),
         ];
-        currentTurn = await assembleTurn(primary.generate(finalConvo, { signal }), signal);
+        currentTurn = await assembleTurn(primary.generate(finalConvo, { signal }), signal, onText);
         // Defensive: the cleanup turn was generated WITHOUT toolDefs,
         // so it shouldn't carry tool_calls — but providers occasionally
         // emit unsolicited ones. Strip them, and ensure non-empty content
@@ -476,7 +484,7 @@ export class Pipeline {
         signal,
       });
       try {
-        currentTurn = await assembleTurn(nextStream, signal);
+        currentTurn = await assembleTurn(nextStream, signal, onText);
         collectText(currentTurn);
       } catch (err) {
         // If assembleTurn was aborted mid-stream, the previous round's
