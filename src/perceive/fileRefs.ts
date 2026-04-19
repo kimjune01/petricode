@@ -65,15 +65,15 @@ export async function expandFileRefs(input: string, projectDir: string): Promise
         // U+FFFD-mangled garbage into the prompt, evicting useful
         // context. We read up to MAX_READ_BYTES once and decide based
         // on the prefix; small files are returned verbatim.
-        // Virtual files (e.g. /proc/cpuinfo, sysfs entries, FUSE mounts)
-        // report stats.size === 0 but yield real content on read. Cap
-        // by MAX_READ_BYTES rather than stats.size when size is 0 so
-        // those don't get inlined as empty strings.
-        const bufSize = stats.size > 0
-          ? Math.min(stats.size, MAX_READ_BYTES)
-          : MAX_READ_BYTES;
-        const buf = Buffer.alloc(bufSize);
-        const { bytesRead } = await fh.read(buf, 0, bufSize, 0);
+        // Always allocate MAX_READ_BYTES rather than capping by
+        // stats.size: (1) virtual files (e.g. /proc/cpuinfo, sysfs)
+        // report size 0 but yield real content; (2) capping by
+        // stats.size races a TOCTOU on actively growing files (live
+        // logs) — bytesRead would be limited to the older size, so the
+        // truncation flag below stays false and newly appended bytes
+        // are silently dropped without a `[truncated...]` marker.
+        const buf = Buffer.alloc(MAX_READ_BYTES);
+        const { bytesRead } = await fh.read(buf, 0, MAX_READ_BYTES, 0);
         const head = buf.slice(0, Math.min(bytesRead, 4096));
         if (head.indexOf(0) !== -1) continue; // binary — skip silently
         // Truncating exactly at MAX_READ_BYTES can bisect a multibyte

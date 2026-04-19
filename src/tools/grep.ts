@@ -101,8 +101,15 @@ export const GrepTool: Tool = {
           ? relative(projectRoot, filePath)
           : normalize(filePath);
         // Caller searched outside projectRoot — predicate has no
-        // basis for filtering, keep the line.
-        if (rel.startsWith("..")) return false;
+        // basis for filtering, keep the line. Use a precise escape
+        // check rather than `startsWith("..")`: bare `startsWith`
+        // false-positives on legitimate intra-project files like
+        // `..env`, `...config`, `..foo`, exempting them from the
+        // gitignore filter and flooding grep with files that should
+        // have been excluded.
+        if (rel === ".." || rel.startsWith("../") || rel.startsWith("..\\")) {
+          return false;
+        }
         // On Windows, path.normalize/relative emit `\`-separated
         // paths; the gitignore predicate splits on `/` and would
         // see the whole path as one segment, missing every

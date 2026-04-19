@@ -119,10 +119,17 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
 
   // Abort in-flight pipeline on unmount to prevent process hang. Also
   // clear the Ctrl+C double-tap timer so a pending timeout can't fire
-  // setState() against an unmounted component.
+  // setState() against an unmounted component. Reject any pending
+  // confirmation promise too — toolSubpipe awaits onConfirm without
+  // racing the abort signal, so an unmount mid-prompt would otherwise
+  // leave the pipeline thread parked on a never-resolving promise.
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
+      if (confirmResolveRef.current) {
+        confirmResolveRef.current.reject(new DOMException("Aborted", "AbortError"));
+        confirmResolveRef.current = null;
+      }
       if (ctrlCTimerRef.current) {
         clearTimeout(ctrlCTimerRef.current);
         ctrlCTimerRef.current = null;

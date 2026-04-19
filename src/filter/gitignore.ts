@@ -43,7 +43,21 @@ async function collectGitignores(
   try {
     const raw = await readFile(join(fullDir, ".gitignore"), "utf-8");
     for (const rawLine of raw.split("\n")) {
-      const line = rawLine.trim();
+      // Per gitignore spec, trailing spaces are ignored unless escaped
+      // with `\`, and leading spaces are significant. `rawLine.trim()`
+      // dropped both — mangling `foo\ ` (trailing-space file) into
+      // `foo\` and stripping leading-space filenames entirely. Strip
+      // CR for Windows checkouts, then peel only unescaped trailing
+      // whitespace one char at a time so `foo\ ` keeps its space.
+      let line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+      while (line.length > 0 && /\s/.test(line[line.length - 1]!)) {
+        // Count consecutive trailing backslashes; an even count means
+        // the trailing space is NOT escaped, an odd count means it is.
+        let bs = 0;
+        for (let i = line.length - 2; i >= 0 && line[i] === "\\"; i--) bs++;
+        if (bs % 2 === 1) break;
+        line = line.slice(0, -1);
+      }
       if (!line || line.startsWith("#")) continue;
       out.push(rewritePatternForSubdir(line, relDir));
     }

@@ -733,3 +733,76 @@ describe("Composer fragmented-PASTE_START retention helper", () => {
     expect(longestPasteStartPrefix(PASTE_START)).toBe(0);
   });
 });
+
+// ── Round 39 #1: gitignore parser preserves significant whitespace ─
+// `rawLine.trim()` dropped both leading spaces (significant per
+// gitignore spec) and the trailing space from `foo\ ` patterns
+// (escaped trailing space MUST be preserved). Both edge cases
+// matter for files with whitespace in their names.
+
+describe("gitignore parses whitespace per spec", () => {
+  test("escaped trailing space is preserved as part of the pattern", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "gitignore-ws-"));
+    try {
+      await writeFile(join(dir, ".gitignore"), "foo\\ \nbar\n");
+      const patterns = await parseGitignore(dir);
+      // First pattern keeps its escaped trailing space; second is bare `bar`.
+      expect(patterns).toContain("foo\\ ");
+      expect(patterns).toContain("bar");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("unescaped trailing whitespace is stripped, CR included", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "gitignore-ws-"));
+    try {
+      // CRLF + plain trailing spaces both go away.
+      await writeFile(join(dir, ".gitignore"), "build  \r\nlogs\r\n");
+      const patterns = await parseGitignore(dir);
+      expect(patterns).toContain("build");
+      expect(patterns).toContain("logs");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("leading whitespace is preserved", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "gitignore-ws-"));
+    try {
+      await writeFile(join(dir, ".gitignore"), " leading-space-file\n");
+      const patterns = await parseGitignore(dir);
+      expect(patterns).toContain(" leading-space-file");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ── Round 39 #4: grep filter doesn't false-match on `..`-prefixed names ─
+// `rel.startsWith("..")` matched legitimate intra-project files like
+// `..env`, `...config`, `..foo`, exempting them from the gitignore
+// post-filter. The fix uses a precise check requiring a separator or
+// exact equality.
+
+describe("grep ..-prefix path-escape check is precise", () => {
+  test("files named like `..env` inside the project are still gitignore-filtered", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "grep-dotdot-"));
+    try {
+      // Set up: `..env` is in project root, gitignored, contains a unique token.
+      await writeFile(join(dir, ".gitignore"), "..env\n");
+      await writeFile(join(dir, "..env"), "SECRET_TOKEN_XYZ=1\n");
+      // Sibling unignored file with the same token, to prove grep can find it.
+      await writeFile(join(dir, "keep.env"), "SECRET_TOKEN_XYZ=2\n");
+      const result = await GrepTool.execute(
+        { pattern: "SECRET_TOKEN_XYZ" },
+        { cwd: dir },
+      );
+      expect(result).toContain("keep.env");
+      // The bug: `..env` would always be returned even though .gitignore says skip.
+      expect(result).not.toContain("..env");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
