@@ -56,9 +56,37 @@ export const stepRight = (s: string, idx: number): number => {
   return idx + 1;
 };
 
-interface ComposerState {
+export interface ComposerState {
   input: string;
   cursor: number;
+  /** True when the user pressed Enter while the agent was busy. The input
+   *  text is preserved in-place (rendered dim) and will auto-submit when
+   *  the phase returns to "composing". Any printable keystroke un-stages
+   *  so the user can keep editing the same draft. */
+  staged: boolean;
+}
+
+/** Stage the current input. Called on Enter while the agent is busy.
+ *  Empty input is a no-op so an accidental Enter doesn't park nothing. */
+export function stageEnter(prev: ComposerState): ComposerState {
+  if (!prev.input.trim()) return prev;
+  return { ...prev, staged: true };
+}
+
+/** Insert text at the cursor and clear the staged flag. Used for any
+ *  printable keystroke or paste — the act of typing un-parks the draft. */
+export function unstageAndInsert(prev: ComposerState, text: string): ComposerState {
+  return {
+    input: prev.input.slice(0, prev.cursor) + text + prev.input.slice(prev.cursor),
+    cursor: prev.cursor + text.length,
+    staged: false,
+  };
+}
+
+/** Esc behavior with staging: if a draft is staged, wipe it; else fall
+ *  back to the existing "clear input" behavior. */
+export function escapeClear(prev: ComposerState): ComposerState {
+  return { input: "", cursor: 0, staged: false };
 }
 
 interface ComposerProps {
@@ -76,7 +104,7 @@ export default function Composer({ onSubmit, disabled, clearSignal, phase, onEof
   // Sync ref + async state eliminates stale closures during rapid keypresses.
   // All mutations go through updateState which writes both synchronously (ref)
   // and asynchronously (setState for re-render).
-  const stateRef = useRef<ComposerState>({ input: "", cursor: 0 });
+  const stateRef = useRef<ComposerState>({ input: "", cursor: 0, staged: false });
   const [renderState, setRenderState] = useState<ComposerState>(stateRef.current);
 
   const updateState = (updater: (prev: ComposerState) => ComposerState) => {
@@ -106,15 +134,27 @@ export default function Composer({ onSubmit, disabled, clearSignal, phase, onEof
   useEffect(() => {
     if (clearSignal !== undefined && clearSignal !== prevClear.current) {
       prevClear.current = clearSignal;
-      updateState(() => ({ input: "", cursor: 0 }));
+      updateState(() => ({ input: "", cursor: 0, staged: false }));
     }
   }, [clearSignal]);
+
+  // Drain a staged draft when the agent becomes free. The user pressed
+  // Enter while we were thinking; the message has been sitting dim in
+  // the composer waiting for this moment. Once submitted, clear it so
+  // the next turn starts blank.
+  useEffect(() => {
+    if (disabled) return;
+    if (!stateRef.current.staged) return;
+    const text = stateRef.current.input.trim();
+    if (text) onSubmit(text);
+    updateState(() => ({ input: "", cursor: 0, staged: false }));
+  }, [disabled, onSubmit]);
 
   // Intercept raw stdin chunks (via Ink's internal event emitter) to detect
   // bracketed paste sequences before useInput's parseKeypress mangles them.
   // Handles chunk fragmentation (paste split across multiple data events).
   useEffect(() => {
-    if (disabled || !internal_eventEmitter) return;
+    if (!internal_eventEmitter) return;
     let pasteBuffer = "";
 
     const onRawInput = (data: string) => {
@@ -184,6 +224,7 @@ export default function Composer({ onSubmit, disabled, clearSignal, phase, onEof
           updateState((prev) => ({
             input: prev.input.slice(0, prev.cursor) + combined + prev.input.slice(prev.cursor),
             cursor: prev.cursor + combined.length,
+            staged: false,
           }));
         }
         // Re-arm isPasting through the current tick so useInput drops
@@ -209,7 +250,7 @@ export default function Composer({ onSubmit, disabled, clearSignal, phase, onEof
       internal_eventEmitter.removeListener("input", onRawInput);
       isPasting.current = false;
     };
-  }, [disabled, internal_eventEmitter]);
+  }, [internal_eventEmitter]);
 
   useInput(
     (ch, key) => {
@@ -220,16 +261,23 @@ export default function Composer({ onSubmit, disabled, clearSignal, phase, onEof
         // Read from sync ref to guarantee latest state even if a character
         // was inserted in the same event-loop tick
         const trimmed = stateRef.current.input.trim();
-        if (trimmed) {
-          onSubmit(trimmed);
-          updateState(() => ({ input: "", cursor: 0 }));
+        if (!trimmed) return;
+        // Agent busy → stage the draft in place. The render path dims
+        // it and hides the cursor so the user sees "parked, will send."
+        // The drain effect submits it once `disabled` flips false.
+        if (disabled) {
+          updateState((prev) => stageEnter(prev));
+          return;
         }
+        onSubmit(trimmed);
+        updateState(() => ({ input: "", cursor: 0, staged: false }));
         return;
       }
 
-      // Escape — clear input
+      // Escape — clear input AND any staged state. With staging, this is
+      // also the "discard the parked draft" gesture.
       if (key.escape) {
-        updateState(() => ({ input: "", cursor: 0 }));
+        updateState((prev) => escapeClear(prev));
         return;
       }
 
@@ -327,14 +375,22 @@ export default function Composer({ onSubmit, disabled, clearSignal, phase, onEof
           nextCursor = prev.cursor + ch.length;
         }
 
-        return { input: nextInput, cursor: nextCursor };
+        // Any reached mutation un-stages: the user is interacting, so
+        // the parked draft should come back as live editing surface.
+        // Cursor-only moves count too — when staged the cursor is
+        // hidden, and asking to navigate means the user wants to edit.
+        return { input: nextInput, cursor: nextCursor, staged: false };
       });
     },
-    { isActive: !disabled },
+    // Always active. Pre-staging we gated input on `!disabled`, but
+    // that's exactly what made "can't type while it's thinking" a bug.
+    // Enter behavior branches on `disabled` instead — it stages
+    // rather than submitting when the agent is busy.
+    { isActive: true },
   );
 
   // ── Render ──
-  const { input, cursor } = renderState;
+  const { input, cursor, staged } = renderState;
   const lines = input.split("\n");
   const isMultiline = lines.length > 1;
 
@@ -348,12 +404,23 @@ export default function Composer({ onSubmit, disabled, clearSignal, phase, onEof
 
   return (
     <Box flexDirection="column">
+      {disabled && (
+        <Box>
+          <Text dimColor>
+            {phase === "running" ? `${spinner} thinking…` : phase === "confirming" ? "confirm tool call" : "…"}
+            {staged ? "  ↑ staged, will send when ready" : ""}
+          </Text>
+        </Box>
+      )}
       <Box>
         <Text bold color={colors.prompt}>
           {">"}{" "}
         </Text>
-        {disabled ? (
-          <Text dimColor>{phase === "running" ? `${spinner} thinking…` : phase === "confirming" ? "confirm tool call" : "…"}</Text>
+        {staged ? (
+          // Parked draft: dim, no cursor inversion. Any keystroke un-stages
+          // (handled in the reducer above), at which point we drop back to
+          // the normal cursor-bearing render below.
+          <Text dimColor>{input}</Text>
         ) : (
           <Text>
             {before}
@@ -362,7 +429,7 @@ export default function Composer({ onSubmit, disabled, clearSignal, phase, onEof
           </Text>
         )}
       </Box>
-      {!disabled && isMultiline && (
+      {!staged && isMultiline && (
         <Box>
           <Text dimColor>  (pasted {lines.length} lines — Enter to send, Esc to clear)</Text>
         </Box>

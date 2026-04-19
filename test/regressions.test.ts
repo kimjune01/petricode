@@ -12,7 +12,7 @@ import { EditTool } from "../src/tools/edit.js";
 import { ShellTool } from "../src/tools/shell.js";
 import { GrepTool } from "../src/tools/grep.js";
 import { maskToolOutput } from "../src/filter/toolMasking.js";
-import { stepLeft, stepRight } from "../src/app/components/Composer.js";
+import { stepLeft, stepRight, stageEnter, unstageAndInsert, escapeClear } from "../src/app/components/Composer.js";
 import type { Turn } from "../src/core/types.js";
 
 // ── Round 20 #3: gitignore globstar `?` corruption ───────────────
@@ -776,6 +776,55 @@ describe("gitignore parses whitespace per spec", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+// ── Composer staging: type-while-thinking ────────────────────────
+// "I can't type while it's thinking" UX bug. Composer now stays
+// interactive across all phases: Enter while busy parks the draft
+// in-place (rendered dim), any keystroke unstages, drain on phase
+// → composing. Single-slot outbox, not a queue.
+
+describe("Composer staging state machine", () => {
+  test("stageEnter parks a non-empty draft", () => {
+    const next = stageEnter({ input: "hello", cursor: 5, staged: false });
+    expect(next).toEqual({ input: "hello", cursor: 5, staged: true });
+  });
+
+  test("stageEnter is a no-op on empty/whitespace draft", () => {
+    expect(stageEnter({ input: "", cursor: 0, staged: false }))
+      .toEqual({ input: "", cursor: 0, staged: false });
+    expect(stageEnter({ input: "   ", cursor: 3, staged: false }))
+      .toEqual({ input: "   ", cursor: 3, staged: false });
+  });
+
+  test("unstageAndInsert appends to staged text and clears the flag", () => {
+    // Staged draft "hey" with cursor at end; user types 'x' → "heyx"
+    const next = unstageAndInsert({ input: "hey", cursor: 3, staged: true }, "x");
+    expect(next).toEqual({ input: "heyx", cursor: 4, staged: false });
+  });
+
+  test("unstageAndInsert respects cursor mid-string", () => {
+    // Cursor between 'he' and 'y' (cursor=2); insert 'X' → "heXy"
+    const next = unstageAndInsert({ input: "hey", cursor: 2, staged: true }, "X");
+    expect(next).toEqual({ input: "heXy", cursor: 3, staged: false });
+  });
+
+  test("escapeClear discards both the draft and the staged flag", () => {
+    expect(escapeClear({ input: "hey", cursor: 3, staged: true }))
+      .toEqual({ input: "", cursor: 0, staged: false });
+    expect(escapeClear({ input: "hey", cursor: 3, staged: false }))
+      .toEqual({ input: "", cursor: 0, staged: false });
+  });
+
+  test("re-stage after unstage+edit captures the modified draft", () => {
+    // Full cycle: park "hey", type "x" → "heyx" live, park again → "heyx" staged.
+    let s = stageEnter({ input: "hey", cursor: 3, staged: false });
+    expect(s.staged).toBe(true);
+    s = unstageAndInsert(s, "x");
+    expect(s).toEqual({ input: "heyx", cursor: 4, staged: false });
+    s = stageEnter(s);
+    expect(s).toEqual({ input: "heyx", cursor: 4, staged: true });
   });
 });
 
