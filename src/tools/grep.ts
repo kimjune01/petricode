@@ -150,9 +150,15 @@ export const GrepTool: Tool = {
           .split("\n")
           .filter((line) => {
             if (!line) return false;
-            const colon = line.indexOf(":");
-            if (colon <= 0) return true;
-            const filePath = line.slice(0, colon);
+            // grep -n emits `path:lineno:text`. Naive indexOf(":") would
+            // truncate paths that legitimately contain a colon (rare on
+            // POSIX, common on Windows-shared mounts and `My:File.tsx`
+            // style names) and pass the wrong path to isIgnored. Anchor
+            // on the FIRST `:digit+:` boundary, which is unambiguous —
+            // the lineno field is always digits.
+            const sep = line.match(/^(.+?):\d+:/);
+            if (!sep) return true;
+            const filePath = sep[1]!;
             // grep -r emits paths relative to its cwd, prefixed `./` when
             // the search arg was `.`. normalize() collapses that prefix
             // (and any `foo/./bar`) so the predicate sees `src/foo.ts`,

@@ -453,3 +453,49 @@ describe("Composer cursor stepping over surrogate pairs", () => {
     expect(stepLeft("\uDC00", 1)).toBe(0);
   });
 });
+
+// ── Round 35 #3: @file ref accepts wrapping punctuation ──────────
+// The lookbehind tightened in round 32 (`(?<=^|\s)`) rejected mentions
+// like `(@src/foo.ts)` or `"@src/foo.ts"`. The relaxed `(?<!\w)`
+// lookbehind keeps `email@domain.com` out while letting punctuation
+// pass; a wider trailing-strip set sheds the matching closer.
+
+describe("@file refs allow wrapping punctuation", () => {
+  test("(@path) — parentheses are stripped and file is inlined", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "petricode-fileref-paren-"));
+    try {
+      const path = join(dir, "note.md");
+      await writeFile(path, "hello");
+      const out = await expandFileRefs(`see (@${path}) for context`, dir);
+      expect(out).toContain('<file path="');
+      expect(out).toContain("hello");
+      expect(out).toContain(") for context");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("\"@path\" — quotes are stripped", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "petricode-fileref-quote-"));
+    try {
+      const path = join(dir, "note.md");
+      await writeFile(path, "hi");
+      const out = await expandFileRefs(`see "@${path}" thanks`, dir);
+      expect(out).toContain('<file path="');
+      expect(out).toContain("hi");
+      expect(out).toContain('" thanks');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("email-style @ (preceded by word char) is still rejected", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "petricode-fileref-email-"));
+    try {
+      const out = await expandFileRefs(`mail user@example.com please`, dir);
+      expect(out).toBe(`mail user@example.com please`);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});

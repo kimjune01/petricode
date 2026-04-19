@@ -106,9 +106,13 @@ export default function Composer({ onSubmit, disabled, clearSignal, phase, onEof
         if (!isPasting.current) {
           const startIdx = pasteBuffer.indexOf(PASTE_START);
           if (startIdx === -1) {
-            // No paste in flight, no start in buffer — leftover bytes
-            // are post-paste keypresses already delivered by useInput.
-            pasteBuffer = "";
+            // If no paste happened this tick, leftover bytes were already
+            // delivered to useInput as keypresses — drop them.
+            // If we DID just finish a paste, leftover bytes are typed
+            // chars from the same chunk that Ink will fire synchronously
+            // after us. The post-loop block below captures and inserts
+            // them; the nextTick `isPasting` gate suppresses the dupes.
+            if (!madeProgress) pasteBuffer = "";
             break;
           }
           // Pre-paste prefix bytes were keypress events from the same

@@ -2,10 +2,11 @@ import { open, stat } from "fs/promises";
 import { isAbsolute, resolve } from "path";
 import { validateFilePath } from "../filter/pathValidation.js";
 
-// Lookbehind keeps the preceding whitespace out of the match so we don't
-// have to re-emit it during replacement. `email@domain.com` no longer
-// triggers a spurious file lookup of `domain.com`.
-const FILE_REF_PATTERN = /(?<=^|\s)@([^\s]+)/g;
+// Negative-lookbehind for word chars rejects `email@domain.com` while
+// still allowing `(@foo)`, `"@foo"`, `[@foo]` — common when users
+// quote a path. Word boundary (\w) catches A-Z a-z 0-9 _, which is the
+// "username" half of an email; punctuation/whitespace passes through.
+const FILE_REF_PATTERN = /(?<!\w)@([^\s]+)/g;
 // Mirrors ReadFileTool's MAX_READ_BYTES so an `@huge.log` mention can't
 // dump unbounded bytes into the prompt — the per-tool cap meant nothing
 // when fileRefs.ts inlined files via raw readFile().
@@ -28,7 +29,12 @@ export async function expandFileRefs(input: string, projectDir: string): Promise
     const fullMatch = match[0]!;
     if (replacements.has(fullMatch)) continue;
     const rawPath = match[1]!;
-    const trailingMatch = rawPath.match(/[.,;:!?]+$/);
+    // Trailing closers — `)`, `]`, `}`, `"`, `'`, `>` — handle the
+    // wrapping case `(@src/foo.ts)` where the relaxed lookbehind lets
+    // the `(` pass but the `)` lands at the end of the match. Without
+    // stripping it we'd look up `src/foo.ts)` and silently leave the
+    // mention as-is. Sentence-end punctuation kept from the original.
+    const trailingMatch = rawPath.match(/[.,;:!?)\]}>"'`]+$/);
     const trailing = trailingMatch ? trailingMatch[0] : "";
     const filePath = trailing ? rawPath.slice(0, -trailing.length) : rawPath;
     if (validateFilePath(filePath, projectDir)) continue;
