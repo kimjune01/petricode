@@ -63,6 +63,14 @@ export const GrepTool: Tool = {
         // grep blocks indefinitely on a named pipe inside the search tree.
         "-D",
         "skip",
+        // --null replaces the colon between path and lineno with a NUL
+        // byte. Lets the post-filter parser unambiguously split path from
+        // lineno even when the path itself contains `:\d+:` sequences (a
+        // file named `src/foo:12:bar.ts` previously got truncated to
+        // `src/foo` and bypassed the gitignore check). Long form is
+        // portable across BSD grep (macOS) and GNU grep (Linux); BSD's
+        // `-Z` is the decompress flag, not --null.
+        "--null",
         "--exclude-dir=.git",
         "--exclude-dir=node_modules",
         "--exclude=.env*",
@@ -94,9 +102,13 @@ export const GrepTool: Tool = {
       // we can run isIgnored() on whole `path:lineno:text` records.
       const isLineIgnored = (line: string): boolean => {
         if (!line) return false;
-        const sep = line.match(/^(.+?):\d+:/);
-        if (!sep) return false;
-        const filePath = sep[1]!;
+        // With --null on the grep invocation, the path/lineno separator
+        // is a NUL byte (path\0lineno:content) instead of a colon. Split
+        // on NUL so a file path containing `:\d+:` doesn't truncate
+        // before the gitignore check.
+        const nul = line.indexOf("\0");
+        if (nul === -1) return false;
+        const filePath = line.slice(0, nul);
         const rel = isAbsolute(filePath)
           ? relative(projectRoot, filePath)
           : normalize(filePath);

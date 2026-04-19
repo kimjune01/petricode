@@ -1055,3 +1055,105 @@ describe("grep ..-prefix path-escape check is precise", () => {
     }
   });
 });
+
+// ── Round 40 #1: headless cautious mode must gate dangerous shell ─
+// `petricode -p "rm -rf /"` (no flags) used to fall through to execute
+// because the permissive-shell guard was wrapped in
+// `if (permissiveShellGuard && policyOutcome === "ALLOW")`. In cautious
+// mode, the policy is ASK_USER (not ALLOW) and the guard didn't fire.
+// With no `onConfirm` and no classifier, the ASK_USER branch then fell
+// through to auto-execute — making `--permissive` paradoxically SAFER
+// than the default. Fix re-runs the danger check whenever a shell call
+// could reach execution without explicit human approval.
+
+describe("headless cautious mode gates dangerous shell", () => {
+  const { runToolSubpipe } = require("../src/agent/toolSubpipe.js") as typeof import("../src/agent/toolSubpipe.js");
+  const { ToolRegistry } = require("../src/tools/registry.js") as typeof import("../src/tools/registry.js");
+
+  function mkShellTurn(command: string): Turn {
+    return {
+      id: "t1",
+      role: "assistant",
+      content: [{ type: "tool_use", id: "tu1", name: "shell", input: { command } }],
+      tool_calls: [{ id: "tu1", name: "shell", args: { command } }],
+      timestamp: Date.now(),
+    };
+  }
+
+  test("rm -rf in cautious headless DENIES with the danger reason", async () => {
+    const registry = new ToolRegistry();
+    let executed = false;
+    registry.register({
+      name: "shell",
+      description: "Run shell",
+      input_schema: { properties: { command: { type: "string" } }, required: ["command"] },
+      execute: async () => { executed = true; return "ran"; },
+    });
+    // No onConfirm (headless), no classifier, no permissiveShellGuard:
+    // this is the default `petricode -p "..."` invocation.
+    const results = await runToolSubpipe(mkShellTurn("rm -rf /tmp/foo"), { registry });
+    expect(executed).toBe(false);
+    expect(results).toHaveLength(1);
+    expect(results[0]!.outcome).toBe("DENY");
+    expect(results[0]!.content).toMatch(/permissive guard|rm/i);
+  });
+
+  test("safe shell in cautious headless still auto-executes (back-compat)", async () => {
+    const registry = new ToolRegistry();
+    registry.register({
+      name: "shell",
+      description: "Run shell",
+      input_schema: { properties: { command: { type: "string" } }, required: ["command"] },
+      execute: async () => "ok",
+    });
+    const results = await runToolSubpipe(mkShellTurn("ls -la"), { registry });
+    expect(results[0]!.outcome).toBe("ALLOW");
+    expect(results[0]!.content).toBe("ok");
+  });
+
+  test("dangerous shell with onConfirm still goes through the prompt path", async () => {
+    const registry = new ToolRegistry();
+    registry.register({
+      name: "shell",
+      description: "Run shell",
+      input_schema: { properties: { command: { type: "string" } }, required: ["command"] },
+      execute: async () => "ran",
+    });
+    // TUI cautious — onConfirm present. The prompt should fire (and the
+    // user could pick allow), so deny here just to verify the path.
+    const results = await runToolSubpipe(mkShellTurn("rm -rf /tmp/foo"), {
+      registry,
+      onConfirm: async () => "deny",
+    });
+    expect(results[0]!.outcome).toBe("DENY");
+    expect(results[0]!.content).toContain("Denied by user");
+  });
+});
+
+// ── Round 40 #4: grep --null disambiguates path from lineno ──────
+// The post-filter parsed grep output with `^(.+?):\d+:` to extract the
+// file path. Files whose names contained `:\d+:` (e.g. `src/foo:12:bar.ts`)
+// got truncated to `src/foo` and bypassed the gitignore check entirely.
+// Fix uses grep --null so the path/lineno separator is a NUL byte.
+
+describe("grep handles filenames containing :\\d+:", () => {
+  test("a gitignored file named `weird:12:file.txt` is still filtered", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "grep-colon-"));
+    try {
+      // The bug: this filename's `:12:` looks like a path:lineno separator.
+      // Old parser truncated to `weird` (which isn't in .gitignore), so
+      // the file's contents leaked into grep output.
+      await writeFile(join(dir, ".gitignore"), "weird:12:file.txt\n");
+      await writeFile(join(dir, "weird:12:file.txt"), "SECRET_TOKEN_XYZ=1\n");
+      await writeFile(join(dir, "keep.txt"), "SECRET_TOKEN_XYZ=2\n");
+      const result = await GrepTool.execute(
+        { pattern: "SECRET_TOKEN_XYZ" },
+        { cwd: dir },
+      );
+      expect(result).toContain("keep.txt");
+      expect(result).not.toContain("weird:12:file.txt");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});

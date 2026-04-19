@@ -189,8 +189,17 @@ export default function Composer({ onSubmit, disabled, clearSignal, phase, onEof
           // AFTER us, but we're about to set isPasting=true which gates
           // useInput from inserting them. Capture them here as cleaned
           // printable text so they aren't silently dropped.
+          //
+          // Mark progress on a leading-prefix capture even before we see
+          // PASTE_END: otherwise a fragmented paste (start arrives in
+          // chunk 1, end in chunk 2) discards the leading typed chars
+          // because the post-loop `if (madeProgress)` block is what
+          // commits `combined` into the input state. Ink's keypresses
+          // for the same chars are muted by isPasting → the chars are
+          // gone from BOTH paths and never reach the composer.
           if (startIdx > 0) {
             combined += pasteBuffer.substring(0, startIdx).replace(STRIP_TERM_CTRL, "");
+            madeProgress = true;
           }
           pasteBuffer = pasteBuffer.substring(startIdx + PASTE_START.length);
           isPasting.current = true;

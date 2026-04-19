@@ -302,16 +302,25 @@ export async function runToolSubpipe(
 
     // Policy evaluation
     let policyOutcome = evaluatePolicy(tc.name, policyRules);
-    // `--permissive` means "auto-allow anything reversible", so when
-    // shell would otherwise pass through ALLOW we re-check the actual
-    // command against the dangerous-pattern list. Matches promote to
-    // ASK_USER with a reason; the reason is shown to the user (TUI) or
-    // becomes the DENY message for headless callers (no human to ask).
+    // Re-check shell against the dangerous-pattern list whenever it could
+    // reach execution without explicit human approval:
+    //   1. `--permissive` ALLOWs everything by default; the guard re-gates
+    //      un-undoable commands (existing behavior).
+    //   2. Headless cautious without classifier (no `--yolo`/`--permissive`
+    //      flag and no `onConfirm`): the ASK_USER branch below would fall
+    //      through to auto-execute. Without this check, `petricode -p
+    //      "rm -rf /"` silently runs — and `--permissive` would
+    //      paradoxically be SAFER than the default. Re-check here so the
+    //      headless DENY block at line ~340 can refuse with a reason.
+    // The reason is shown to the user (TUI) or becomes the DENY message
+    // for headless callers (no human to ask).
     let dangerReason: string | undefined;
     if (
-      permissiveShellGuard
-      && policyOutcome === "ALLOW"
-      && tc.name === "shell"
+      tc.name === "shell"
+      && (
+        (permissiveShellGuard && policyOutcome === "ALLOW")
+        || (policyOutcome === "ASK_USER" && !onConfirm)
+      )
     ) {
       const cmd = (tc.args as { command?: unknown } | undefined)?.command;
       const verdict = isDangerousShell(typeof cmd === "string" ? cmd : "");
