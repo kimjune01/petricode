@@ -181,6 +181,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<BootstrapR
     onConfirm: opts.onConfirm,
     classifier,
     onClassified: opts.onClassified,
+    permissiveShellGuard,
   };
 
   const pipeline = new Pipeline();

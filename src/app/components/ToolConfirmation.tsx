@@ -17,8 +17,13 @@ const FILE_PATTERNS = /file|edit|write|create|read|patch|replace|delete|remove/i
 // CSI/OSC families plus DECRC/scroll/charset commands. Also strips C1
 // (\x80–\x9f) so an attacker can't bypass via 8-bit `\x9b2J` instead
 // of `\x1b[2J`.
+// Preserve `\t` (\x09), `\n` (\x0a), `\r` (\x0d) in the C0 strip so
+// multi-line classifier rationales (bulleted "reasons to escalate"
+// from the Flash classifier) render as multiple lines instead of one
+// illegible run. App.tsx's sanitizer keeps the same exclusions —
+// the prior dragnet here was diverging silently.
 // eslint-disable-next-line no-control-regex
-const ANSI_RE = /[\x00-\x1f\x7f-\x9f]|\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)/g;
+const ANSI_RE = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g;
 function stripAnsi(s: string): string {
   return s.replace(ANSI_RE, "");
 }

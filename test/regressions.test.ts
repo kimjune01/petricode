@@ -1333,6 +1333,50 @@ describe("isDangerousShell catches interleaved-flag rm forms", () => {
 // requiring at least one intermediate slash and silently dropping
 // direct children like `src/foo.ts`.
 
+// ── Round 45 #3 + #4: corrupted JSON row degrades, doesn't throw ─
+// A single bad row used to throw straight out of read/list/readFull
+// (uncaught), bricking session resume and `/sessions`. safeParseJson
+// now warns and returns the supplied fallback so the rest of the
+// session still loads.
+
+describe("sessionStore tolerates corrupted JSON rows", () => {
+  test("safeParseJson contract: bad input returns fallback", async () => {
+    // Exercise the helper through the Database -> SessionStore path
+    // by writing a row directly with a corrupted JSON payload, then
+    // reading it back. We use bun:sqlite directly so the test stays
+    // hermetic.
+    const { Database } = await import("bun:sqlite");
+    const { SessionStore } = await import("../src/transmit/sessionStore.js");
+    const dir = await mkdtemp(join(tmpdir(), "sessionstore-corrupt-"));
+    try {
+      const db = new Database(join(dir, "session.db"));
+      db.run(`CREATE TABLE sessions (id TEXT PRIMARY KEY, created_at INTEGER, metadata_json TEXT)`);
+      db.run(`CREATE TABLE messages (id TEXT PRIMARY KEY, session_id TEXT, role TEXT, content_json TEXT, timestamp INTEGER)`);
+      db.run(`CREATE TABLE tool_calls (message_id TEXT, tool_use_id TEXT, name TEXT, args_json TEXT, result TEXT)`);
+      db.run(`INSERT INTO sessions (id, created_at, metadata_json) VALUES ('s1', 1, '{not valid json')`);
+      db.run(`INSERT INTO messages (id, session_id, role, content_json, timestamp) VALUES ('m1', 's1', 'user', '[broken', 100)`);
+
+      const store = new SessionStore(db, dir);
+      // Pre-fix: throws SyntaxError. Post-fix: warns and returns
+      // metadata={}, turn content=[].
+      const sessions = store.list();
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0]!.metadata.created_at).toBe(1);
+
+      const events = store.read("s1");
+      expect(events).toHaveLength(1);
+      expect(events[0]!.content).toEqual([]);
+
+      const full = store.readFull("s1");
+      expect(full).not.toBeNull();
+      expect(full!.turns).toHaveLength(1);
+      expect(full!.turns[0]!.content).toEqual([]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 // ── Round 44 #1: file_write error message has single prefix ─────
 // Inner throw used to embed `file_write:` and the outer catch wrapped
 // it again, surfacing `file_write: file_write: not a regular file: …`.

@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import type { DecisionRecord } from "../core/types.js";
+import type { DecisionRecord, ContextFragment } from "../core/types.js";
 
 export class DecisionStore {
   private db: Database;
@@ -48,12 +48,27 @@ export class DecisionStore {
       outcome_ref: string;
     }[];
 
-    return rows.map((r) => ({
-      decision_type: r.decision_type,
-      subject_ref: r.subject_ref,
-      presented_context: JSON.parse(r.presented_context_json),
-      problem_frame: r.problem_frame,
-      outcome_ref: r.outcome_ref,
-    }));
+    return rows.map((r) => {
+      let presented: ContextFragment[] = [];
+      try {
+        presented = JSON.parse(r.presented_context_json) as ContextFragment[];
+      } catch (err) {
+        // Same rationale as sessionStore.safeParseJson: a single
+        // corrupted row used to throw straight out of list() and
+        // brick decision audit/review tooling. Degrade to empty
+        // context so the row still surfaces with its other fields.
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(
+          `decisionStore: skipping corrupted presented_context_json (${r.subject_ref}): ${msg}`,
+        );
+      }
+      return {
+        decision_type: r.decision_type,
+        subject_ref: r.subject_ref,
+        presented_context: presented,
+        problem_frame: r.problem_frame,
+        outcome_ref: r.outcome_ref,
+      };
+    });
   }
 }

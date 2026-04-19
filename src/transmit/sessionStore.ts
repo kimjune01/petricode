@@ -6,6 +6,24 @@ import { join } from "path";
 
 const BLOB_THRESHOLD = 64 * 1024; // 64 KB
 
+// Tolerate corrupted JSON cells. SQLite rows can come back with
+// invalid JSON if a previous run crashed mid-write or the user edited
+// the DB by hand. A single bad row used to throw straight out of
+// read/list/readFull (uncaught), permanently bricking session resume
+// and `/sessions`. Returning the supplied fallback (and warning to
+// stderr so users know why a turn looks empty) lets the rest of the
+// session load and degrades gracefully — the corrupted turn is just
+// blank instead of taking everything else down with it.
+function safeParseJson<T>(raw: string, fallback: T, ctx: string): T {
+  try {
+    return JSON.parse(raw) as T;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`sessionStore: skipping corrupted JSON (${ctx}): ${msg}`);
+    return fallback;
+  }
+}
+
 export class SessionStore {
   private db: Database;
   private blobDir: string;
@@ -124,7 +142,9 @@ export class SessionStore {
     return rows.map((row) => ({
       kind: "perceived" as const,
       source: sessionId,
-      content: this.internalizeContent(JSON.parse(row.content_json)),
+      content: this.internalizeContent(
+        safeParseJson<Content[]>(row.content_json, [], `messages.content_json sid=${sessionId}`),
+      ),
       timestamp: row.timestamp,
       role: row.role as "user" | "assistant" | "system",
     }));
@@ -150,7 +170,10 @@ export class SessionStore {
     return sessions.map((s) => ({
       id: s.id,
       turns: [],
-      metadata: { ...JSON.parse(s.metadata_json), created_at: s.created_at },
+      metadata: {
+        ...safeParseJson<Record<string, unknown>>(s.metadata_json, {}, `sessions.metadata_json sid=${s.id}`),
+        created_at: s.created_at,
+      },
     }));
   }
 
@@ -175,7 +198,11 @@ export class SessionStore {
           ? toolCallRows.map((tc) => ({
               id: tc.tool_use_id ?? crypto.randomUUID(),
               name: tc.name,
-              args: JSON.parse(tc.args_json),
+              args: safeParseJson<Record<string, unknown>>(
+                tc.args_json,
+                {},
+                `tool_calls.args_json mid=${m.id} name=${tc.name}`,
+              ),
               ...(tc.result != null
                 ? { result: this.resolveResult(tc.result) }
                 : {}),
@@ -185,7 +212,9 @@ export class SessionStore {
       return {
         id: m.id,
         role: m.role as Turn["role"],
-        content: this.internalizeContent(JSON.parse(m.content_json)),
+        content: this.internalizeContent(
+          safeParseJson<Content[]>(m.content_json, [], `messages.content_json mid=${m.id}`),
+        ),
         timestamp: m.timestamp,
         ...(toolCalls ? { tool_calls: toolCalls } : {}),
       };
@@ -194,7 +223,14 @@ export class SessionStore {
     return {
       id: sessionRow.id,
       turns,
-      metadata: { ...JSON.parse(sessionRow.metadata_json), created_at: sessionRow.created_at },
+      metadata: {
+        ...safeParseJson<Record<string, unknown>>(
+          sessionRow.metadata_json,
+          {},
+          `sessions.metadata_json sid=${sessionRow.id}`,
+        ),
+        created_at: sessionRow.created_at,
+      },
     };
   }
 }
