@@ -41,7 +41,12 @@ export const WriteFileTool: Tool = {
       }
       await mkdir(dirname(resolved), { recursive: true });
       await fsWriteFile(resolved, content, "utf-8");
-      return `Wrote ${content.length} bytes to ${path}`;
+      // String.length is UTF-16 code units, not bytes. For a file
+      // heavy with CJK/emoji/accented chars the on-disk size is up to
+      // 4× larger; reporting "Wrote 1000 bytes" when the file is
+      // actually 2400 bytes mislead the model's reasoning about
+      // whether the next file_read will hit the 256KB cap.
+      return `Wrote ${Buffer.byteLength(content, "utf8")} bytes to ${path}`;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error(`file_write: ${msg}`);

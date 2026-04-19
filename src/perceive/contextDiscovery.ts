@@ -1,9 +1,14 @@
-import { readFile, readdir, stat } from "fs/promises";
+import { open, readdir, stat } from "fs/promises";
 import { join } from "path";
 import type { ContextFragment } from "../core/types.js";
 import { isAlwaysExcluded, loadIgnorePredicate } from "../filter/gitignore.js";
 
 const INSTRUCTION_FILES = ["instructions.md", "CLAUDE.md", "AGENTS.md", "README.md"];
+// Cap reads so a stray 50MB file in `.agents/` (training corpus,
+// pasted log, etc.) can't OOM the agent or blow past the provider
+// context window on every turn — discoverContext runs per perceive,
+// so the cost compounds. Matches readFile.ts and fileRefs.ts.
+const MAX_READ_BYTES = 262_144;
 
 /**
  * Discover context fragments by walking for instruction files.
@@ -84,9 +89,25 @@ async function collectFromDir(
 }
 
 async function tryRead(path: string): Promise<string | null> {
+  let fh;
   try {
-    return await readFile(path, "utf-8");
+    fh = await open(path, "r");
   } catch {
     return null;
+  }
+  try {
+    const buf = Buffer.alloc(MAX_READ_BYTES);
+    const { bytesRead } = await fh.read(buf, 0, MAX_READ_BYTES, 0);
+    const decoded = new TextDecoder("utf-8").decode(
+      buf.slice(0, bytesRead),
+      { stream: bytesRead >= MAX_READ_BYTES },
+    );
+    return bytesRead >= MAX_READ_BYTES
+      ? `${decoded}\n[truncated — context fragment exceeded ${MAX_READ_BYTES} bytes]`
+      : decoded;
+  } catch {
+    return null;
+  } finally {
+    await fh.close();
   }
 }

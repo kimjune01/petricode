@@ -6,6 +6,12 @@ import type { Provider } from "../providers/provider.js";
 import type { Message } from "../core/types.js";
 
 const MAX_ROUNDS = 5;
+// Per-call timeout. Without this, a hung provider stream (network
+// partition, rate-limit that doesn't surface as an error, provider
+// stuck mid-stream) blocks volley indefinitely with no recourse for
+// the caller. Consolidator → volley is invoked from /consolidate so
+// the user could be staring at a frozen TUI; pick a generous bound.
+const PROVIDER_TIMEOUT_MS = 90_000;
 
 export interface ConvergedArtifact {
   content: string;
@@ -21,13 +27,31 @@ async function collectResponse(
   provider: Provider,
   prompt: Message[],
 ): Promise<string> {
-  let text = "";
-  for await (const chunk of provider.generate(prompt, { max_tokens: 4096 })) {
-    if (chunk.type === "content_delta") {
-      text += chunk.text;
+  // Race the stream against a timeout. Provider.generate ignores the
+  // signal we'd like to plumb through, so we settle for an outer
+  // Promise.race — the iterator may keep ticking after timeout, but
+  // the awaiter returns and the function above gives up on this call.
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutHandle = setTimeout(
+      () => reject(new Error(`volley: provider stalled after ${PROVIDER_TIMEOUT_MS}ms`)),
+      PROVIDER_TIMEOUT_MS,
+    );
+  });
+  const collect = (async () => {
+    let text = "";
+    for await (const chunk of provider.generate(prompt, { max_tokens: 4096 })) {
+      if (chunk.type === "content_delta") {
+        text += chunk.text;
+      }
     }
+    return text;
+  })();
+  try {
+    return await Promise.race([collect, timeout]);
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
   }
-  return text;
 }
 
 /**

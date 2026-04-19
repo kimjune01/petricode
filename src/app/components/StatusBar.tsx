@@ -44,10 +44,15 @@ function formatElapsed(ms: number): string {
   return `${Math.floor(s / 60)}m${s % 60}s`;
 }
 
-const PHASE_HINTS: Record<AppPhase, string> = {
+// "confirming" intentionally has no hint here — ToolConfirmation
+// renders its own keybind line that knows about the optional `m`
+// (move-to-trash alternative) binding. A static `y allow / n deny`
+// hint here was always wrong when an alternative was offered, and
+// the user might press `y` thinking those were the only choices.
+const PHASE_HINTS: Record<AppPhase, string | null> = {
   composing: "^C clear  ^C^C quit  ^U kill line  ^W del word",
   running: "^C interrupt",
-  confirming: "y allow  n deny",
+  confirming: null,
 };
 
 export default function StatusBar({ model, tokenCount, phase, contextSummary, mode }: StatusBarProps) {

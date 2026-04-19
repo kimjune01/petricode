@@ -112,7 +112,22 @@ function parseFrontmatter(
     const colonIdx = trimmed.indexOf(":");
     if (colonIdx === -1) continue;
     const key = trimmed.slice(0, colonIdx).trim();
-    const value = trimmed.slice(colonIdx + 1).trim();
+    let value = trimmed.slice(colonIdx + 1).trim();
+    // YAML lets values be wrapped in single or double quotes —
+    // mostly used for globs that contain `*` or strings with colons
+    // (`description: "Fix tests: a how-to"`). The simple slice above
+    // keeps the literal quote chars, which then leak into the
+    // /skills listing as `"summarize code"` and into auto-trigger
+    // path globs (matchAutoTriggers also strips quotes — duplicate
+    // workaround). Strip a matched leading+trailing quote pair here
+    // once so consumers don't each need to know the convention.
+    if (value.length >= 2) {
+      const first = value[0];
+      const last = value[value.length - 1];
+      if ((first === '"' || first === "'") && first === last) {
+        value = value.slice(1, -1);
+      }
+    }
     frontmatter[key] = value;
   }
 

@@ -1664,6 +1664,121 @@ describe("matchAutoTriggers ignores non-path tokens", () => {
   });
 });
 
+// ── Round 48 #3: interruptedResult outcome is DENY (not ALLOW) ────
+// Pre-fix interruptedResult set outcome="ALLOW", so headless's
+// partial-results filter (`r.outcome === "DENY"`) silently dropped
+// interrupted tools from the failure summary. Resulting CI exit-2
+// JSON listed them as successful.
+
+describe("interruptedResult outcome", () => {
+  test("interrupted tools are marked DENY so headless surfaces them", async () => {
+    // Indirect check: scrape the source for the literal "outcome:"
+    // assignment in interruptedResult. The function is private; this
+    // is the lightest verification that the fix doesn't regress.
+    const { readFileSync } = require("fs");
+    const src = readFileSync(
+      join(__dirname, "../src/agent/toolSubpipe.ts"),
+      "utf-8",
+    );
+    const fnMatch = src.match(/function interruptedResult[\s\S]*?\n\}/);
+    expect(fnMatch).not.toBeNull();
+    expect(fnMatch![0]).toContain('outcome: "DENY"');
+    expect(fnMatch![0]).not.toContain('outcome: "ALLOW"');
+  });
+});
+
+// ── Round 48 #5: contextDiscovery caps file size ─────────────────
+// Pre-fix tryRead() called readFile with no cap, so a 50MB file in
+// .agents/ would be slurped wholesale and re-read every turn.
+
+describe("contextDiscovery caps .agents/ files at 256KB", () => {
+  test("oversized .agents/ files get truncated with a marker", async () => {
+    const { discoverContext } = await import("../src/perceive/contextDiscovery.js");
+    const dir = await mkdtemp(join(tmpdir(), "ctxcap-"));
+    try {
+      const agentsDir = join(dir, ".agents");
+      await mkdir(agentsDir, { recursive: true });
+      // 300KB > 256KB cap
+      const big = "a".repeat(300 * 1024);
+      await writeFile(join(agentsDir, "big.md"), big, "utf-8");
+      const fragments = await discoverContext(dir);
+      const bigFrag = fragments.find((f) => f.source.endsWith("big.md"));
+      expect(bigFrag).toBeDefined();
+      expect(bigFrag!.content.length).toBeLessThan(big.length);
+      expect(bigFrag!.content).toContain("[truncated");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ── Round 48 #7: skill frontmatter strips surrounding quotes ─────
+// Pre-fix `description: "summarize code"` was stored verbatim with
+// quote chars; /skills listing showed `"summarize code"`.
+
+describe("parseFrontmatter strips matched quote pairs", () => {
+  test("quoted values lose their surrounding quotes", async () => {
+    const { discoverSkills } = await import("../src/skiller/perceive.js");
+    const dir = await mkdtemp(join(tmpdir(), "skill-quotes-"));
+    try {
+      const path = join(dir, "summary.md");
+      const body = `---
+name: summary
+description: "summarize code"
+single: 'one quote'
+trigger: manual
+---
+body
+`;
+      await writeFile(path, body, "utf-8");
+      const skills = await discoverSkills(dir);
+      expect(skills).toHaveLength(1);
+      expect(skills[0]!.frontmatter.description).toBe("summarize code");
+      expect(skills[0]!.frontmatter.single).toBe("one quote");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("mismatched quotes are left alone", async () => {
+    const { discoverSkills } = await import("../src/skiller/perceive.js");
+    const dir = await mkdtemp(join(tmpdir(), "skill-mismatch-"));
+    try {
+      const path = join(dir, "x.md");
+      const body = `---
+name: x
+weird: "mixed'
+trigger: manual
+---
+body
+`;
+      await writeFile(path, body, "utf-8");
+      const skills = await discoverSkills(dir);
+      expect(skills[0]!.frontmatter.weird).toBe(`"mixed'`);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ── Round 48 #9: file_write reports byte count, not code units ───
+
+describe("file_write reports actual UTF-8 byte count", () => {
+  test("CJK content yields byte count > char count", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "write-bytes-"));
+    try {
+      const path = join(dir, "out.txt");
+      // 100 CJK chars = 300 UTF-8 bytes (3 bytes each)
+      const content = "中".repeat(100);
+      const result = await WriteFileTool.execute({ path, content }, { cwd: dir });
+      // Pre-fix: "Wrote 100 bytes". Post-fix: "Wrote 300 bytes".
+      expect(result).toContain("Wrote 300 bytes");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 // ── Round 47 #3: file_read truncates at UTF-8 char boundary ──────
 // Pre-fix `Buffer.toString("utf-8")` on a slice that bisected a
 // multi-byte UTF-8 sequence emitted U+FFFD at the truncation cap.

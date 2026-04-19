@@ -129,6 +129,17 @@ export default function ToolConfirmation({
   const preview = toolPreview(kind, toolCall.args);
   const borderColor = kind === "shell" ? colors.error : colors.tool;
 
+  // Compute the fallback args preview ONCE per render — JSON.stringify
+  // on a 256KB file_write payload is not free, and the prior code paid
+  // it twice (once for the slice, once for the length check). Visible
+  // stutter on large confirmations.
+  const argsPreview = preview == null
+    ? (() => {
+        const s = JSON.stringify(toolCall.args);
+        return s.slice(0, 120) + (s.length > 120 ? " [...]" : "");
+      })()
+    : null;
+
   return (
     <Box flexDirection="column" borderStyle="single" borderColor={borderColor} paddingX={spacing.sm}>
       <Text bold color={borderColor}>
@@ -163,10 +174,8 @@ export default function ToolConfirmation({
       )}
 
       {/* Fallback: truncated args when no structured preview available */}
-      {preview == null && (
-        <Text dimColor> {JSON.stringify(toolCall.args).slice(0, 120)}
-          {JSON.stringify(toolCall.args).length > 120 ? " [...]" : ""}
-        </Text>
+      {argsPreview != null && (
+        <Text dimColor> {argsPreview}</Text>
       )}
 
       {classification && (

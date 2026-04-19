@@ -110,7 +110,12 @@ function interruptedResult(tc: ToolCall): ToolResult {
   return {
     toolUseId: tc.id,
     name: tc.name,
-    outcome: "ALLOW",
+    // DENY semantically: tool was not executed (Ctrl+C / abort fired
+    // before we ran it). headless.ts's partial-results summary filters
+    // by outcome === "DENY", so ALLOW would silently hide interrupted
+    // tools from the CI failure report — the user would see exit code
+    // 2 with no indication that some tools never ran.
+    outcome: "DENY",
     content: INTERRUPTED_CONTENT,
   };
 }
