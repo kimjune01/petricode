@@ -48,7 +48,11 @@ export class SkillStore {
     const lines = ["---"];
     lines.push(`name: ${skill.name}`);
     for (const [key, value] of Object.entries(skill.frontmatter)) {
-      if (key === "name") continue; // already written above
+      // `name` and `trigger` get explicit, well-formed lines outside
+      // this loop. Skip them here so we don't end up with duplicate
+      // `trigger:` keys when the skill came from discoverSkills (the
+      // perceive-side YAML parser keeps every key it sees).
+      if (key === "name" || key === "trigger") continue;
       lines.push(`${key}: ${JSON.stringify(value)}`);
     }
     lines.push(`trigger: ${skill.trigger}`);

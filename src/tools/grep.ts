@@ -167,14 +167,17 @@ export const GrepTool: Tool = {
             outputBytes += keptBytes;
           }
           truncated = true;
-          // Clear the timeout the moment truncation fires. If the
-          // grep process ignores SIGTERM, the still-armed timer
-          // would race in, SIGKILL, and reject the promise with a
-          // timeout error — discarding the partial output we just
-          // kept. Cleared timer means the close handler resolves
-          // with truncated content as expected.
+          // Stop the timeout-rejection path. The child's exit will
+          // come from our SIGTERM (or the grace SIGKILL below); the
+          // close handler resolves with the truncated body.
           clearTimeout(timer);
           proc.kill("SIGTERM");
+          // SIGTERM-immune children (e.g. a grep replacement that
+          // traps signals) would hang forever after clearing the
+          // timeout. Schedule a short grace SIGKILL so we always
+          // make forward progress; close fires with the truncated
+          // body either way.
+          killGraceTimer = setTimeout(() => proc.kill("SIGKILL"), 2_000);
           return false;
         }
         output += piece;
@@ -204,8 +207,10 @@ export const GrepTool: Tool = {
       proc.stdout.on("data", collectStdout);
       proc.stderr.on("data", collectStderr);
 
+      let killGraceTimer: ReturnType<typeof setTimeout> | undefined;
       const cleanup = () => {
         clearTimeout(timer);
+        if (killGraceTimer) clearTimeout(killGraceTimer);
         signal?.removeEventListener("abort", onAbort);
       };
       const timer = setTimeout(() => {

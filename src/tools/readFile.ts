@@ -54,8 +54,15 @@ export const ReadFileTool: Tool = {
         }
         const body = buf.slice(0, bytesRead).toString("utf-8");
         // Whether the file actually exceeded the cap depends on what
-        // we read, not stats.size (which lies for virtual files).
+        // we read; stats.size lies for virtual files (/proc, /sys
+        // report 0 but yield content) so we can't trust it as the
+        // sole signal. But when stats.size IS reliable (positive and
+        // ≤ cap), it's the only way to distinguish "exact-multiple
+        // of MAX_READ_BYTES read in full" from "first MAX_READ_BYTES
+        // of a larger file": fh.read fills the buffer to the brim in
+        // both cases, so bytesRead alone can't tell them apart.
         if (bytesRead < MAX_READ_BYTES) return body;
+        if (stats.size > 0 && stats.size <= MAX_READ_BYTES) return body;
         return `${body}\n[truncated — file is ${stats.size || "≥"+MAX_READ_BYTES} bytes, showing first ${MAX_READ_BYTES}]`;
       } finally {
         await fh.close();

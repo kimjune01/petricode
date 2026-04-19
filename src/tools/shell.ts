@@ -53,6 +53,11 @@ export const ShellTool: Tool = {
       let outputBytes = 0;
       let truncated = false;
 
+      // Set when truncation fires so the timer's SIGKILL path knows
+      // to resolve with truncated output instead of rejecting with
+      // a generic timeout error.
+      let killGraceTimer: ReturnType<typeof setTimeout> | undefined;
+
       const collect = (chunk: string) => {
         if (truncated) return;
         // Byte length: utf8 strings can be 1–4 bytes per code point and
@@ -60,16 +65,18 @@ export const ShellTool: Tool = {
         outputBytes += Buffer.byteLength(chunk, "utf8");
         if (outputBytes > MAX_OUTPUT_BYTES) {
           truncated = true;
-          // Clear the timer the moment truncation fires. If the child
-          // ignores SIGTERM (common for shell scripts that trap it),
-          // the still-armed timer would race in, SIGKILL the process,
-          // and reject the promise with a timeout error — discarding
-          // the megabyte of output we already collected. Cleared timer
-          // means the only way out is the close handler, which will
-          // resolve with the truncated body once the eventual SIGKILL
-          // (or graceful exit) lands.
+          // Stop the timeout-rejection path. The child's exit will
+          // come from our SIGTERM (or the grace SIGKILL below); the
+          // close handler resolves with the truncated body.
           clearTimeout(timer);
           proc.kill("SIGTERM");
+          // SIGTERM-immune children (shell scripts that `trap '' TERM`)
+          // would otherwise hang the agent forever — the original code
+          // relied on the long-running timeout's SIGKILL to eventually
+          // force exit, but clearTimeout removed that fallback. Schedule
+          // a short grace SIGKILL ourselves so we always make forward
+          // progress; close fires with the truncated body either way.
+          killGraceTimer = setTimeout(() => proc.kill("SIGKILL"), 2_000);
           return;
         }
         output += chunk;
@@ -81,6 +88,7 @@ export const ShellTool: Tool = {
       // Without this the abort listener leaks past timeout fires.
       const cleanup = () => {
         clearTimeout(timer);
+        if (killGraceTimer) clearTimeout(killGraceTimer);
         signal?.removeEventListener("abort", onAbort);
       };
 

@@ -1333,6 +1333,95 @@ describe("isDangerousShell catches interleaved-flag rm forms", () => {
 // requiring at least one intermediate slash and silently dropping
 // direct children like `src/foo.ts`.
 
+// ── Round 46 #2: readFile doesn't claim truncation on exact-cap files ─
+// `bytesRead === MAX_READ_BYTES` happens when (a) the file is exactly
+// 256 KB and was read in full, or (b) the file is bigger and we capped
+// at 256 KB. fh.read alone can't distinguish. stats.size disambiguates
+// when reliable (positive value ≤ cap means exactly that size, no more).
+
+describe("ReadFileTool doesn't false-truncate exact-cap-size files", () => {
+  test("a file exactly at the cap returns no [truncated] marker", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "readfile-exact-"));
+    try {
+      const path = join(dir, "exactly256k.txt");
+      // 262144 bytes of ASCII (= MAX_READ_BYTES). All printable so the
+      // NUL-byte sniff doesn't reject the content.
+      await writeFile(path, "x".repeat(262_144));
+      const content = await ReadFileTool.execute({ path }, { cwd: dir });
+      expect(content).not.toContain("[truncated");
+      expect(content.length).toBe(262_144);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a file beyond the cap still gets the [truncated] marker", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "readfile-bigger-"));
+    try {
+      const path = join(dir, "bigger.txt");
+      await writeFile(path, "x".repeat(262_145)); // one byte over
+      const content = await ReadFileTool.execute({ path }, { cwd: dir });
+      expect(content).toContain("[truncated");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ── Round 46 #3: serializeSkill skips `trigger` key in frontmatter loop ─
+// Skills loaded via discoverSkills retain `trigger` in their frontmatter
+// dict (the perceive YAML parser keeps every key it sees). Round-tripping
+// through SkillStore.write used to emit `trigger:` twice — once from the
+// loop, once from the explicit append — making the saved file malformed.
+
+describe("SkillStore.serializeSkill doesn't duplicate the `trigger` key", () => {
+  test("a skill round-trips with exactly one `trigger:` line in the YAML", async () => {
+    const { SkillStore } = await import("../src/skiller/transmit.js");
+    const dir = await mkdtemp(join(tmpdir(), "skill-trigger-"));
+    try {
+      const store = new SkillStore(dir);
+      await store.write({
+        name: "greet",
+        body: "Say hi.",
+        trigger: "slash_command",
+        // The duplicate-key bug only fires when frontmatter retains
+        // the trigger key (matching what perceive.ts produces).
+        frontmatter: { name: "greet", trigger: "slash_command", description: "Greet" },
+      });
+      const raw = await (await import("fs/promises")).readFile(join(dir, "greet.md"), "utf-8");
+      const triggerLines = raw.split("\n").filter((l) => /^trigger:/.test(l));
+      expect(triggerLines).toHaveLength(1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ── Round 46 #4: BOM-prefixed skill files load ──────────────────
+// Files saved by Windows editors with BOM-on-save start with U+FEFF.
+// The frontmatter regex anchors on `^---`, so without the BOM strip
+// the parser returned null and the skill silently disappeared from
+// the registry — no error, no warning.
+
+describe("parseFrontmatter strips a leading BOM", () => {
+  test("a skill file prefixed with U+FEFF still parses", async () => {
+    const { discoverSkills } = await import("../src/skiller/perceive.js");
+    const dir = await mkdtemp(join(tmpdir(), "skill-bom-"));
+    try {
+      const path = join(dir, "greet.md");
+      // U+FEFF + standard skill body. Pre-fix: parseFrontmatter
+      // returned null and discoverSkills dropped the file.
+      const body = "\uFEFF---\nname: greet\ntrigger: slash_command\n---\nHi.\n";
+      await writeFile(path, body);
+      const skills = await discoverSkills(dir);
+      expect(skills).toHaveLength(1);
+      expect(skills[0]!.name).toBe("greet");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 // ── Round 45 #3 + #4: corrupted JSON row degrades, doesn't throw ─
 // A single bad row used to throw straight out of read/list/readFull
 // (uncaught), bricking session resume and `/sessions`. safeParseJson

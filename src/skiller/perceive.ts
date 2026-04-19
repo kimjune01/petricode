@@ -93,7 +93,13 @@ async function readSkillFile(
 function parseFrontmatter(
   raw: string
 ): { frontmatter: Record<string, unknown>; body: string } | null {
-  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+  // Strip a leading UTF-8 BOM so skill files saved by Windows editors
+  // (Notepad, VS Code with BOM-on-save) still match the `^---` anchor.
+  // Without this, BOM-prefixed files silently dropped from the registry
+  // — discoverSkills returned fewer skills than the directory contained
+  // with no error or warning to point the user at the cause.
+  const stripped = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw;
+  const match = stripped.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
   if (!match) return null;
 
   const yamlBlock = match[1]!;
