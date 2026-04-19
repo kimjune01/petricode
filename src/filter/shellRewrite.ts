@@ -138,7 +138,24 @@ function tokenize(cmd: string): string[] | null {
     if (bare !== undefined && (bare.startsWith(`"`) || bare.startsWith(`'`))) {
       return null;
     }
-    tokens.push(m[1] ?? m[2] ?? m[3]!);
+    if (m[1] !== undefined) {
+      // Double-quoted: bash unescapes \", \\, \$, \`, and \<newline>.
+      // Other backslashes are literal. Without this step, `rm "foo \" bar"`
+      // tokenizes to `foo \" bar` and the rewriter mv's a non-existent
+      // file — leaving the dangerous original `rm` as the user's only
+      // remaining option. Conservatively unescape just the bash-special
+      // characters so a path containing `\n` (literal backslash-n) round-
+      // trips intact.
+      tokens.push(m[1].replace(/\\(["\\$`])/g, "$1"));
+    } else if (m[2] !== undefined) {
+      // Single-quoted: bash treats contents verbatim — no escapes,
+      // not even \'. The regex above won't actually match `'\''` as
+      // one quoted run anyway; the consumed-leftover check catches
+      // those. Push the raw capture.
+      tokens.push(m[2]);
+    } else {
+      tokens.push(m[3]!);
+    }
   }
   // If there's leftover non-whitespace, the regex bailed on something
   // (almost always an unterminated quote). Refuse — partial parses are

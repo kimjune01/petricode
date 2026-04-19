@@ -40,9 +40,15 @@ const PATTERNS: Pattern[] = [
   // bare --force but still rewrites remote history — collaborators with
   // local clones get clobbered, CI pipelines built on the old SHA
   // become orphaned. Gate all three.
+  //
+  // Also catches `+refspec` shorthand: `git push origin +main` or
+  // `git push origin +refs/heads/foo:refs/heads/foo`. The `+` prefix
+  // tells git to allow non-fast-forward updates — semantically identical
+  // to --force for that ref. Without this clause the LLM could route
+  // around --force and quietly clobber the remote.
   {
-    re: /\bgit\s+push\s+(?:[^;&|\n]*\s)?(?:--force(?:-with-lease)?|-f)\b/,
-    reason: "git push --force rewrites remote history (clobbers others' work)",
+    re: /\bgit\s+push\s+(?:[^;&|\n]*\s)?(?:\+\S+|--force(?:-with-lease)?|-f)\b/,
+    reason: "git push --force / +refspec rewrites remote history (clobbers others' work)",
   },
   // `git reset --hard` discards uncommitted changes — anything not
   // staged or committed is gone, no reflog rescue.

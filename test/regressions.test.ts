@@ -1130,6 +1130,138 @@ describe("headless cautious mode gates dangerous shell", () => {
   });
 });
 
+// ── Round 41 #1: git push +refspec is a force push too ─────────
+// `git push origin +main` rewrites the remote ref non-fast-forward,
+// semantically identical to --force for that ref. The original regex
+// only caught --force/-f, leaving the +refspec form as a way to
+// quietly clobber the remote in --permissive mode.
+
+describe("isDangerousShell catches +refspec force pushes", () => {
+  const { isDangerousShell } = require("../src/filter/shellDanger.js") as typeof import("../src/filter/shellDanger.js");
+  test("flags `git push origin +main`", () => {
+    expect(isDangerousShell("git push origin +main").dangerous).toBe(true);
+  });
+  test("flags `git push origin +refs/heads/foo:refs/heads/foo`", () => {
+    expect(isDangerousShell("git push origin +refs/heads/foo:refs/heads/foo").dangerous).toBe(true);
+  });
+  test("does NOT flag plain `git push origin main`", () => {
+    expect(isDangerousShell("git push origin main").dangerous).toBe(false);
+  });
+});
+
+// ── Round 41 #2: shellRewrite tokenizer unescapes quoted strings ─
+// Without unescape, `rm "foo \" bar"` tokenized to `foo \" bar` and
+// the rewrite tried to mv a file by that exact (literal-backslash)
+// name — leaving the user with no working soft-delete option for
+// files containing quote characters.
+
+describe("rewriteRmToMv unescapes quoted shell strings", () => {
+  const { rewriteRmToMv } = require("../src/filter/shellRewrite.js") as typeof import("../src/filter/shellRewrite.js");
+  const opts = { sessionId: "s1", nowIso: "2026-01-01T00:00:00.000Z" };
+
+  test('double-quoted target with escaped quote unescapes for mv', () => {
+    const r = rewriteRmToMv(`rm -rf "foo \\" bar"`, opts);
+    expect(r).not.toBeNull();
+    // Final rewrite quotes the unescaped path: `mv 'foo " bar' ...`
+    expect(r!.rewrittenCmd).toContain(`mv 'foo " bar'`);
+  });
+
+  test("escaped backslash unescapes too", () => {
+    const r = rewriteRmToMv(`rm -rf "foo\\\\bar"`, opts);
+    expect(r).not.toBeNull();
+    expect(r!.rewrittenCmd).toContain(`mv 'foo\\bar'`);
+  });
+
+  test("single-quoted contents stay verbatim (bash semantics)", () => {
+    const r = rewriteRmToMv(`rm -rf 'foo\\bar'`, opts);
+    expect(r).not.toBeNull();
+    // Inside single quotes the backslash is literal; the rewrite must
+    // preserve it exactly so the kernel sees the same path the user
+    // intended. Single-quote escaping in the OUTPUT uses the standard
+    // '\'' dance to embed a single quote — but there's none here.
+    expect(r!.rewrittenCmd).toContain(`mv 'foo\\bar'`);
+  });
+});
+
+// ── Round 41 #3: grep rejects path-shaped globs with a clear error ─
+// LLMs trained on ripgrep call grep with `glob: 'src/**/*.ts'` thinking
+// it'll filter on full paths. GNU/BSD `--include` is basename-only, so
+// the underlying grep returns zero matches and the model concludes the
+// code doesn't exist. Throwing a typed error gets corrective feedback
+// to the model on the next turn.
+
+describe("grep rejects path-shaped globs", () => {
+  test("'src/**/*.ts' throws with a hint about path vs glob", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "grep-pathglob-"));
+    try {
+      await mkdir(join(dir, "src"), { recursive: true });
+      await writeFile(join(dir, "src", "a.ts"), "function foo() {}\n");
+      await expect(
+        GrepTool.execute({ pattern: "function", glob: "src/**/*.ts" }, { cwd: dir }),
+      ).rejects.toThrow(/basenames only/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("'**/*.ts' is also rejected (the '**' is the giveaway)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "grep-pathglob-star-"));
+    try {
+      await expect(
+        GrepTool.execute({ pattern: "x", glob: "**/*.ts" }, { cwd: dir }),
+      ).rejects.toThrow(/basenames only/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("plain '*.ts' still works and finds matches", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "grep-baseglob-"));
+    try {
+      await writeFile(join(dir, "a.ts"), "FUNCTION_TOKEN\n");
+      const result = await GrepTool.execute(
+        { pattern: "FUNCTION_TOKEN", glob: "*.ts" },
+        { cwd: dir },
+      );
+      expect(result).toContain("FUNCTION_TOKEN");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ── Round 41 #4: Composer cursor walks grapheme clusters ─────────
+// Surrogate-only stepping bisects ZWJ emoji (family 👨‍👩‍👧‍👦), regional
+// flags (🇺🇸), and skin-tone variation selectors. Backspace then deletes
+// half a grapheme, leaving an invalid byte run. Use Intl.Segmenter so
+// one arrow-key press / one backspace = one user-perceived character.
+
+describe("Composer step{Left,Right} respects grapheme clusters", () => {
+  test("stepRight walks past a ZWJ family emoji as one unit", () => {
+    const family = "👨‍👩‍👧‍👦"; // multi-codepoint grapheme cluster
+    const s = `a${family}b`;
+    // Cursor at index 1 (after 'a') should jump past the whole family
+    // emoji to land just before 'b'.
+    const next = stepRight(s, 1);
+    expect(s.slice(0, next)).toBe(`a${family}`);
+    expect(s[next]).toBe("b");
+  });
+
+  test("stepLeft walks back over a regional-indicator flag as one unit", () => {
+    const flag = "🇺🇸"; // two regional-indicator codepoints, one grapheme
+    const s = `a${flag}b`;
+    // Cursor immediately after the flag should land just after 'a'.
+    const idx = s.length - 1; // before 'b'
+    const prev = stepLeft(s, idx);
+    expect(s.slice(0, prev)).toBe("a");
+  });
+
+  test("plain ASCII still moves one char at a time", () => {
+    expect(stepLeft("hello", 3)).toBe(2);
+    expect(stepRight("hello", 3)).toBe(4);
+  });
+});
+
 // ── Round 40 #4: grep --null disambiguates path from lineno ──────
 // The post-filter parsed grep output with `^(.+?):\d+:` to extract the
 // file path. Files whose names contained `:\d+:` (e.g. `src/foo:12:bar.ts`)

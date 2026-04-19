@@ -37,6 +37,21 @@ export const GrepTool: Tool = {
     const timeout = (args.timeout as number) ?? DEFAULT_TIMEOUT;
     const signal = opts?.signal;
 
+    // Reject path-shaped globs up front. `--include` is fnmatch on the
+    // basename only — `src/**/*.ts` matches nothing, returns silently
+    // (zero hits), and the model concludes the code doesn't exist.
+    // LLMs trained on ripgrep semantics pass path globs constantly;
+    // surface the misuse with a fixable error instead of lying with
+    // empty results. The caller can pass `path: "src"` for directory
+    // scoping and `glob: "*.ts"` for the basename filter.
+    if (glob && (glob.includes("/") || glob.includes("**"))) {
+      throw new Error(
+        `grep: 'glob' matches basenames only (e.g. '*.ts'), not paths. `
+          + `Got '${glob}'. For directory scoping pass 'path' instead `
+          + `(e.g. {path: 'src', glob: '*.ts'}).`,
+      );
+    }
+
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
 
     // Honor the project's .gitignore so the model isn't drowned in build-

@@ -31,17 +31,40 @@ const longestPasteStartPrefix = (s: string): number => {
 // eslint-disable-next-line no-control-regex
 const STRIP_TERM_CTRL = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g;
 
-// Cursor stepping that respects UTF-16 surrogate pairs. Astral chars (most
-// emoji, some CJK) take 2 code units; naive +1/-1 lands the cursor between
-// the high and low surrogate, which then gets sliced apart on the next edit
-// and renders as U+FFFD. Step by 2 when we see a surrogate boundary.
+// Cursor stepping at grapheme-cluster boundaries. The previous version
+// only handled UTF-16 surrogate pairs, which breaks the user-perceived
+// "one character" for ZWJ emoji (👨‍👩‍👧‍👦), regional-indicator flags
+// (🇺🇸), variation-selector skin tones, and some CJK clusters. Walking
+// by Intl.Segmenter boundaries means arrow keys and backspace move past
+// the whole grapheme; subsequent edits don't bisect the cluster into
+// invalid codepoints.
+//
+// Falls back to the surrogate-only logic when Intl.Segmenter isn't
+// available — older runtimes degrade to "splits ZWJ but keeps emoji
+// halves intact" instead of crashing.
 const isHighSurrogate = (code: number) => code >= 0xd800 && code <= 0xdbff;
 const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff;
 
+const segmenter: Intl.Segmenter | undefined =
+  typeof Intl !== "undefined" && typeof Intl.Segmenter === "function"
+    ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+    : undefined;
+
 export const stepLeft = (s: string, idx: number): number => {
   if (idx <= 0) return 0;
-  const prev = s.charCodeAt(idx - 1);
-  if (isLowSurrogate(prev) && idx >= 2 && isHighSurrogate(s.charCodeAt(idx - 2))) {
+  if (segmenter) {
+    // Walk segments and remember the last boundary < idx. Empty input
+    // and idx-at-zero are pre-handled above; the loop will always see
+    // at least one segment for non-empty s.
+    let prev = 0;
+    for (const seg of segmenter.segment(s)) {
+      if (seg.index >= idx) break;
+      prev = seg.index;
+    }
+    return prev;
+  }
+  const prevCode = s.charCodeAt(idx - 1);
+  if (isLowSurrogate(prevCode) && idx >= 2 && isHighSurrogate(s.charCodeAt(idx - 2))) {
     return idx - 2;
   }
   return idx - 1;
@@ -49,6 +72,12 @@ export const stepLeft = (s: string, idx: number): number => {
 
 export const stepRight = (s: string, idx: number): number => {
   if (idx >= s.length) return s.length;
+  if (segmenter) {
+    for (const seg of segmenter.segment(s)) {
+      if (seg.index > idx) return seg.index;
+    }
+    return s.length;
+  }
   const cur = s.charCodeAt(idx);
   if (isHighSurrogate(cur) && idx + 1 < s.length && isLowSurrogate(s.charCodeAt(idx + 1))) {
     return idx + 2;
