@@ -155,12 +155,19 @@ export default function Composer({ onSubmit, disabled, clearSignal, phase, onEof
           }));
         }
         // Re-arm isPasting through the current tick so useInput drops
-        // the duplicate keypress events Ink's parseKeypress is about to
-        // fire synchronously from the same stdin chunk.
-        isPasting.current = true;
-        process.nextTick(() => {
-          isPasting.current = false;
-        });
+        // the duplicate keypress events Ink's parseKeypress is about
+        // to fire synchronously from the same stdin chunk. Skip if
+        // isPasting is already true at end-of-loop — that means a
+        // SECOND paste opened mid-chunk and is still waiting for its
+        // PASTE_END in a later chunk. An unconditional nextTick reset
+        // would clear that state and the next chunk would fail to
+        // recognize the in-flight paste, dropping its payload.
+        if (!isPasting.current) {
+          isPasting.current = true;
+          process.nextTick(() => {
+            isPasting.current = false;
+          });
+        }
       }
     };
 

@@ -203,8 +203,13 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
       // 8-bit CSI bypass (\x9b instead of \x1b[). Preserve \t (\x09),
       // \n (\x0a), \r (\x0d) — stripping them squashes multi-line
       // rationales into one illegible run.
+      // CSI/OSC sequences must come BEFORE the single-char control set:
+      // \x1b lives inside \x0e-\x1f, so the single-char branch eagerly
+      // consumes the ESC alone and leaves the `[31m`/`]8;;…` payload
+      // as literal text in the rendered TUI. Multi-char branches go
+      // first; the single-char fallback only fires for stray controls.
       // eslint-disable-next-line no-control-regex
-      const safe = classification.rationale.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]|\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "");
+      const safe = classification.rationale.replace(/\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, "");
       addSystemTurn(`[triage ALLOW] ${toolCall.name} — ${safe}`);
     };
     return () => {

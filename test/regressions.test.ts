@@ -10,6 +10,7 @@ import { ReadFileTool } from "../src/tools/readFile.js";
 import { WriteFileTool } from "../src/tools/writeFile.js";
 import { EditTool } from "../src/tools/edit.js";
 import { ShellTool } from "../src/tools/shell.js";
+import { GrepTool } from "../src/tools/grep.js";
 import { maskToolOutput } from "../src/filter/toolMasking.js";
 import { stepLeft, stepRight } from "../src/app/components/Composer.js";
 import type { Turn } from "../src/core/types.js";
@@ -494,6 +495,75 @@ describe("@file refs allow wrapping punctuation", () => {
     try {
       const out = await expandFileRefs(`mail user@example.com please`, dir);
       expect(out).toBe(`mail user@example.com please`);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ── Round 36 #1: ANSI sanitizer regex order ──────────────────────
+// The single-char control range `[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]`
+// includes \x1b (ESC, 27), so when it came FIRST in the alternation
+// the engine ate the ESC alone and left the `[31m` payload as
+// literal text. Multi-char CSI/OSC patterns must come first.
+
+describe("ANSI sanitizer strips full CSI sequences", () => {
+  // eslint-disable-next-line no-control-regex
+  const ANSI_RE = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g;
+
+  test("strips CSI color sequence completely", () => {
+    expect("\x1b[31mred\x1b[0m".replace(ANSI_RE, "")).toBe("red");
+  });
+
+  test("strips OSC hyperlink completely", () => {
+    expect("\x1b]8;;http://x\x07link\x1b]8;;\x07".replace(ANSI_RE, "")).toBe("link");
+  });
+
+  test("preserves \\t \\n \\r", () => {
+    expect("a\tb\nc\rd".replace(ANSI_RE, "")).toBe("a\tb\nc\rd");
+  });
+
+  test("strips C1 8-bit CSI bypass", () => {
+    expect("a\x9bxb".replace(ANSI_RE, "")).toBe("axb");
+  });
+});
+
+// ── Round 36 #3: grep pre-filters ignored matches at collector ───
+// Post-filter ran AFTER the 1MB byte cap fired, so a search that
+// hit ignored build artifacts could saturate the budget on dist/
+// matches and kill the grep before reaching src/. The collector
+// now line-buffers stdout and drops ignored matches without
+// charging them against the cap.
+
+describe("grep filters ignored matches before hitting byte cap", () => {
+  test("matches in dist/ don't crowd out matches in src/", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "petricode-grep-budget-"));
+    try {
+      await writeFile(join(dir, ".gitignore"), "dist/\n");
+      await mkdir(join(dir, "dist"));
+      await mkdir(join(dir, "src"));
+      // Many cheap matches in dist (would normally come first in
+      // grep -r alphabetical traversal); a single match in src.
+      const noisy = Array.from({ length: 200 }, (_, i) => `line${i} TARGET`).join("\n");
+      await writeFile(join(dir, "dist/bundle.js"), noisy);
+      await writeFile(join(dir, "src/main.ts"), "TARGET only line\n");
+      const out = await GrepTool.execute({ pattern: "TARGET" }, { cwd: dir });
+      // src/main.ts must survive — it's the only non-ignored match.
+      expect(out).toContain("src/main.ts");
+      // dist/ matches must be filtered out.
+      expect(out).not.toContain("dist/");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("non-ignored matches still appear", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "petricode-grep-pass-"));
+    try {
+      await writeFile(join(dir, "a.txt"), "hello world\n");
+      const out = await GrepTool.execute({ pattern: "hello" }, { cwd: dir });
+      expect(out).toContain("a.txt");
+      expect(out).toContain("hello world");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

@@ -84,20 +84,41 @@ export const GrepTool: Tool = {
       let output = "";
       let outputBytes = 0;
       let truncated = false;
-      const collect = (chunk: string) => {
-        if (truncated) return;
-        const chunkBytes = Buffer.byteLength(chunk, "utf8");
-        if (outputBytes + chunkBytes > MAX_OUTPUT_BYTES) {
-          // Append the largest UTF-8-safe slice of `chunk` that still
-          // fits under the limit instead of throwing the whole chunk
-          // (up to ~64KB) away. Walk by character so we don't split a
-          // multibyte codepoint mid-sequence — setEncoding gave us a
-          // string of complete codepoints; Buffer.byteLength below
-          // rebuilds the byte cost per char.
+
+      // Pre-filter ignored matches at the collector instead of after
+      // the byte cap fires. Without this, a search that hits ignored
+      // build artifacts (`dist/bundle.js` with thousands of matches)
+      // can saturate the 1MB budget before grep ever reaches `src/`,
+      // killing the process and leaving the post-filter with `(no
+      // matches)` even though valid hits exist. Line-buffer stdout so
+      // we can run isIgnored() on whole `path:lineno:text` records.
+      const isLineIgnored = (line: string): boolean => {
+        if (!line) return false;
+        const sep = line.match(/^(.+?):\d+:/);
+        if (!sep) return false;
+        const filePath = sep[1]!;
+        const rel = isAbsolute(filePath)
+          ? relative(projectRoot, filePath)
+          : normalize(filePath);
+        // Caller searched outside projectRoot — predicate has no
+        // basis for filtering, keep the line.
+        if (rel.startsWith("..")) return false;
+        return isIgnored(rel, false);
+      };
+
+      const append = (piece: string): boolean => {
+        const bytes = Buffer.byteLength(piece, "utf8");
+        if (outputBytes + bytes > MAX_OUTPUT_BYTES) {
+          // Append the largest UTF-8-safe slice that still fits under
+          // the cap instead of throwing the whole chunk (~64KB) away.
+          // setEncoding('utf8') already aligned chunk boundaries to
+          // codepoints; iterating `for (const ch of …)` walks chars
+          // (not raw bytes), so Buffer.byteLength gives the cost per
+          // codepoint and we never split a multibyte sequence.
           const remaining = MAX_OUTPUT_BYTES - outputBytes;
           let kept = "";
           let keptBytes = 0;
-          for (const ch of chunk) {
+          for (const ch of piece) {
             const n = Buffer.byteLength(ch, "utf8");
             if (keptBytes + n > remaining) break;
             kept += ch;
@@ -109,13 +130,34 @@ export const GrepTool: Tool = {
           }
           truncated = true;
           proc.kill("SIGTERM");
-          return;
+          return false;
         }
-        outputBytes += chunkBytes;
-        output += chunk;
+        output += piece;
+        outputBytes += bytes;
+        return true;
       };
-      proc.stdout.on("data", collect);
-      proc.stderr.on("data", collect);
+
+      let stdoutBuf = "";
+      const collectStdout = (chunk: string) => {
+        if (truncated) return;
+        stdoutBuf += chunk;
+        let nl: number;
+        while ((nl = stdoutBuf.indexOf("\n")) !== -1) {
+          const line = stdoutBuf.slice(0, nl);
+          stdoutBuf = stdoutBuf.slice(nl + 1);
+          if (!line || isLineIgnored(line)) continue;
+          if (!append(line + "\n")) return;
+        }
+      };
+      // Stderr isn't `path:lineno:text` (it's grep diagnostics), so
+      // skip the line filter — but keep the same byte cap so a
+      // runaway stderr can't blow past MAX_OUTPUT_BYTES either.
+      const collectStderr = (chunk: string) => {
+        if (truncated) return;
+        append(chunk);
+      };
+      proc.stdout.on("data", collectStdout);
+      proc.stderr.on("data", collectStderr);
 
       const cleanup = () => {
         clearTimeout(timer);
@@ -135,46 +177,20 @@ export const GrepTool: Tool = {
 
       proc.on("close", (code) => {
         cleanup();
+        // Flush any trailing line grep emitted without a final \n
+        // (last line of file with no terminating newline). Same
+        // ignored-line + byte-cap rules as the streaming collector.
+        if (stdoutBuf && !truncated) {
+          if (!isLineIgnored(stdoutBuf)) append(stdoutBuf);
+          stdoutBuf = "";
+        }
         const suffix = truncated ? "\n[output truncated — exceeded 1MB]" : "";
         // grep exits 1 when no matches found — not an error
         if (code !== null && code > 1 && !truncated) {
           resolve(`[exit ${code}]\n${output.trimEnd()}${suffix}`);
           return;
         }
-        // Drop matches that fall under .gitignore. Each line is
-        // `path:lineno:text`; the first colon separates the path. Paths
-        // grep emits are relative to its cwd (projectRoot), or absolute
-        // if the caller passed an absolute search path — normalize both
-        // to a project-root-relative form before consulting the predicate.
-        const filtered = output
-          .split("\n")
-          .filter((line) => {
-            if (!line) return false;
-            // grep -n emits `path:lineno:text`. Naive indexOf(":") would
-            // truncate paths that legitimately contain a colon (rare on
-            // POSIX, common on Windows-shared mounts and `My:File.tsx`
-            // style names) and pass the wrong path to isIgnored. Anchor
-            // on the FIRST `:digit+:` boundary, which is unambiguous —
-            // the lineno field is always digits.
-            const sep = line.match(/^(.+?):\d+:/);
-            if (!sep) return true;
-            const filePath = sep[1]!;
-            // grep -r emits paths relative to its cwd, prefixed `./` when
-            // the search arg was `.`. normalize() collapses that prefix
-            // (and any `foo/./bar`) so the predicate sees `src/foo.ts`,
-            // not `./src/foo.ts` — gitignore patterns like `dist/` would
-            // otherwise miss the leading-dot form entirely.
-            const rel = isAbsolute(filePath)
-              ? relative(projectRoot, filePath)
-              : normalize(filePath);
-            // Path may escape projectRoot when the caller searches
-            // outside (rare, but supported). Don't filter what we can't
-            // reason about — relative() returns "../..." in that case.
-            if (rel.startsWith("..")) return true;
-            return !isIgnored(rel, false);
-          })
-          .join("\n");
-        resolve((filtered.trimEnd() || "(no matches)") + suffix);
+        resolve((output.trimEnd() || "(no matches)") + suffix);
       });
 
       proc.on("error", (err) => {
