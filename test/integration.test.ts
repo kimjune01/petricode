@@ -207,7 +207,7 @@ describe("runToolSubpipe", () => {
 
     const results = await runToolSubpipe(turn, {
       registry,
-      onConfirm: async () => false,
+      onConfirm: async () => "deny",
     });
     expect(results).toHaveLength(1);
     expect(results[0]!.outcome).toBe("DENY");

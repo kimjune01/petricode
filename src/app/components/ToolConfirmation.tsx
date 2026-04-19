@@ -3,6 +3,7 @@ import { Box, Text, useInput } from "ink";
 import type { ToolCall } from "../../core/types.js";
 import type { ConfirmMode } from "../../config/models.js";
 import type { Classification } from "../../filter/triageClassifier.js";
+import type { ConfirmAlternative, ConfirmDecision } from "../../agent/toolSubpipe.js";
 import { colors, spacing } from "../theme.js";
 
 const SHELL_PATTERNS = /shell|bash|command|run|exec|terminal|eval|system|script|process/i;
@@ -65,7 +66,7 @@ function toolPreview(kind: ToolKind, args: Record<string, unknown>): ToolPreview
 
 interface ToolConfirmationProps {
   toolCall: ToolCall;
-  onConfirm: (allowed: boolean) => void;
+  onConfirm: (decision: ConfirmDecision) => void;
   mode?: ConfirmMode;
   /**
    * Classifier verdict + rationale, when the triage classifier ran. Only
@@ -73,6 +74,12 @@ interface ToolConfirmationProps {
    * prompt — ALLOW skips us and DENY surfaces back to the LLM).
    */
   classification?: Classification;
+  /**
+   * Optional safer rewrite the user can pick instead of allow/deny.
+   * Currently emitted for `rm -r*` (mv-to-trash). When present, it's the
+   * RECOMMENDED choice — rendered first, [m] keybind, default on Enter.
+   */
+  alternative?: ConfirmAlternative;
 }
 
 export default function ToolConfirmation({
@@ -80,6 +87,7 @@ export default function ToolConfirmation({
   onConfirm,
   mode: _mode = "cautious",
   classification,
+  alternative,
 }: ToolConfirmationProps) {
   const resolvedRef = useRef(false);
 
@@ -92,15 +100,23 @@ export default function ToolConfirmation({
 
   useInput((ch, key) => {
     if (resolvedRef.current) return;
+    if (alternative && (ch === "m" || ch === "M")) {
+      resolvedRef.current = true;
+      onConfirm("alternative");
+      return;
+    }
     if (ch === "y" || ch === "Y") {
       resolvedRef.current = true;
-      onConfirm(true);
-    } else if (ch === "n" || ch === "N" || key.return) {
-      // Enter defaults to deny — safer than auto-allow if a user hits it
-      // by reflex, and matches the spec ("Enter without letter defaults
-      // to safe action").
+      onConfirm("allow");
+    } else if (ch === "n" || ch === "N") {
       resolvedRef.current = true;
-      onConfirm(false);
+      onConfirm("deny");
+    } else if (key.return) {
+      // Enter defaults to the SAFE action: the soft alternative when one
+      // is offered (a wrong-button reflex on "rm -rf" should park files
+      // in /tmp, not nuke them), otherwise deny.
+      resolvedRef.current = true;
+      onConfirm(alternative ? "alternative" : "deny");
     }
   });
 
@@ -157,10 +173,22 @@ export default function ToolConfirmation({
         </Box>
       )}
 
-      <Text>
-        Allow? <Text bold color={colors.prompt}>✓ [y] allow</Text> / <Text bold color={colors.tool}>✗ [n] deny</Text>
-        <Text color={colors.muted}>  (enter = deny)</Text>
-      </Text>
+      {alternative ? (
+        <Box flexDirection="column" marginTop={spacing.sm}>
+          <Text>
+            <Text bold color={colors.prompt}>↻ [m] {alternative.label} (recommended)</Text>
+          </Text>
+          <Text>
+            <Text bold color={colors.error}>⚠ [y] run as-is</Text> / <Text bold color={colors.tool}>✗ [n] deny</Text>
+            <Text color={colors.muted}>  (enter = move)</Text>
+          </Text>
+        </Box>
+      ) : (
+        <Text>
+          Allow? <Text bold color={colors.prompt}>✓ [y] allow</Text> / <Text bold color={colors.tool}>✗ [n] deny</Text>
+          <Text color={colors.muted}>  (enter = deny)</Text>
+        </Text>
+      )}
     </Box>
   );
 }

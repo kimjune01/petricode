@@ -934,6 +934,106 @@ describe("isDangerousShell predicate", () => {
   });
 });
 
+// ── Soft-delete shell rewriter (rm -rf → mv-to-trash) ───────────
+// Strict scope: only single-target recursive rm. Anything we can't
+// fully tokenize (globs, pipes, multi-target, catastrophic paths)
+// must return null so the caller falls back to plain allow/deny.
+// A wrong rewrite is worse than the original gate.
+
+describe("rewriteRmToMv soft-delete rewriter", () => {
+  const { rewriteRmToMv } = require("../src/filter/shellRewrite.js") as typeof import("../src/filter/shellRewrite.js");
+  const opts = { sessionId: "sess", nowIso: "2026-04-18T12:00:00.000Z", tmpRoot: "/tmp" };
+  const trashRoot = "/tmp/petricode-trash/sess/2026-04-18T12-00-00-000Z";
+
+  test("rm -rf single target rewrites to mkdir -p && mv", () => {
+    const r = rewriteRmToMv("rm -rf node_modules", opts);
+    expect(r).not.toBeNull();
+    // Trailing `/` after the closing quote concatenates with the path
+    // shell-side; the bash-equivalent destination is `<trash>/`.
+    expect(r!.rewrittenCmd).toBe(
+      `mkdir -p '${trashRoot}' && mv 'node_modules' '${trashRoot}'/`,
+    );
+    expect(r!.trashDir).toBe(trashRoot);
+    expect(r!.label).toContain("node_modules");
+    expect(r!.label).toContain(trashRoot);
+  });
+
+  test("rm -r and rm -fr variants both rewrite", () => {
+    expect(rewriteRmToMv("rm -r build", opts)).not.toBeNull();
+    expect(rewriteRmToMv("rm -fr build", opts)).not.toBeNull();
+    expect(rewriteRmToMv("rm -Rf build", opts)).not.toBeNull();
+    expect(rewriteRmToMv("rm --recursive --force build", opts)).not.toBeNull();
+  });
+
+  test("plain rm (no recursive flag) is NOT rewritten — predicate wouldn't gate it", () => {
+    expect(rewriteRmToMv("rm foo.txt", opts)).toBeNull();
+    expect(rewriteRmToMv("rm -f foo.txt", opts)).toBeNull();
+  });
+
+  test("non-rm commands are refused", () => {
+    expect(rewriteRmToMv("git push --force", opts)).toBeNull();
+    expect(rewriteRmToMv("ls -la", opts)).toBeNull();
+    expect(rewriteRmToMv("", opts)).toBeNull();
+  });
+
+  test("multi-target rm is refused (partial mv leaves worse state than rm)", () => {
+    expect(rewriteRmToMv("rm -rf foo bar", opts)).toBeNull();
+    expect(rewriteRmToMv("rm -rf a b c", opts)).toBeNull();
+  });
+
+  test("globs / shell metacharacters are refused (would need shell to enumerate)", () => {
+    expect(rewriteRmToMv("rm -rf build/*", opts)).toBeNull();
+    expect(rewriteRmToMv("rm -rf foo?", opts)).toBeNull();
+    expect(rewriteRmToMv("rm -rf foo && rm -rf bar", opts)).toBeNull();
+    expect(rewriteRmToMv("rm -rf foo; rm -rf bar", opts)).toBeNull();
+    expect(rewriteRmToMv("rm -rf $(pwd)", opts)).toBeNull();
+    expect(rewriteRmToMv("rm -rf `pwd`", opts)).toBeNull();
+    expect(rewriteRmToMv("rm -rf foo | tee log", opts)).toBeNull();
+  });
+
+  test("catastrophic targets are refused (/, ., .., ~)", () => {
+    expect(rewriteRmToMv("rm -rf /", opts)).toBeNull();
+    expect(rewriteRmToMv("rm -rf .", opts)).toBeNull();
+    expect(rewriteRmToMv("rm -rf ..", opts)).toBeNull();
+    expect(rewriteRmToMv("rm -rf ~", opts)).toBeNull();
+  });
+
+  test("quoted target is preserved and POSIX-quoted into the rewrite", () => {
+    const r = rewriteRmToMv(`rm -rf "my dir"`, opts);
+    expect(r).not.toBeNull();
+    expect(r!.rewrittenCmd).toContain(`mv 'my dir'`);
+  });
+
+  test("target containing a single quote is escaped via the '\\'' dance", () => {
+    const r = rewriteRmToMv(`rm -rf "it's"`, opts);
+    expect(r).not.toBeNull();
+    // POSIX-safe: 'it'\''s'
+    expect(r!.rewrittenCmd).toContain(`mv 'it'\\''s'`);
+  });
+
+  test("unknown long flag is refused (don't silently strip semantics we don't model)", () => {
+    expect(rewriteRmToMv("rm --interactive=always -r foo", opts)).toBeNull();
+    expect(rewriteRmToMv("rm -ri foo", opts)).toBeNull();
+  });
+
+  test("post-`--` positional with leading dash is accepted", () => {
+    const r = rewriteRmToMv("rm -rf -- -weird-name", opts);
+    expect(r).not.toBeNull();
+    expect(r!.rewrittenCmd).toContain(`mv '-weird-name'`);
+  });
+
+  test("unbalanced quotes refuse rather than partially parse", () => {
+    expect(rewriteRmToMv(`rm -rf "unclosed`, opts)).toBeNull();
+  });
+
+  test("trash dir scoped per session and timestamp", () => {
+    const r1 = rewriteRmToMv("rm -rf x", { sessionId: "abc", nowIso: "2026-01-01T00:00:00.000Z" });
+    expect(r1!.trashDir).toContain("/petricode-trash/abc/2026-01-01T00-00-00-000Z");
+    // Colons replaced for Windows / URL safety.
+    expect(r1!.trashDir).not.toContain(":");
+  });
+});
+
 describe("grep ..-prefix path-escape check is precise", () => {
   test("files named like `..env` inside the project are still gitignore-filtered", async () => {
     const dir = await mkdtemp(join(tmpdir(), "grep-dotdot-"));

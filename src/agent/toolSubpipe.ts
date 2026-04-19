@@ -9,13 +9,37 @@ import { LoopDetector } from "../filter/loopDetection.js";
 import { maskToolOutput } from "../filter/toolMasking.js";
 import { validateToolArgs } from "../filter/pathValidation.js";
 import { isDangerousShell } from "../filter/shellDanger.js";
+import { rewriteRmToMv } from "../filter/shellRewrite.js";
 import type { TriageClassifier, Classification } from "../filter/triageClassifier.js";
 import type { ToolRegistry } from "../tools/registry.js";
+
+/**
+ * What the user picked at the confirmation prompt.
+ * - `"allow"`  → execute the tool with its original args
+ * - `"deny"`   → reject; push a DENY result
+ * - `"alternative"` → execute with the rewritten args (e.g. mv-to-trash
+ *   instead of rm -rf). Only valid when ConfirmFn was passed an
+ *   `alternative`; otherwise the caller should treat it as deny.
+ */
+export type ConfirmDecision = "allow" | "deny" | "alternative";
+
+/**
+ * Soft alternative offered alongside a dangerous-shell prompt: a
+ * pre-computed safer rewrite the user can pick instead of allow/deny.
+ * Currently only emitted for `rm -r*` (mv to /tmp/petricode-trash/).
+ */
+export interface ConfirmAlternative {
+  /** Short, human-readable label for the prompt UI. */
+  label: string;
+  /** Replacement args for the tool call when the user picks this. */
+  args: Record<string, unknown>;
+}
 
 export type ConfirmFn = (
   call: ToolCall,
   classification?: Classification,
-) => Promise<boolean>;
+  alternative?: ConfirmAlternative,
+) => Promise<ConfirmDecision>;
 
 export type ClassifiedNotice = (call: ToolCall, c: Classification) => void;
 
@@ -39,6 +63,13 @@ export interface ToolSubpipeOptions {
    * specific shell call was gated even though the policy says ALLOW.
    */
   permissiveShellGuard?: boolean;
+  /**
+   * Session ID, used by the soft-delete rewriter to scope its trash
+   * directory (`/tmp/petricode-trash/<sessionId>/<ts>/`). Without it
+   * the rewriter falls back to no alternative — the prompt still works
+   * as plain allow/deny.
+   */
+  sessionId?: string;
 }
 
 export type ToolOutcome = "ALLOW" | "DENY";
@@ -133,6 +164,7 @@ export async function runToolSubpipe(
     recentTurns = [],
     onClassified,
     permissiveShellGuard = false,
+    sessionId,
   } = options;
   const results: ToolResult[] = [];
 
@@ -366,15 +398,39 @@ export async function runToolSubpipe(
       const needsConfirm = classification?.verdict !== "ALLOW";
 
       if (needsConfirm && onConfirm) {
+        // Offer the soft-delete alternative when the gate fired on an rm
+        // recursive pattern AND we have a sessionId to scope the trash
+        // dir. The rewriter is strict — multi-target, globs, catastrophic
+        // paths, anything with shell metacharacters all return null and
+        // we fall back to plain allow/deny. The label gets rendered in
+        // the prompt so the user knows where the data goes.
+        let alternative: ConfirmAlternative | undefined;
+        if (
+          dangerReason
+          && tc.name === "shell"
+          && sessionId
+          && /\brm\b/.test(dangerReason)
+        ) {
+          const cmd = (tc.args as { command?: unknown } | undefined)?.command;
+          if (typeof cmd === "string") {
+            const rewrite = rewriteRmToMv(cmd, { sessionId });
+            if (rewrite) {
+              alternative = {
+                label: rewrite.label,
+                args: { ...tc.args, command: rewrite.rewrittenCmd },
+              };
+            }
+          }
+        }
         // Confirmation can throw AbortError if the user Ctrl+C's while the
         // prompt is open. Route it through the same partial-results path
         // as a mid-execution abort — otherwise the unwrapped throw lacks
         // partialResults, the pipeline's getPartialToolResults returns
         // undefined, and every real result accumulated so far in `results`
         // gets clobbered by the empty-fallback in commitToolBatch.
-        let allowed: boolean;
+        let decision: ConfirmDecision;
         try {
-          allowed = await onConfirm(tc, classification);
+          decision = await onConfirm(tc, classification, alternative);
         } catch (err) {
           if (err instanceof DOMException && err.name === "AbortError") {
             results.push(interruptedResult(tc));
@@ -385,7 +441,7 @@ export async function runToolSubpipe(
           }
           throw err;
         }
-        if (!allowed) {
+        if (decision === "deny") {
           results.push({
             toolUseId,
             name: tc.name,
@@ -393,6 +449,26 @@ export async function runToolSubpipe(
             content: `Denied by user: ${tc.name}`,
           });
           continue;
+        }
+        // "alternative" without an offered alternative is a UI bug —
+        // fail closed so we don't execute the original (potentially
+        // dangerous) call after the user thought they picked the safer
+        // form. Treat as deny.
+        if (decision === "alternative") {
+          if (!alternative) {
+            results.push({
+              toolUseId,
+              name: tc.name,
+              outcome: "DENY",
+              content: `Denied: alternative was selected but none was offered for ${tc.name}`,
+            });
+            continue;
+          }
+          // Mutate the call's args so the executor and the cached
+          // tool_use both reflect what actually ran. Without rewriting
+          // tc.args, the conversation history would show the LLM
+          // requesting `rm -rf foo` even though we ran `mv foo /tmp/...`.
+          tc.args = alternative.args;
         }
       }
       // No onConfirm AND classifier escalated (ASK_USER) → no human is

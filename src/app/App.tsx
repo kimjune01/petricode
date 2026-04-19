@@ -2,6 +2,7 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import type { Turn, ToolCall } from "../core/types.js";
 import type { Classification } from "../filter/triageClassifier.js";
+import type { ConfirmAlternative, ConfirmDecision } from "../agent/toolSubpipe.js";
 import type { AppPhase } from "./state.js";
 import { initialState } from "./state.js";
 import { tryCommand, overrideCommand } from "../commands/index.js";
@@ -38,13 +39,13 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
   // user see assistant text appearing character-by-character instead of all
   // at once when pipeline.turn() resolves.
   const [streamingText, setStreamingText] = useState("");
-  // Ctrl+C during a confirmation prompt must REJECT, not resolve(false).
-  // Resolving false reaches toolSubpipe as `allowed=false` and gets recorded
+  // Ctrl+C during a confirmation prompt must REJECT, not resolve("deny").
+  // Resolving "deny" reaches toolSubpipe as a user denial and gets recorded
   // as "Denied by user" — making the LLM think the user evaluated and
   // rejected this specific call. Rejecting with AbortError instead routes
   // through the partial-results abort path with "Interrupted by user".
   const confirmResolveRef = useRef<{
-    resolve: (allowed: boolean) => void;
+    resolve: (decision: ConfirmDecision) => void;
     reject: (err: unknown) => void;
   } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -57,14 +58,22 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
   const [pendingClassification, setPendingClassification] = useState<
     Classification | undefined
   >(undefined);
+  const [pendingAlternative, setPendingAlternative] = useState<
+    ConfirmAlternative | undefined
+  >(undefined);
 
   // Wire pipeline's onConfirm to TUI confirmation flow
   useEffect(() => {
     if (!pipeline) return;
-    pipeline.onConfirm = (toolCall: ToolCall, classification?: Classification) =>
-      new Promise<boolean>((resolve, reject) => {
+    pipeline.onConfirm = (
+      toolCall: ToolCall,
+      classification?: Classification,
+      alternative?: ConfirmAlternative,
+    ) =>
+      new Promise<ConfirmDecision>((resolve, reject) => {
         confirmResolveRef.current = { resolve, reject };
         setPendingClassification(classification);
+        setPendingAlternative(alternative);
         setState((prev) => ({
           ...prev,
           phase: "confirming" as AppPhase,
@@ -158,6 +167,7 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
           confirmResolveRef.current = null;
         }
         setPendingClassification(undefined);
+        setPendingAlternative(undefined);
         addSystemTurn("Interrupted.");
         setState((prev) => ({ ...prev, phase: "composing" as AppPhase, pendingToolCall: null }));
         return;
@@ -378,27 +388,31 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
     [addSystemTurn, exit, pipeline],
   );
 
-  const handleToolConfirm = useCallback((allowed: boolean) => {
+  const handleToolConfirm = useCallback((decision: ConfirmDecision) => {
     if (!state.pendingToolCall) return;
 
     // Resolve the pipeline's ASK_USER promise
     if (confirmResolveRef.current) {
-      confirmResolveRef.current.resolve(allowed);
+      confirmResolveRef.current.resolve(decision);
       confirmResolveRef.current = null;
     }
 
-    addSystemTurn(
-      allowed
-        ? `Allowed: ${state.pendingToolCall.name}`
-        : `Denied: ${state.pendingToolCall.name}`,
-    );
+    const name = state.pendingToolCall.name;
+    const summary =
+      decision === "allow"
+        ? `Allowed: ${name}`
+        : decision === "alternative"
+          ? `Substituted safer form: ${name}${pendingAlternative ? ` (${pendingAlternative.label})` : ""}`
+          : `Denied: ${name}`;
+    addSystemTurn(summary);
     setPendingClassification(undefined);
+    setPendingAlternative(undefined);
     setState((prev) => ({
       ...prev,
       phase: "running" as AppPhase,
       pendingToolCall: null,
     }));
-  }, [state.pendingToolCall, addSystemTurn]);
+  }, [state.pendingToolCall, pendingAlternative, addSystemTurn]);
 
   const isComposing = state.phase === "composing";
 
@@ -418,6 +432,7 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
           onConfirm={handleToolConfirm}
           mode={mode}
           classification={pendingClassification}
+          alternative={pendingAlternative}
         />
       )}
 

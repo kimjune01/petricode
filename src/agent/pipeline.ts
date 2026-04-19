@@ -427,6 +427,7 @@ export class Pipeline {
           recentTurns: this.cache.read().slice(-8),
           onClassified: this.onClassified,
           permissiveShellGuard: this.permissiveShellGuard,
+          sessionId: this._sessionId,
           signal,
         });
       } catch (err) {
