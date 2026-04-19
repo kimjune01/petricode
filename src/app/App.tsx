@@ -427,6 +427,7 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
         tokenCount={state.tokenCount}
         phase={state.phase}
         contextSummary={contextSummary}
+        mode={mode}
       />
     </Box>
   );

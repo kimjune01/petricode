@@ -16,7 +16,11 @@ export interface TierConfig {
 
 export type TierName = "primary" | "reviewer" | "fast";
 
-export type ConfirmMode = "yolo" | "cautious";
+// yolo: no gates — every tool auto-allows.
+// permissive: auto-allow anything reversible (file edits, since git can
+//   undo them); shell still asks because side effects can be unrecoverable.
+// cautious: default — auto-allow read-only tools, ask on every write/shell.
+export type ConfirmMode = "yolo" | "permissive" | "cautious";
 
 /**
  * Optional fast-LLM tool-call triage classifier. When enabled, sits

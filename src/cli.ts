@@ -109,6 +109,10 @@ Options:
                         resume it; write the resolved session ID back when
                         done. Mutually exclusive with --resume. Missing
                         file ⇒ start fresh.
+  --yolo                No restraint: every tool auto-allows. Use inside
+                        a sandbox / ephemeral container.
+  --permissive          Auto-allow anything reversible (file edits — git
+                        can undo them); shell still asks for confirmation.
   --                    Treat the rest of the arguments as positional.
 
 Examples:
@@ -186,6 +190,7 @@ if (parsed.prompt !== undefined) {
     projectDir: process.cwd(),
     resumeSessionId,
     format,
+    mode: parsed.mode,
   });
   // Persist the resolved session ID before exit so the next invocation
   // with the same --session-file resumes the same conversation. Write
@@ -253,6 +258,9 @@ const { pipeline, sessionId, resumed, mode } = await bootstrap({
   // manual confirmation instead of crashing the TUI. bootstrap defaults
   // to headless=true (safe-by-default for programmatic callers).
   headless: false,
+  // CLI flag overrides the on-disk config; undefined falls back to
+  // tiersConfig.mode then "cautious".
+  mode: parsed.mode,
   // onConfirm wired by App.tsx after mount
 });
 

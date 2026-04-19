@@ -10,6 +10,7 @@
 
 import type { Turn, Content } from "./core/types.js";
 import type { Pipeline } from "./agent/pipeline.js";
+import type { ConfirmMode } from "./config/models.js";
 import { ClassifierEscalation } from "./agent/toolSubpipe.js";
 
 export type HeadlessFormat = "text" | "json";
@@ -19,6 +20,7 @@ export interface HeadlessOptions {
   projectDir: string;
   resumeSessionId?: string;
   format?: HeadlessFormat;
+  mode?: ConfirmMode;
 }
 
 export interface HeadlessResult {
@@ -133,6 +135,7 @@ export async function runHeadless(opts: HeadlessOptions): Promise<HeadlessResult
       projectDir: opts.projectDir,
       resumeSessionId: opts.resumeSessionId,
       headless: true,
+      mode: opts.mode,
       // No onConfirm — tools requiring confirmation auto-allow (or
       // escalate via ClassifierEscalation when the classifier is on).
     });

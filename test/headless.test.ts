@@ -475,4 +475,26 @@ describe("parseArgs", () => {
     ]);
     expect(a.errors.some((e) => e.includes("--session-file and --resume are mutually exclusive"))).toBe(true);
   });
+
+  test("--yolo sets mode and reports no errors", () => {
+    const a = parseArgs(["--yolo"]);
+    expect(a.mode).toBe("yolo");
+    expect(a.errors).toEqual([]);
+  });
+
+  test("--permissive sets mode and reports no errors", () => {
+    const a = parseArgs(["--permissive"]);
+    expect(a.mode).toBe("permissive");
+    expect(a.errors).toEqual([]);
+  });
+
+  test("--yolo and --permissive together are mutually exclusive", () => {
+    const a = parseArgs(["--yolo", "--permissive"]);
+    expect(a.errors.some((e) => e.includes("--yolo and --permissive are mutually exclusive"))).toBe(true);
+  });
+
+  test("default has no mode override (falls back to config/default)", () => {
+    const a = parseArgs(["-p", "hi"]);
+    expect(a.mode).toBeUndefined();
+  });
 });

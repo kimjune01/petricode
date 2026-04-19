@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Box, Text } from "ink";
 import type { AppPhase } from "../state.js";
+import type { ConfirmMode } from "../../config/models.js";
 import { colors, spacing } from "../theme.js";
 import { useSpinner } from "../spinner.js";
 
@@ -9,6 +10,10 @@ interface StatusBarProps {
   tokenCount: number;
   phase: AppPhase;
   contextSummary?: string;
+  // Surface non-default modes loudly so a user who started with --yolo
+  // can see the gates are off. Cautious is the default and stays
+  // unlabeled to keep the bar uncluttered for the common case.
+  mode?: ConfirmMode;
 }
 
 const PHASE_LABEL: Record<AppPhase, string> = {
@@ -45,13 +50,18 @@ const PHASE_HINTS: Record<AppPhase, string> = {
   confirming: "y allow  n deny",
 };
 
-export default function StatusBar({ model, tokenCount, phase, contextSummary }: StatusBarProps) {
+export default function StatusBar({ model, tokenCount, phase, contextSummary, mode }: StatusBarProps) {
   const spinner = useSpinner(phase === "running");
   const elapsed = useElapsed(phase === "running");
   const phaseText = phase === "running"
     ? `${spinner} ${PHASE_LABEL[phase]} ${formatElapsed(elapsed)}`
     : PHASE_LABEL[phase];
   const hint = PHASE_HINTS[phase];
+  const modeBadge = mode === "yolo"
+    ? <Text bold color="red">YOLO</Text>
+    : mode === "permissive"
+      ? <Text bold color="yellow">PERMISSIVE</Text>
+      : null;
 
   return (
     <Box flexDirection="column">
@@ -61,7 +71,10 @@ export default function StatusBar({ model, tokenCount, phase, contextSummary }: 
       <Box borderStyle="single" borderColor={colors.muted} paddingX={spacing.sm} justifyContent="space-between">
         <Text color={colors.muted}>{model}</Text>
         <Text>{phaseText}</Text>
-        <Text color={colors.muted}>tokens: {tokenCount}</Text>
+        <Box>
+          {modeBadge ? <>{modeBadge}<Text color={colors.muted}>  </Text></> : null}
+          <Text color={colors.muted}>tokens: {tokenCount}</Text>
+        </Box>
       </Box>
       {hint ? <Box marginLeft={spacing.sm}><Text color={colors.muted}>{hint}</Text></Box> : null}
     </Box>

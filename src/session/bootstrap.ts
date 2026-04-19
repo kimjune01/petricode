@@ -32,6 +32,12 @@ export interface BootstrapOptions {
    * enabling the classifier.
    */
   headless?: boolean;
+  /**
+   * Per-invocation override for the confirm mode. Wins over `mode` in
+   * the on-disk config so `--yolo` / `--permissive` flags don't require
+   * editing the config file. Undefined ⇒ fall back to config or default.
+   */
+  mode?: ConfirmMode;
 }
 
 export interface BootstrapResult {
@@ -116,10 +122,22 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<BootstrapR
 
   // Init pipeline. Apply mode → policyRules so `mode: "yolo"` actually
   // skips the confirmation prompt instead of being silently ignored.
-  const mode: ConfirmMode = tiersConfig.mode ?? "cautious";
+  // CLI override (opts.mode) wins over disk config so `--yolo` /
+  // `--permissive` work without editing petricode.config.json.
+  const mode: ConfirmMode = opts.mode ?? tiersConfig.mode ?? "cautious";
+  // Permissive: ALLOW anything that's reversible — file edits, writes,
+  // reads — but keep `shell` on ASK_USER because shell side effects
+  // (network calls, package installs, `rm -rf`) can't be rolled back
+  // by `git checkout`. First-match-wins, so the shell rule must
+  // precede the wildcard ALLOW.
   const policyRules: PolicyRule[] = mode === "yolo"
     ? [{ tool: "*", outcome: "ALLOW" }]
-    : [];
+    : mode === "permissive"
+      ? [
+          { tool: "shell", outcome: "ASK_USER" },
+          { tool: "*", outcome: "ALLOW" },
+        ]
+      : [];
 
   // Classifier is opt-in: bare TiersConfig defaults to no classifier so
   // existing users don't suddenly need GCP creds or eat extra latency.

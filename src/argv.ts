@@ -29,6 +29,11 @@ export type ParsedArgs = {
   // resolved session ID is written back. Designed for headless
   // back-and-forth: `petricode -p "..." --session-file /tmp/foo`.
   sessionFile?: string;
+  // Per-invocation confirm-mode override. CLI flags `--yolo` and
+  // `--permissive` set this; absent ⇒ fall back to config or the
+  // built-in cautious default. Mutually exclusive — passing both is
+  // a user error because they pick contradictory blast radii.
+  mode?: "yolo" | "permissive";
   errors: string[];
 };
 
@@ -39,6 +44,7 @@ export function parseArgs(input: string[]): ParsedArgs {
     list: false,
     format: "text",
     formatExplicit: false,
+    mode: undefined,
     errors: [],
   };
   let i = 0;
@@ -90,6 +96,25 @@ export function parseArgs(input: string[]): ParsedArgs {
         out.errors.push("--format expects 'text' or 'json'.");
         i++;
       }
+      continue;
+    }
+    if (arg === "--yolo") {
+      // Last-wins between --yolo / --permissive is too easy to misread
+      // as "the safer one wins" — make a conflict explicit so the user
+      // notices instead of getting whichever happened to come last.
+      if (out.mode && out.mode !== "yolo") {
+        out.errors.push("--yolo and --permissive are mutually exclusive.");
+      }
+      out.mode = "yolo";
+      i++;
+      continue;
+    }
+    if (arg === "--permissive") {
+      if (out.mode && out.mode !== "permissive") {
+        out.errors.push("--yolo and --permissive are mutually exclusive.");
+      }
+      out.mode = "permissive";
+      i++;
       continue;
     }
     if (arg === "--session-file") {
