@@ -37,9 +37,22 @@ If bore is installed, `/share` auto-starts a tunnel — no extra
 terminal, no signup, no auth token:
 
 ```bash
-# Install bore once
+# Install bore (pick one)
+
+# Prebuilt binary (macOS arm64, no Rust needed)
+curl -sL https://github.com/ekzhang/bore/releases/download/v0.6.0/bore-v0.6.0-aarch64-apple-darwin.tar.gz | tar xz
+mv bore ~/bin/   # or /usr/local/bin/ with sudo
+
+# Prebuilt binary (macOS x86_64)
+curl -sL https://github.com/ekzhang/bore/releases/download/v0.6.0/bore-v0.6.0-x86_64-apple-darwin.tar.gz | tar xz
+mv bore ~/bin/
+
+# Prebuilt binary (Linux x86_64)
+curl -sL https://github.com/ekzhang/bore/releases/download/v0.6.0/bore-v0.6.0-x86_64-unknown-linux-musl.tar.gz | tar xz
+mv bore ~/bin/
+
+# Via cargo (any platform, requires Rust)
 cargo install bore-cli
-# or download a binary from https://github.com/ekzhang/bore/releases
 
 # Then just /share — petricode handles the tunnel
 petricode

@@ -45,7 +45,19 @@ Three model tiers: primary (Anthropic), reviewer (OpenAI), fast (cheap). The rev
 
 ### Session sharing
 
-Host types `/share` or `/share kitchen`, gets a capability URL. Guest runs `petricode attach <url>` for a full TUI, or opens the URL in a browser for read-only view. Both talk to the same agent, same context window. See [docs/messaging-protocol.md](docs/messaging-protocol.md) for the wire protocol (SSE + POST, no custom format).
+Host types `/share kitchen`, gets a shareable URL. Guest runs `petricode attach <url>` for a full TUI with compose bar. Both talk to the same agent, same context window.
+
+For remote sharing (over the internet), install [bore](https://github.com/ekzhang/bore) — a free, open-source tunnel with no signup:
+
+```bash
+# macOS arm64
+curl -sL https://github.com/ekzhang/bore/releases/download/v0.6.0/bore-v0.6.0-aarch64-apple-darwin.tar.gz | tar xz && mv bore ~/bin/
+
+# or via cargo
+cargo install bore-cli
+```
+
+`/share` auto-starts a bore tunnel if available. See [docs/sharing-guide.md](docs/sharing-guide.md) for details. Protocol spec: [docs/messaging-protocol.md](docs/messaging-protocol.md).
 
 ## Structure
 
