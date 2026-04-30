@@ -70,7 +70,7 @@ export function makeShareHandler(ctx: ShareCommandContext): (args: string) => Co
           `  Revoke with /revoke ${invite.id}`,
           "",
           "Starting tunnel for remote access... run /share again in a few seconds.",
-          "Or install ngrok: https://ngrok.com/download",
+          "Or install bore: cargo install bore-cli (no signup needed)",
         ].join("\n"),
       };
     }
@@ -81,8 +81,8 @@ export function makeShareHandler(ctx: ShareCommandContext): (args: string) => Co
         `  ${localUrl}`,
         `  Revoke with /revoke ${invite.id}`,
         "",
-        "For remote sharing, install ngrok (https://ngrok.com/download)",
-        "or pass --share-host <host:port> with a manual tunnel.",
+        "For remote sharing: cargo install bore-cli (no signup needed)",
+        "Or pass --share-host <host:port> with a manual tunnel.",
       ].join("\n"),
     };
   };

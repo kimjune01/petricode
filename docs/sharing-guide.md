@@ -33,27 +33,40 @@ For read-only access (no compose bar), use `/share` without `kitchen`:
 
 ## Remote sharing (over the internet)
 
-If ngrok is installed, `/share` auto-starts a tunnel — no extra
-terminal needed:
+If bore is installed, `/share` auto-starts a tunnel — no extra
+terminal, no signup, no auth token:
 
 ```bash
-# Install ngrok once (macOS)
-brew install ngrok
+# Install bore once
+cargo install bore-cli
+# or download a binary from https://github.com/ekzhang/bore/releases
 
 # Then just /share — petricode handles the tunnel
 petricode
 > /share kitchen
 # First time: "Starting tunnel... run /share again in a few seconds."
 > /share kitchen
-# Prints: https://abc123.ngrok-free.app/sessions/{id}/events?token={token}
+# Prints: http://bore.pub:XXXXX/sessions/{id}/events?token={token}
 ```
 
-The guest uses the URL as-is — it's publicly reachable.
+The guest uses the URL as-is — it's publicly reachable via bore's
+free relay at bore.pub. No signup, no rate limits.
 
-If ngrok isn't installed, `/share` prints a localhost URL and a hint
-to install ngrok. You can also use any tunnel manually:
+If bore isn't installed, `/share` tries ngrok as a fallback (requires
+a free account). If neither is available, it prints a localhost URL
+and a hint.
 
-### Manual tunnel alternatives
+### Self-hosting the relay
+
+If you don't want to depend on bore.pub, run your own relay:
+
+```bash
+# On any VPS with a public IP
+bore server
+# Clients connect with: bore local 7742 --to your-server.com
+```
+
+### Other tunnel options
 
 ```bash
 # Cloudflare Tunnel (free, no account for quick tunnels)
@@ -62,8 +75,8 @@ cloudflared tunnel --url localhost:7742
 # Tailscale Funnel
 tailscale funnel 7742
 
-# bore (open source, self-hostable)
-bore local 7742 --to bore.pub
+# ngrok (requires free account)
+ngrok http 7742
 ```
 
 With a manual tunnel, pass the hostname to petricode:

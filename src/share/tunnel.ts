@@ -6,15 +6,62 @@ let cachedUrl: string | null = null;
 export async function startTunnel(port: number): Promise<string | null> {
   if (cachedUrl) return cachedUrl;
 
-  const ngrokPath = await findNgrok();
-  if (!ngrokPath) return null;
+  // Try bore first (no signup, free public relay)
+  const borePath = await findBinary("bore");
+  if (borePath) {
+    return startBore(borePath, port);
+  }
 
+  // Fall back to ngrok (requires signup + auth token)
+  const ngrokPath = await findBinary("ngrok");
+  if (ngrokPath) {
+    return startNgrok(ngrokPath, port);
+  }
+
+  return null;
+}
+
+async function startBore(borePath: string, port: number): Promise<string | null> {
+  const proc = Bun.spawn([borePath, "local", String(port), "--to", "bore.pub"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  tunnelProcess = proc;
+
+  // bore prints "listening at bore.pub:XXXXX" to stderr
+  const reader = proc.stderr.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const { done, value } = await Promise.race([
+      reader.read(),
+      new Promise<{ done: true; value: undefined }>((r) =>
+        setTimeout(() => r({ done: true, value: undefined }), 250),
+      ),
+    ]);
+    if (value) buf += decoder.decode(value, { stream: true });
+    if (done && !value) continue;
+
+    const match = buf.match(/bore\.pub:(\d+)/);
+    if (match) {
+      reader.cancel();
+      cachedUrl = `http://bore.pub:${match[1]}`;
+      return cachedUrl;
+    }
+  }
+
+  reader.cancel();
+  stopTunnel();
+  return null;
+}
+
+async function startNgrok(ngrokPath: string, port: number): Promise<string | null> {
   tunnelProcess = Bun.spawn([ngrokPath, "http", String(port), "--log", "stderr"], {
     stdout: "ignore",
     stderr: "ignore",
   });
 
-  // Wait for ngrok to start and expose the API
   for (let attempt = 0; attempt < 20; attempt++) {
     await new Promise((r) => setTimeout(r, 500));
     try {
@@ -50,16 +97,13 @@ export function getTunnelUrl(): string | null {
   return cachedUrl;
 }
 
-async function findNgrok(): Promise<string | null> {
-  for (const name of ["ngrok"]) {
-    try {
-      const proc = Bun.spawn(["which", name], { stdout: "pipe", stderr: "ignore" });
-      const text = await new Response(proc.stdout).text();
-      const path = text.trim();
-      if (path) return path;
-    } catch {
-      // not found
-    }
+async function findBinary(name: string): Promise<string | null> {
+  try {
+    const proc = Bun.spawn(["which", name], { stdout: "pipe", stderr: "ignore" });
+    const text = await new Response(proc.stdout).text();
+    const path = text.trim();
+    return path || null;
+  } catch {
+    return null;
   }
-  return null;
 }
