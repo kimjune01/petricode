@@ -218,6 +218,23 @@ export function viewerHTML(sseUrl: string): string {
   var streamText = document.getElementById('stream-text');
   var streamBuf = '';
   var hasContent = false;
+  var lastFrameAt = 0;
+  var watchdog = null;
+
+  function resetWatchdog() {
+    lastFrameAt = Date.now();
+    if (watchdog) clearInterval(watchdog);
+    watchdog = setInterval(function() {
+      var elapsed = Date.now() - lastFrameAt;
+      if (elapsed > 20000) {
+        status.textContent = 'disconnected';
+        status.className = 'error';
+      } else if (elapsed > 5000 && status.className === 'connected') {
+        status.textContent = 'idle';
+        status.className = 'connected';
+      }
+    }, 3000);
+  }
 
   function hideEmpty() {
     if (!hasContent && empty) {
@@ -248,6 +265,7 @@ export function viewerHTML(sseUrl: string): string {
   es.onopen = function() {
     status.textContent = 'connected';
     status.className = 'connected';
+    resetWatchdog();
   };
   es.onerror = function() {
     if (es.readyState === EventSource.CLOSED) {
@@ -259,18 +277,25 @@ export function viewerHTML(sseUrl: string): string {
     }
   };
 
-  es.addEventListener('message.user', function(e) {
+  function onSSE(type, handler) {
+    es.addEventListener(type, function(e) {
+      resetWatchdog();
+      handler(e);
+    });
+  }
+
+  onSSE('message.user', function(e) {
     var d = JSON.parse(e.data);
     var label = d.actor === 'host' ? 'you' : d.actor;
     addTurn('user', label, d.text || '');
   });
 
-  es.addEventListener('message.queued', function(e) {
+  onSSE('message.queued', function(e) {
     var d = JSON.parse(e.data);
     addTurn('queued', d.actor, d.text || '');
   });
 
-  es.addEventListener('message.assistant', function(e) {
+  onSSE('message.assistant', function(e) {
     streamBuf = '';
     streaming.style.display = 'none';
     streamText.textContent = '';
@@ -278,7 +303,7 @@ export function viewerHTML(sseUrl: string): string {
     addTurn('assistant', 'agent', d.text || '');
   });
 
-  es.addEventListener('message.chunk', function(e) {
+  onSSE('message.chunk', function(e) {
     hideEmpty();
     var d = JSON.parse(e.data);
     streamBuf += d.text || '';
@@ -287,18 +312,18 @@ export function viewerHTML(sseUrl: string): string {
     window.scrollTo(0, document.body.scrollHeight);
   });
 
-  es.addEventListener('tool.request', function(e) {
+  onSSE('tool.request', function(e) {
     var d = JSON.parse(e.data);
     addTurn('system', 'tool', d.name + '(' + JSON.stringify(d.args || {}).slice(0, 100) + ')');
   });
 
-  es.addEventListener('tool.result', function(e) {
+  onSSE('tool.result', function(e) {
     var d = JSON.parse(e.data);
     var text = (d.result || '').slice(0, 500);
     addTurn('system', d.name, text);
   });
 
-  es.addEventListener('turn.complete', function(e) {
+  onSSE('turn.complete', function(e) {
     streamBuf = '';
     streaming.style.display = 'none';
     streamText.textContent = '';
