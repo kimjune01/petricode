@@ -44,7 +44,10 @@ async function startBore(borePath: string, port: number): Promise<string | null>
     if (value) buf += decoder.decode(value, { stream: true });
     if (done && !value) continue;
 
-    const match = buf.match(/bore\.pub:(\d+)/);
+    // Strip ANSI escape sequences before matching — bore uses tracing
+    // which wraps output in color codes
+    const clean = buf.replace(/\x1b\[[0-9;]*m/g, "");
+    const match = clean.match(/bore\.pub:(\d+)/);
     if (match) {
       reader.cancel();
       cachedUrl = `http://bore.pub:${match[1]}`;
