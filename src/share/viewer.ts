@@ -7,7 +7,6 @@ export function viewerHTML(sseUrl: string): string {
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/marked@15/lib/marked.umd.min.js"></script>
 <title>petricode</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -77,11 +76,13 @@ export function viewerHTML(sseUrl: string): string {
     text-transform: uppercase;
   }
   .content {
-    white-space: pre-wrap;
     word-wrap: break-word;
     font-size: 0.9rem;
-    line-height: 1.4;
+    line-height: 1.5;
     max-width: 65ch;
+  }
+  .turn.user .content, .turn.queued .content, .turn.system .content {
+    white-space: pre-wrap;
   }
 
   /* User turns */
@@ -267,6 +268,7 @@ export function viewerHTML(sseUrl: string): string {
   </form>
 </div>
 <footer id="footer">read-only &middot; <a href="https://github.com/kimjune01/petricode">petricode</a></footer>
+<script src="https://cdn.jsdelivr.net/npm/marked@15/lib/marked.umd.min.js"></script>
 <script>
 (function() {
   var conv = document.getElementById('conversation');
@@ -281,17 +283,16 @@ export function viewerHTML(sseUrl: string): string {
 
   function resetWatchdog() {
     lastFrameAt = Date.now();
+    status.textContent = 'connected';
+    status.className = 'connected';
     if (watchdog) clearInterval(watchdog);
     watchdog = setInterval(function() {
       var elapsed = Date.now() - lastFrameAt;
-      if (elapsed > 20000) {
+      if (elapsed > 25000) {
         status.textContent = 'disconnected';
         status.className = 'error';
-      } else if (elapsed > 5000 && status.className === 'connected') {
-        status.textContent = 'idle';
-        status.className = 'connected';
       }
-    }, 3000);
+    }, 5000);
   }
 
   function hideEmpty() {
@@ -374,13 +375,20 @@ export function viewerHTML(sseUrl: string): string {
     addTurn('assistant', 'agent', d.text || '');
   });
 
+  var streamRenderTimer = null;
   onSSE('message.chunk', function(e) {
     hideEmpty();
     var d = JSON.parse(e.data);
     streamBuf += d.text || '';
-    streamText.textContent = streamBuf;
     streaming.style.display = 'block';
-    window.scrollTo(0, document.body.scrollHeight);
+    // Throttle markdown re-renders during streaming
+    if (!streamRenderTimer) {
+      streamRenderTimer = setTimeout(function() {
+        streamText.innerHTML = renderMd(streamBuf);
+        window.scrollTo(0, document.body.scrollHeight);
+        streamRenderTimer = null;
+      }, 150);
+    }
   });
 
   onSSE('tool.request', function(e) {
