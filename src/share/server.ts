@@ -52,6 +52,7 @@ export class ShareServer {
     this.server = Bun.serve({
       port: this.port,
       hostname: this.hostname,
+      idleTimeout: 0,
       fetch(req) {
         return self.handleRequest(req);
       },

@@ -248,6 +248,57 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious", shar
     setState((prev) => ({ ...prev, turns: [...prev.turns, turn] }));
   }, []);
 
+  // Poll guest message queue while idle — process guest messages even
+  // when the host hasn't submitted anything.
+  useEffect(() => {
+    if (!share || !pipeline) return;
+    const interval = setInterval(async () => {
+      if (state.phase !== "composing" || !share.bridge.hasPendingMessages()) return;
+      if (abortRef.current) return;
+
+      const controller = new AbortController();
+      abortRef.current = controller;
+      setState((prev) => ({ ...prev, phase: "running" as AppPhase }));
+
+      try {
+        const pending = share.bridge.drainQueue();
+        for (const msg of pending) {
+          if (controller.signal.aborted) break;
+          share.bridge.emitGuestMessage(msg);
+          startStreamThrottle();
+          const guestTurn = await pipeline.turn(msg.text, {
+            signal: controller.signal,
+            onText: (delta) => {
+              streamBufRef.current += delta;
+              share.bridge.emitStreamChunk(delta);
+            },
+          });
+          share.bridge.emitAssistantTurn(guestTurn);
+          stopStreamThrottle();
+          setState((prev) => ({
+            ...prev,
+            turns: [...prev.turns,
+              { id: crypto.randomUUID(), role: "user" as const, content: [{ type: "text" as const, text: `[${msg.actor}] ${msg.text}` }], timestamp: Date.now() },
+              guestTurn,
+            ],
+            tokenCount: pipeline.tokenCount(),
+          }));
+        }
+      } catch (err) {
+        if (!(err instanceof DOMException && err.name === "AbortError")) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          addSystemTurn(`[guest error] ${errMsg}`);
+        }
+        stopStreamThrottle();
+      }
+
+      if (abortRef.current === controller) abortRef.current = null;
+      setState((prev) => ({ ...prev, phase: "composing" as AppPhase }));
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [share, pipeline, state.phase, addSystemTurn, startStreamThrottle, stopStreamThrottle]);
+
   // Surface ALLOW verdicts inline so users see what auto-ran without a
   // y/n. ASK_USER's rationale is rendered inside ToolConfirmation via
   // pendingClassification; DENY surfaces as a tool_result back to the
