@@ -18,10 +18,10 @@ function formatShareOutput(
   scope: RoomScope,
 ): string {
   const url = `${baseUrl}/sessions/${sessionId}/events?token=${token}`;
-  const label = scope === "kitchen" ? "Kitchen invite (read + submit)" : "Living room invite (read-only)";
+  const label = "Shared session (read + submit)";
 
   const shareBlock = [
-    `Join my petricode session (${scope === "kitchen" ? "you can chat" : "read-only"}):`,
+    `Join my petricode session:`,
     ``,
     `Watch in browser: ${url}`,
     ``,
@@ -47,7 +47,7 @@ export function makeShareHandler(ctx: ShareCommandContext): (args: string) => Co
   let serverStarted = false;
 
   return (args: string): CommandResult => {
-    const scope: RoomScope = args.trim() === "kitchen" ? "kitchen" : "living";
+    const scope: RoomScope = "kitchen";
 
     if (!serverStarted) {
       ctx.server.start();

@@ -24,34 +24,28 @@ function setup(port: number) {
 }
 
 describe("/share command", () => {
-  test("default produces living room URL", () => {
+  test("produces share URL with token", () => {
     const { share } = setup(17770);
     const result = share("");
-    expect(result.output).toContain("Living room invite");
+    expect(result.output).toContain("Shared session");
     expect(result.output).toContain("token=");
   });
 
-  test("/share kitchen produces kitchen URL", () => {
-    const { share } = setup(17771);
-    const result = share("kitchen");
-    expect(result.output).toContain("Kitchen invite");
-  });
-
-  test("URL contains valid token", async () => {
+  test("URL contains valid kitchen-scope token", async () => {
     const { share, invites, port } = setup(17772);
     const result = share("");
-    const match = result.output.match(/token=([^\s]+)/);
+    const match = result.output.match(/token=([^\s"]+)/);
     expect(match).not.toBeNull();
     const token = match![1]!;
     const invite = invites.validate(token);
     expect(invite).not.toBeNull();
-    expect(invite!.scope).toBe("living");
+    expect(invite!.scope).toBe("kitchen");
   });
 
   test("second /share reuses running server", () => {
     const { share } = setup(17773);
     const r1 = share("");
-    const r2 = share("kitchen");
+    const r2 = share("");
     expect(r1.output).toContain("17773");
     expect(r2.output).toContain("17773");
   });

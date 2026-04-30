@@ -19,7 +19,7 @@ const commands: Record<string, CommandHandler> = {
       "  /compact           — compact conversation history",
       "  /model [name]      — show or switch the primary model",
       "  /skills            — list available skills",
-      "  /share [kitchen]   — share session (living=read-only, kitchen=submit)",
+      "  /share             — share session (generates a link)",
       "  /revoke [id]       — revoke an invite (no arg = list invites)",
       "",
       "Tips:",

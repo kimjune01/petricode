@@ -68,7 +68,7 @@ See [TESTING.md](TESTING.md) for the full testing guide.
 
 ```bash
 # In petricode, type:
-> /share kitchen
+> /share
 
 # First time with bore installed: starts a tunnel automatically
 # Prints a public URL — send it to the other person
