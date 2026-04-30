@@ -13,12 +13,14 @@ const commands: Record<string, CommandHandler> = {
   help: () => ({
     output: [
       "Available commands:",
-      "  /help         — show this message",
-      "  /exit, /quit  — quit petricode",
-      "  /clear        — reset conversation (keeps session)",
-      "  /compact      — compact conversation history",
-      "  /model [name] — show or switch the primary model",
-      "  /skills       — list available skills",
+      "  /help              — show this message",
+      "  /exit, /quit       — quit petricode",
+      "  /clear             — reset conversation (keeps session)",
+      "  /compact           — compact conversation history",
+      "  /model [name]      — show or switch the primary model",
+      "  /skills            — list available skills",
+      "  /share [kitchen]   — share session (living=read-only, kitchen=submit)",
+      "  /revoke [id]       — revoke an invite (no arg = list invites)",
       "",
       "Tips:",
       "  @path/to/file — include file contents in prompt",
@@ -34,6 +36,8 @@ const commands: Record<string, CommandHandler> = {
   compact: () => ({ output: "Compaction not yet implemented." }),
   model: () => ({ output: "Model switching requires a wired pipeline." }),
   skills: () => ({ output: "No skills loaded." }),
+  share: () => ({ output: "Session sharing requires a wired pipeline." }),
+  revoke: () => ({ output: "No active share session." }),
   // /consolidate is intentionally not wired yet. Roadmap:
   //   1. Skills authored manually.
   //   2. Meta-skills added on top.

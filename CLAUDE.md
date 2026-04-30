@@ -33,7 +33,7 @@ MVP v0.1 complete. All 14 work plan items implemented. 176 tests passing.
 
 ```bash
 bun install          # install deps
-bun test             # 176 tests, no API keys needed
+bun test             # 525 tests, no API keys needed
 bunx tsc --noEmit    # typecheck
 bun run src/cli.ts   # TUI shell (stub response)
 ```

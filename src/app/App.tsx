@@ -9,6 +9,10 @@ import { tryCommand, overrideCommand } from "../commands/index.js";
 import { listSkills } from "../commands/skills.js";
 import type { Pipeline } from "../agent/pipeline.js";
 import { listKnownModels, type ConfirmMode } from "../config/models.js";
+import type { ShareBridge } from "../share/bridge.js";
+import type { ShareServer } from "../share/server.js";
+import type { InviteRegistry } from "../share/invites.js";
+import { makeShareHandler, makeRevokeHandler } from "../commands/share.js";
 import { spacing } from "./theme.js";
 import MessageList from "./components/MessageList.js";
 import Composer from "./components/Composer.js";
@@ -17,13 +21,22 @@ import StatusBar from "./components/StatusBar.js";
 import ReviewerNotes from "./components/ReviewerNotes.js";
 import ErrorDisplay from "./components/ErrorDisplay.js";
 
+export interface ShareContext {
+  bridge: ShareBridge;
+  server: ShareServer;
+  invites: InviteRegistry;
+  sessionId: string;
+  shareHost?: string;
+}
+
 export interface AppProps {
   pipeline?: Pipeline;
   resumeSessionId?: string;
   mode?: ConfirmMode;
+  share?: ShareContext;
 }
 
-export default function App({ pipeline, resumeSessionId, mode = "cautious" }: AppProps) {
+export default function App({ pipeline, resumeSessionId, mode = "cautious", share }: AppProps) {
   const { exit } = useApp();
   const [state, setState] = useState(() => {
     const s = initialState();
@@ -119,6 +132,12 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
       }
     });
   }, [pipeline]);
+
+  useEffect(() => {
+    if (!share) return;
+    overrideCommand("share", makeShareHandler(share));
+    overrideCommand("revoke", makeRevokeHandler(share));
+  }, [share]);
 
   useEffect(() => {
     if (!pipeline) return;
@@ -337,9 +356,15 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
       const controller = new AbortController();
       try {
         abortRef.current = controller;
+
+        share?.bridge.emitUserTurn(userTurn);
+
         const resultTurn = await pipeline.turn(input, {
           signal: controller.signal,
-          onText: (delta) => setStreamingText((prev) => prev + delta),
+          onText: (delta) => {
+            setStreamingText((prev) => prev + delta);
+            share?.bridge.emitStreamChunk(delta);
+          },
         });
         // Identity check: a Ctrl+C-then-Enter race can null this ref
         // and start turn 2 before turn 1's settle reaches here. If the
@@ -351,6 +376,33 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious" }: Ap
         // final turn — React batches both setStates within an event
         // handler, so the user never sees a duplicate of the streamed
         // text alongside the settled turn.
+        share?.bridge.emitAssistantTurn(resultTurn);
+
+        // Drain guest message queue — process pending guest messages
+        if (share?.bridge.hasPendingMessages()) {
+          const pending = share.bridge.drainQueue();
+          for (const msg of pending) {
+            share.bridge.emitGuestMessage(msg);
+            // Feed guest message into the pipeline
+            const guestTurn = await pipeline.turn(msg.text, {
+              signal: controller.signal,
+              onText: (delta) => {
+                setStreamingText((prev) => prev + delta);
+                share.bridge.emitStreamChunk(delta);
+              },
+            });
+            share.bridge.emitAssistantTurn(guestTurn);
+            setState((prev) => ({
+              ...prev,
+              turns: [...prev.turns,
+                { id: crypto.randomUUID(), role: "user" as const, content: [{ type: "text" as const, text: `[${msg.actor}] ${msg.text}` }], timestamp: Date.now() },
+                guestTurn,
+              ],
+            }));
+            setStreamingText("");
+          }
+        }
+
         setStreamingText("");
         setState((prev) => ({
           ...prev,

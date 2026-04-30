@@ -148,6 +148,25 @@ if (parsed.errors.length > 0) {
   process.exit(2);
 }
 
+if (parsed.attach) {
+  if (!process.stdout.isTTY) {
+    console.error("petricode attach requires a terminal.");
+    process.exit(2);
+  }
+  registerBracketedPasteCleanup();
+  process.stdin.resume();
+
+  const { render } = await import("ink");
+  const React = await import("react");
+  const { default: AttachApp } = await import("./app/AttachApp.js");
+
+  const { waitUntilExit } = render(
+    React.createElement(AttachApp, { url: parsed.attach }),
+  );
+  await waitUntilExit();
+  process.exit(0);
+}
+
 if (parsed.list) {
   // List sessions requires async — handled here before TUI
   const { createSqliteTransmit } = await import("./transmit/sqlite.js");
@@ -284,15 +303,43 @@ if (parsed.sessionFile) {
 process.stdin.resume();
 
 // Lazy imports — see header comment for why Ink isn't at the top.
+// Set up share infrastructure (lazy — server starts on /share)
+const { ShareEventLog } = await import("./share/eventLog.js");
+const { InviteRegistry } = await import("./share/invites.js");
+const { GuestMessageQueue } = await import("./share/queue.js");
+const { ShareServer } = await import("./share/server.js");
+const { ShareBridge } = await import("./share/bridge.js");
+
+const shareEventLog = new ShareEventLog();
+const shareInvites = new InviteRegistry();
+const shareQueue = new GuestMessageQueue();
+const shareServer = new ShareServer({
+  port: 7742,
+  eventLog: shareEventLog,
+  invites: shareInvites,
+  sessionId,
+  queue: shareQueue,
+});
+const shareBridge = new ShareBridge(shareEventLog, shareQueue);
+
+const shareContext = {
+  bridge: shareBridge,
+  server: shareServer,
+  invites: shareInvites,
+  sessionId,
+  shareHost: parsed.shareHost,
+};
+
 const { render } = await import("ink");
 const React = await import("react");
 const { default: App } = await import("./app/App.js");
 
 const { waitUntilExit } = render(
-  React.createElement(App, { pipeline, resumeSessionId, mode }),
+  React.createElement(App, { pipeline, resumeSessionId, mode, share: shareContext }),
 );
 await waitUntilExit();
 // Drain trace appends before Node tears down — the TUI session may
 // have queued writes that are still in flight when Ink exits, and
 // without flushing they get killed mid-syscall (corrupted JSONL).
+shareServer.stop();
 await pipeline.flush().catch(() => undefined);

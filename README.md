@@ -8,7 +8,7 @@ A laboratory for agent architectures with six [Natural Framework](https://june.k
 
 ```bash
 bun install
-bun test                    # 269 tests, no API keys needed
+bun test                    # 525 tests, no API keys needed
 bun run src/cli.ts          # TUI shell (interactive, full pipeline)
 ```
 
@@ -43,6 +43,10 @@ User input → Perceive → Cache → Filter → [human decides] → Transmit �
 
 Three model tiers: primary (Anthropic), reviewer (OpenAI), fast (cheap). The reviewer is a [Maxwell's demon](https://june.kim/forge) — it sits at the gate between volley rounds, selects which changes pass, and the artifact's entropy decreases. Paid for honestly in reviewer tokens.
 
+### Session sharing
+
+Host types `/share` or `/share kitchen`, gets a capability URL. Guest runs `petricode attach <url>` for a full TUI, or opens the URL in a browser for read-only view. Both talk to the same agent, same context window. See [docs/messaging-protocol.md](docs/messaging-protocol.md) for the wire protocol (SSE + POST, no custom format).
+
 ## Structure
 
 ```
@@ -60,11 +64,13 @@ src/
   skills/         loader, activation, $ARGUMENTS substitution
   session/        bootstrap, resume
   config/         models, defaults
-  commands/       slash commands (/exit, /help, /compact, /skills, /consolidate)
+  commands/       slash commands (/exit, /help, /compact, /skills, /share, /revoke)
+  share/          shared sessions (SSE server, event log, invite registry, bridge, client)
   app/            Ink TUI components
 spec/             role specifications and anti-patterns
-test/             176 tests + test harness (PipelineRig, golden providers)
+test/             525 tests + test harness (PipelineRig, golden providers)
 worklog/          timestamped work log
+docs/             design docs (host-guest intimacy gradient, messaging protocol)
 ```
 
 ## Provenance

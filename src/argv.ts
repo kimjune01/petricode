@@ -34,6 +34,8 @@ export type ParsedArgs = {
   // built-in cautious default. Mutually exclusive — passing both is
   // a user error because they pick contradictory blast radii.
   mode?: "yolo" | "permissive";
+  shareHost?: string;
+  attach?: string;
   errors: string[];
 };
 
@@ -115,6 +117,28 @@ export function parseArgs(input: string[]): ParsedArgs {
       }
       out.mode = "permissive";
       i++;
+      continue;
+    }
+    if (arg === "--share-host") {
+      const next = input[i + 1];
+      if (!next || next.startsWith("-")) {
+        out.errors.push("--share-host requires a host:port. Example: --share-host 192.168.1.100:7742");
+        i++;
+      } else {
+        out.shareHost = next;
+        i += 2;
+      }
+      continue;
+    }
+    if (arg === "attach") {
+      const next = input[i + 1];
+      if (!next) {
+        out.errors.push("attach requires a URL. Example: petricode attach http://host:7742/sessions/id/events?token=...");
+        i++;
+      } else {
+        out.attach = next;
+        i += 2;
+      }
       continue;
     }
     if (arg === "--session-file") {
