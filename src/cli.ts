@@ -342,4 +342,6 @@ await waitUntilExit();
 // have queued writes that are still in flight when Ink exits, and
 // without flushing they get killed mid-syscall (corrupted JSONL).
 shareServer.stop();
+const { stopTunnel } = await import("./share/tunnel.js");
+stopTunnel();
 await pipeline.flush().catch(() => undefined);

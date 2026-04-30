@@ -1,6 +1,7 @@
 import type { CommandResult } from "./index.js";
 import type { ShareServer } from "../share/server.js";
 import type { InviteRegistry, RoomScope } from "../share/invites.js";
+import { startTunnel, getTunnelUrl } from "../share/tunnel.js";
 
 export interface ShareCommandContext {
   server: ShareServer;
@@ -10,20 +11,78 @@ export interface ShareCommandContext {
 }
 
 export function makeShareHandler(ctx: ShareCommandContext): (args: string) => CommandResult {
+  let tunnelAttempted = false;
+  let serverStarted = false;
+
   return (args: string): CommandResult => {
     const scope: RoomScope = args.trim() === "kitchen" ? "kitchen" : "living";
+
+    // Start server lazily on first /share
+    if (!serverStarted) {
+      ctx.server.start();
+      serverStarted = true;
+    }
+
     const invite = ctx.invites.create(ctx.sessionId, scope);
-
-    const host = ctx.shareHost ?? `localhost:${ctx.server.port}`;
-    const url = `http://${host}/sessions/${ctx.sessionId}/events?token=${invite.token}`;
-
     const label = scope === "kitchen" ? "Kitchen invite (read + submit)" : "Living room invite (read-only)";
+
+    // If --share-host was provided, use it directly
+    if (ctx.shareHost) {
+      const url = `http://${ctx.shareHost}/sessions/${ctx.sessionId}/events?token=${invite.token}`;
+      return {
+        output: [
+          `${label}:`,
+          `  ${url}`,
+          `  Revoke with /revoke ${invite.id}`,
+        ].join("\n"),
+      };
+    }
+
+    // Check if tunnel is already running
+    const tunnelUrl = getTunnelUrl();
+    if (tunnelUrl) {
+      const url = `${tunnelUrl}/sessions/${ctx.sessionId}/events?token=${invite.token}`;
+      return {
+        output: [
+          `${label}:`,
+          `  ${url}`,
+          `  Revoke with /revoke ${invite.id}`,
+        ].join("\n"),
+      };
+    }
+
+    // First share without tunnel — try to start one in background
+    const localUrl = `http://localhost:${ctx.server.port}/sessions/${ctx.sessionId}/events?token=${invite.token}`;
+
+    if (!tunnelAttempted) {
+      tunnelAttempted = true;
+      startTunnel(ctx.server.port).then((url) => {
+        if (url) {
+          console.log(`Tunnel ready: ${url}`);
+          console.log("Run /share again to get a shareable remote link.");
+        }
+      }).catch(() => {});
+
+      return {
+        output: [
+          `${label} (local):`,
+          `  ${localUrl}`,
+          `  Revoke with /revoke ${invite.id}`,
+          "",
+          "Starting tunnel for remote access... run /share again in a few seconds.",
+          "Or install ngrok: https://ngrok.com/download",
+        ].join("\n"),
+      };
+    }
 
     return {
       output: [
-        `${label}:`,
-        `  ${url}`,
+        `${label} (local only — no tunnel available):`,
+        `  ${localUrl}`,
         `  Revoke with /revoke ${invite.id}`,
+        "",
+        "For remote sharing, install ngrok (https://ngrok.com/download)",
+        "or pass --share-host <host:port> with a manual tunnel.",
       ].join("\n"),
     };
   };
