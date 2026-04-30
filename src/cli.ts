@@ -89,6 +89,13 @@ process.on("unhandledRejection", (reason) => {
 const args = process.argv.slice(2);
 const parsed = parseArgs(args);
 
+// Clear empty ANTHROPIC_API_KEY — the Vertex SDK inherits from the base
+// Anthropic SDK which treats "" as "set but broken" instead of falling
+// through to Vertex/ADC credentials.
+if (process.env.ANTHROPIC_API_KEY === "") {
+  delete process.env.ANTHROPIC_API_KEY;
+}
+
 if (parsed.help) {
   console.log(`petricode
 
