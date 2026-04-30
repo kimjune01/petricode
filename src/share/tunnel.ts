@@ -99,12 +99,26 @@ export function getTunnelUrl(): string | null {
 }
 
 async function findBinary(name: string): Promise<string | null> {
+  // Check PATH first
   try {
     const proc = Bun.spawn(["which", name], { stdout: "pipe", stderr: "ignore" });
     const text = await new Response(proc.stdout).text();
     const path = text.trim();
-    return path || null;
-  } catch {
-    return null;
+    if (path) return path;
+  } catch {}
+
+  // Check common locations not always in PATH
+  const { existsSync } = await import("fs");
+  const { join } = await import("path");
+  const home = process.env.HOME ?? "";
+  const candidates = [
+    join(home, "bin", name),
+    join(home, ".local", "bin", name),
+    `/usr/local/bin/${name}`,
+  ];
+  for (const p of candidates) {
+    if (existsSync(p)) return p;
   }
+
+  return null;
 }
