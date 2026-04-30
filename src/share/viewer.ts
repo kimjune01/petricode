@@ -189,8 +189,50 @@ export function viewerHTML(sseUrl: string): string {
   }
   footer a:hover { background: #3f3f46; color: #fafafa; }
 
+  /* Compose bar */
+  #compose {
+    position: fixed;
+    bottom: 32px;
+    left: 0;
+    right: 0;
+    padding: 8px 16px;
+    background: #18181b;
+    border-top: 1px solid #3f3f46;
+    display: none;
+  }
+  #compose form {
+    max-width: 700px;
+    margin: 0 auto;
+    display: flex;
+    gap: 8px;
+  }
+  #compose input {
+    flex: 1;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 0.85rem;
+    background: #27272a;
+    color: #d4d4d8;
+    border: 1px solid #3f3f46;
+    border-radius: 4px;
+    padding: 6px 10px;
+    outline: none;
+  }
+  #compose input:focus { border-color: #60a5fa; }
+  #compose input::placeholder { color: #52525b; }
+  #compose button {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 0.8rem;
+    background: #27272a;
+    color: #d4d4d8;
+    border: 1px solid #3f3f46;
+    border-radius: 4px;
+    padding: 6px 14px;
+    cursor: pointer;
+  }
+  #compose button:hover { background: #3f3f46; color: #fafafa; }
+
   @media (max-width: 600px) {
-    body { padding: 12px; padding-bottom: 48px; font-size: 17px; }
+    body { padding: 12px; padding-bottom: 80px; font-size: 17px; }
     .content { max-width: none; }
   }
 </style>
@@ -208,7 +250,13 @@ export function viewerHTML(sseUrl: string): string {
   <div class="label">agent</div>
   <div class="content"><span id="stream-text"></span><span class="cursor" aria-hidden="true"></span></div>
 </div>
-<footer>read-only &middot; <a href="https://github.com/kimjune01/petricode">petricode</a></footer>
+<div id="compose">
+  <form id="compose-form">
+    <input id="compose-input" type="text" placeholder="Type a message..." autocomplete="off">
+    <button type="submit">Send</button>
+  </form>
+</div>
+<footer id="footer">read-only &middot; <a href="https://github.com/kimjune01/petricode">petricode</a></footer>
 <script>
 (function() {
   var conv = document.getElementById('conversation');
@@ -328,6 +376,49 @@ export function viewerHTML(sseUrl: string): string {
     streaming.style.display = 'none';
     streamText.textContent = '';
   });
+
+  // Scope detection + compose bar
+  var parsed = new URL(url);
+  var sessionMatch = parsed.pathname.match(/\\/sessions\\/([^/]+)\\/events$/);
+  var sessionId = sessionMatch ? sessionMatch[1] : null;
+  var token = parsed.searchParams.get('token');
+  var composeEl = document.getElementById('compose');
+  var footerEl = document.getElementById('footer');
+
+  if (sessionId && token) {
+    var postUrl = parsed.origin + '/sessions/' + sessionId + '/messages';
+    // Probe: POST with empty body — 400 = kitchen, 403 = living
+    fetch(postUrl, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    }).then(function(resp) {
+      if (resp.status === 400) {
+        // Kitchen scope — show compose bar
+        composeEl.style.display = 'block';
+        footerEl.textContent = '';
+        document.body.style.paddingBottom = '80px';
+
+        var form = document.getElementById('compose-form');
+        var input = document.getElementById('compose-input');
+        form.addEventListener('submit', function(e) {
+          e.preventDefault();
+          var text = input.value.trim();
+          if (!text) return;
+          var txnId = crypto.randomUUID();
+          input.value = '';
+          addTurn('queued', 'you (sending)', text);
+          fetch(postUrl, {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: text, txn_id: txnId })
+          }).catch(function() {
+            addTurn('system', 'error', 'Failed to send message');
+          });
+        });
+      }
+    }).catch(function() {});
+  }
 })();
 </script>
 </body>
