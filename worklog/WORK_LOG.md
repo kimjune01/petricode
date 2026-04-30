@@ -24,3 +24,9 @@ D5: Add AGENTS.md to context discovery, fix relevance ordering (subdirectory > p
 D6: Decision records are episodic memories too — absorb into PerceivedEvents. Same as D1.
 D7: Deterministic type-checking adapter for tool schemas with actionable error messages. Fix now.
 D8: Union-find cache eviction is LRU, not threshold-based compaction. Remove token_limit auto-compact. Fix now.
+
+## 2026-04-30
+
+### 14:00 — Shared sessions MVP for petricode
+
+Shared sessions MVP for petricode. Design doc (messaging-protocol.md), work plan (WORKPLAN-sharing.md), full implementation (9 source modules in src/share/, AttachApp.tsx, commands/share.ts, tunnel.ts, viewer.ts). 100 tests across 12 files. Protocol: SSE + POST + capability URLs, message.queued/message.user two-phase broadcast, txn_id local echo, run-scoped event IDs, chunk compaction on replay. Wired into cli.ts and App.tsx — bridge hooks into pipeline turn lifecycle, /share and /revoke slash commands, guest queue drain between turns. AttachApp: guest Ink TUI with compose bar, watchdog, scope detection. Browser viewer: single HTML page via content negotiation, june.kim design system (zinc palette, Charter/Lora, Berkeley Mono). Auto-tunnel: bore first (free, no signup), ngrok fallback. Volleyed plan to convergence with codex (5 rounds) and Gemini 3.1 Pro (caught timeline divergence, ghost IDs, chunk bloat, watchdog bugs). Implementation reviewed by codex (3 rounds) + Gemini (1 round). Also bumped deps: @anthropic-ai/sdk 0.82→0.92, @google/genai 1.50→1.51, openai 6.34→6.35.

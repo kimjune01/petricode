@@ -8,6 +8,7 @@ export function viewerHTML(sseUrl: string): string {
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   ::selection { background: rgba(74,222,128,0.3); }
+
   body {
     font-family: 'Lora', 'Charter', 'Bitstream Charter', 'Sitka Text', Cambria, Georgia, serif;
     font-size: 19px;
@@ -15,16 +16,23 @@ export function viewerHTML(sseUrl: string): string {
     background: #18181b;
     color: #d4d4d8;
     padding: 20px;
+    padding-bottom: 48px;
     max-width: 700px;
     margin: 0 auto;
   }
+
+  /* — Header — */
   header {
+    position: sticky;
+    top: 0;
+    background: #18181b;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding-bottom: 0.75rem;
+    gap: 8px;
+    padding: 12px 0;
     border-bottom: 1px solid #3f3f46;
-    margin-bottom: 1rem;
+    margin-bottom: 16px;
+    z-index: 1;
   }
   header h1 {
     font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -35,76 +43,34 @@ export function viewerHTML(sseUrl: string): string {
   #status {
     font-family: 'Berkeley Mono', 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
     font-size: 0.7rem;
-    padding: 0.15rem 0.5rem;
+    padding: 2px 8px;
     border-radius: 3px;
     background: #27272a;
     color: #a1a1aa;
   }
   #status.connected { background: rgba(74,222,128,0.15); color: #4ade80; }
   #status.reconnecting { background: rgba(250,204,21,0.15); color: #facc15; }
-  #conversation { display: flex; flex-direction: column; gap: 0.75em; }
-  .turn {
-    padding: 0.5rem 0;
-    animation: fadeIn 0.15s ease-in;
+  #status.error { background: rgba(239,68,68,0.15); color: #f87171; }
+
+  /* — Conversation — */
+  main { display: flex; flex-direction: column; gap: 12px; }
+
+  .turn { padding: 8px 0; }
+  @media (prefers-reduced-motion: no-preference) {
+    .turn { animation: fadeIn 0.15s ease-in; }
   }
   @keyframes fadeIn {
     from { opacity: 0.3; transform: translateY(2px); }
     to { opacity: 1; transform: translateY(0); }
   }
-  .turn.user {
-    border-left: 3px solid #60a5fa;
-    padding-left: 0.75rem;
-  }
-  .turn.user .label {
+
+  .label {
     font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
-    color: #60a5fa;
     font-weight: 600;
     font-size: 0.7rem;
     letter-spacing: 0.02em;
-    margin-bottom: 0.25rem;
-  }
-  .turn.assistant {
-    border-left: 3px solid #c084fc;
-    padding-left: 0.75rem;
-  }
-  .turn.assistant .label {
-    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
-    color: #c084fc;
-    font-weight: 600;
-    font-size: 0.7rem;
-    letter-spacing: 0.02em;
-    margin-bottom: 0.25rem;
-  }
-  .turn.system {
-    border-left: 3px solid #52525b;
-    padding-left: 0.75rem;
-    opacity: 0.7;
-  }
-  .turn.system .label {
-    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
-    color: #a1a1aa;
-    font-weight: 600;
-    font-size: 0.7rem;
-    letter-spacing: 0.02em;
-    margin-bottom: 0.25rem;
-  }
-  .turn.system .content {
-    font-family: 'Berkeley Mono', 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
-    font-size: 0.8rem;
-    color: #a1a1aa;
-  }
-  .turn.queued {
-    border-left: 3px solid #facc15;
-    padding-left: 0.75rem;
-    opacity: 0.6;
-  }
-  .turn.queued .label {
-    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
-    color: #facc15;
-    font-weight: 600;
-    font-size: 0.7rem;
-    letter-spacing: 0.02em;
-    margin-bottom: 0.25rem;
+    margin-bottom: 4px;
+    text-transform: uppercase;
   }
   .content {
     white-space: pre-wrap;
@@ -113,53 +79,94 @@ export function viewerHTML(sseUrl: string): string {
     line-height: 1.4;
     max-width: 65ch;
   }
+
+  /* User turns */
+  .turn.user { border-left: 3px solid #60a5fa; padding-left: 12px; }
+  .turn.user .label { color: #60a5fa; }
+
+  /* Assistant turns */
+  .turn.assistant { border-left: 3px solid #c084fc; padding-left: 12px; }
+  .turn.assistant .label { color: #c084fc; }
+
+  /* System/tool turns */
+  .turn.system { border-left: 3px solid #52525b; padding-left: 12px; }
+  .turn.system .label { color: #a1a1aa; }
+  .turn.system .content {
+    font-family: 'Berkeley Mono', 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+    font-size: 0.8rem;
+    color: #a1a1aa;
+  }
+
+  /* Queued turns */
+  .turn.queued { border-left: 3px solid #facc15; padding-left: 12px; opacity: 0.7; }
+  .turn.queued .label { color: #facc15; }
+  .turn.queued::after {
+    content: 'queued';
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-size: 0.65rem;
+    color: #facc15;
+    background: rgba(250,204,21,0.1);
+    padding: 1px 6px;
+    border-radius: 3px;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+
+  /* Code */
   .content code {
     font-family: 'Berkeley Mono', 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
     background: #27272a;
-    color: #166534;
-    padding: 0.1rem 0.3rem;
+    color: #d4d4d8;
+    padding: 1px 4px;
     border-radius: 3px;
     font-size: 0.8rem;
   }
   .content pre {
     font-family: 'Berkeley Mono', 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
     background: #27272a;
-    padding: 0.75rem;
+    padding: 12px;
     border-radius: 5px;
     overflow-x: auto;
-    margin: 0.5rem 0;
+    margin: 8px 0;
     font-size: 0.8rem;
     line-height: 1.5;
   }
+
+  /* Streaming */
   #streaming {
     border-left: 3px solid #c084fc;
-    padding-left: 0.75rem;
-    padding: 0.5rem 0 0.5rem 0.75rem;
+    padding: 8px 0 8px 12px;
   }
-  #streaming .label {
-    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
-    color: #c084fc;
-    font-weight: 600;
-    font-size: 0.7rem;
-    letter-spacing: 0.02em;
-    margin-bottom: 0.25rem;
-  }
-  #streaming .content { color: #a1a1aa; }
+  #streaming .label { color: #c084fc; }
+  #streaming .content { color: #d4d4d8; }
   #streaming .cursor {
     display: inline-block;
-    width: 0.5rem;
+    width: 8px;
     height: 1rem;
     background: #c084fc;
-    animation: blink 1s step-end infinite;
     vertical-align: text-bottom;
   }
+  @media (prefers-reduced-motion: no-preference) {
+    #streaming .cursor { animation: blink 1s step-end infinite; }
+  }
   @keyframes blink { 50% { opacity: 0; } }
+
+  /* Empty state */
+  #empty {
+    text-align: center;
+    padding: 48px 20px;
+    color: #52525b;
+    font-size: 0.9rem;
+  }
+  #empty span { display: block; font-size: 2rem; margin-bottom: 12px; }
+
+  /* Footer */
   footer {
     position: fixed;
     bottom: 0;
     left: 0;
     right: 0;
-    padding: 0.5rem 1rem;
+    padding: 8px 16px;
     background: #18181b;
     border-top: 1px solid #3f3f46;
     font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -170,39 +177,54 @@ export function viewerHTML(sseUrl: string): string {
   footer a {
     color: #e4e4e7;
     background: #27272a;
-    padding: 0.1rem 0.4rem;
+    padding: 1px 6px;
     border-radius: 3px;
-    text-decoration: none;
+    text-decoration: underline;
+    text-decoration-color: #52525b;
+    text-underline-offset: 2px;
     transition: background 0.3s;
   }
   footer a:hover { background: #3f3f46; color: #fafafa; }
+
   @media (max-width: 600px) {
-    body { padding: 12px; font-size: 17px; }
+    body { padding: 12px; padding-bottom: 48px; font-size: 17px; }
     .content { max-width: none; }
   }
 </style>
 </head>
 <body>
 <header>
-  <span>🧫</span>
+  <span aria-hidden="true">🧫</span>
   <h1>petricode</h1>
-  <span id="status">connecting</span>
+  <span id="status" role="status" aria-live="polite">connecting</span>
 </header>
-<div id="conversation"></div>
-<div id="streaming" style="display:none">
+<main id="conversation" role="log" aria-label="Conversation">
+  <div id="empty"><span aria-hidden="true">🧫</span>Waiting for conversation&hellip;</div>
+</main>
+<div id="streaming" style="display:none" aria-live="polite">
   <div class="label">agent</div>
-  <div class="content"><span id="stream-text"></span><span class="cursor"></span></div>
+  <div class="content"><span id="stream-text"></span><span class="cursor" aria-hidden="true"></span></div>
 </div>
-<footer>read-only · <a href="https://github.com/kimjune01/petricode">petricode</a></footer>
+<footer>read-only &middot; <a href="https://github.com/kimjune01/petricode">petricode</a></footer>
 <script>
 (function() {
   var conv = document.getElementById('conversation');
+  var empty = document.getElementById('empty');
   var status = document.getElementById('status');
   var streaming = document.getElementById('streaming');
   var streamText = document.getElementById('stream-text');
   var streamBuf = '';
+  var hasContent = false;
+
+  function hideEmpty() {
+    if (!hasContent && empty) {
+      empty.style.display = 'none';
+      hasContent = true;
+    }
+  }
 
   function addTurn(cls, label, text) {
+    hideEmpty();
     var div = document.createElement('div');
     div.className = 'turn ' + cls;
     var labelEl = document.createElement('div');
@@ -225,8 +247,13 @@ export function viewerHTML(sseUrl: string): string {
     status.className = 'connected';
   };
   es.onerror = function() {
-    status.textContent = 'reconnecting';
-    status.className = 'reconnecting';
+    if (es.readyState === EventSource.CLOSED) {
+      status.textContent = 'disconnected';
+      status.className = 'error';
+    } else {
+      status.textContent = 'reconnecting';
+      status.className = 'reconnecting';
+    }
   };
 
   es.addEventListener('message.user', function(e) {
@@ -237,7 +264,7 @@ export function viewerHTML(sseUrl: string): string {
 
   es.addEventListener('message.queued', function(e) {
     var d = JSON.parse(e.data);
-    addTurn('queued', d.actor + ' (queued)', d.text || '');
+    addTurn('queued', d.actor, d.text || '');
   });
 
   es.addEventListener('message.assistant', function(e) {
@@ -249,6 +276,7 @@ export function viewerHTML(sseUrl: string): string {
   });
 
   es.addEventListener('message.chunk', function(e) {
+    hideEmpty();
     var d = JSON.parse(e.data);
     streamBuf += d.text || '';
     streamText.textContent = streamBuf;
