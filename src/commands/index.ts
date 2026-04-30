@@ -5,7 +5,7 @@ export interface CommandResult {
   exit?: boolean;
 }
 
-export type CommandHandler = (args: string) => CommandResult;
+export type CommandHandler = (args: string) => CommandResult | Promise<CommandResult>;
 
 const commands: Record<string, CommandHandler> = {
   exit: () => ({ output: "Goodbye.", exit: true }),
@@ -81,7 +81,7 @@ export function overrideCommand(name: string, handler: CommandHandler): void {
  * Try to parse and execute a slash command. Returns null if the input
  * is not a slash command.
  */
-export function tryCommand(input: string): CommandResult | null {
+export function tryCommand(input: string): CommandResult | Promise<CommandResult> | null {
   const trimmed = input.trim();
   if (!trimmed.startsWith("/")) return null;
 

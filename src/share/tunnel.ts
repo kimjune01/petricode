@@ -2,9 +2,19 @@ import { type Subprocess } from "bun";
 
 let tunnelProcess: Subprocess | null = null;
 let cachedUrl: string | null = null;
+let pendingTunnel: Promise<string | null> | null = null;
 
 export async function startTunnel(port: number): Promise<string | null> {
   if (cachedUrl) return cachedUrl;
+  if (pendingTunnel) return pendingTunnel;
+
+  pendingTunnel = _startTunnel(port);
+  const result = await pendingTunnel;
+  pendingTunnel = null;
+  return result;
+}
+
+async function _startTunnel(port: number): Promise<string | null> {
 
   // Try bore first (no signup, free public relay)
   const borePath = await findBinary("bore");

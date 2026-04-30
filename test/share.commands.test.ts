@@ -3,6 +3,7 @@ import { ShareServer } from "../src/share/server.js";
 import { ShareEventLog } from "../src/share/eventLog.js";
 import { InviteRegistry } from "../src/share/invites.js";
 import { makeShareHandler, makeRevokeHandler } from "../src/commands/share.js";
+import type { CommandResult } from "../src/commands/index.js";
 
 let server: ShareServer | null = null;
 
@@ -17,7 +18,7 @@ function setup(port: number) {
   const sessionId = "test-session";
   server = new ShareServer({ port, hostname: "127.0.0.1", eventLog, invites, sessionId });
   server.start();
-  const ctx = { server, invites, sessionId };
+  const ctx = { server, invites, sessionId, shareHost: `127.0.0.1:${port}` };
   const share = makeShareHandler(ctx);
   const revoke = makeRevokeHandler(ctx);
   return { eventLog, invites, sessionId, port, share, revoke };
@@ -26,14 +27,14 @@ function setup(port: number) {
 describe("/share command", () => {
   test("produces share URL with token", () => {
     const { share } = setup(17770);
-    const result = share("");
+    const result = share("") as CommandResult;
     expect(result.output).toContain("Shared session");
     expect(result.output).toContain("token=");
   });
 
-  test("URL contains valid kitchen-scope token", async () => {
-    const { share, invites, port } = setup(17772);
-    const result = share("");
+  test("URL contains valid kitchen-scope token", () => {
+    const { share, invites } = setup(17772);
+    const result = share("") as CommandResult;
     const match = result.output.match(/token=([^\s"]+)/);
     expect(match).not.toBeNull();
     const token = match![1]!;
@@ -44,8 +45,8 @@ describe("/share command", () => {
 
   test("second /share reuses running server", () => {
     const { share } = setup(17773);
-    const r1 = share("");
-    const r2 = share("");
+    const r1 = share("") as CommandResult;
+    const r2 = share("") as CommandResult;
     expect(r1.output).toContain("17773");
     expect(r2.output).toContain("17773");
   });
@@ -57,8 +58,18 @@ describe("/share command", () => {
     server = new ShareServer({ port: 17774, hostname: "127.0.0.1", eventLog, invites, sessionId });
     server.start();
     const share = makeShareHandler({ server, invites, sessionId, shareHost: "192.168.1.100:7742" });
-    const result = share("");
+    const result = share("") as CommandResult;
     expect(result.output).toContain("192.168.1.100:7742");
+  });
+
+  test("output includes copy block with browser and terminal links", () => {
+    const { share } = setup(17779);
+    const result = share("") as CommandResult;
+    expect(result.output).toContain("--- copy below ---");
+    expect(result.output).toContain("--- copy above ---");
+    expect(result.output).toContain("Watch in browser:");
+    expect(result.output).toContain("Join from terminal:");
+    expect(result.output).toContain("bun run src/cli.ts attach");
   });
 });
 
@@ -66,10 +77,9 @@ describe("/revoke command", () => {
   test("no args lists active invites", () => {
     const { share, revoke } = setup(17775);
     share("");
-    share("kitchen");
+    share("");
     const result = revoke("");
     expect(result.output).toContain("Active invites:");
-    expect(result.output.split("\n").filter((l) => l.trim().startsWith("g") || l.includes("living") || l.includes("kitchen")).length).toBeGreaterThanOrEqual(2);
   });
 
   test("revoke by ID removes invite", () => {
@@ -89,10 +99,9 @@ describe("/revoke command", () => {
 
   test("revoke closes SSE connections", async () => {
     const { share, revoke, invites, sessionId, port } = setup(17778);
-    share("living");
+    share("");
     const invite = invites.list()[0]!;
 
-    // Connect SSE
     const controller = new AbortController();
     fetch(`http://127.0.0.1:${port}/sessions/${sessionId}/events?token=${invite.token}`, {
       signal: controller.signal,

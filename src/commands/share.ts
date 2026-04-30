@@ -15,10 +15,8 @@ function formatShareOutput(
   sessionId: string,
   token: string,
   inviteId: string,
-  scope: RoomScope,
 ): string {
   const url = `${baseUrl}/sessions/${sessionId}/events?token=${token}`;
-  const label = "Shared session (read + submit)";
 
   const shareBlock = [
     `Join my petricode session:`,
@@ -32,7 +30,7 @@ function formatShareOutput(
   ].join("\n");
 
   return [
-    `${label}`,
+    "Shared session (read + submit)",
     "",
     "--- copy below ---",
     shareBlock,
@@ -42,24 +40,21 @@ function formatShareOutput(
   ].join("\n");
 }
 
-export function makeShareHandler(ctx: ShareCommandContext): (args: string) => CommandResult {
-  let tunnelAttempted = false;
+export function makeShareHandler(ctx: ShareCommandContext): (args: string) => CommandResult | Promise<CommandResult> {
   let serverStarted = false;
 
-  return (args: string): CommandResult => {
-    const scope: RoomScope = "kitchen";
-
+  return (args: string): CommandResult | Promise<CommandResult> => {
     if (!serverStarted) {
       ctx.server.start();
       serverStarted = true;
     }
 
-    const invite = ctx.invites.create(ctx.sessionId, scope);
+    const invite = ctx.invites.create(ctx.sessionId, "kitchen");
 
     if (ctx.shareHost) {
       return {
         output: formatShareOutput(
-          `http://${ctx.shareHost}`, ctx.sessionId, invite.token, invite.id, scope,
+          `http://${ctx.shareHost}`, ctx.sessionId, invite.token, invite.id,
         ),
       };
     }
@@ -67,40 +62,28 @@ export function makeShareHandler(ctx: ShareCommandContext): (args: string) => Co
     const tunnelUrl = getTunnelUrl();
     if (tunnelUrl) {
       return {
-        output: formatShareOutput(
-          tunnelUrl, ctx.sessionId, invite.token, invite.id, scope,
-        ),
+        output: formatShareOutput(tunnelUrl, ctx.sessionId, invite.token, invite.id),
       };
     }
 
-    const localBase = `http://localhost:${ctx.server.port}`;
+    // Start tunnel and wait for it (up to ~5s)
+    return startTunnel(ctx.server.port).then((url) => {
+      if (url) {
+        return {
+          output: formatShareOutput(url, ctx.sessionId, invite.token, invite.id),
+        };
+      }
 
-    if (!tunnelAttempted) {
-      tunnelAttempted = true;
-      startTunnel(ctx.server.port).then((url) => {
-        if (url) {
-          console.log(`Tunnel ready. Run /share again for a remote link.`);
-        }
-      }).catch(() => {});
-
+      const localBase = `http://localhost:${ctx.server.port}`;
       return {
         output: [
-          formatShareOutput(localBase, ctx.sessionId, invite.token, invite.id, scope),
+          formatShareOutput(localBase, ctx.sessionId, invite.token, invite.id),
           "",
-          "Starting tunnel for remote access... /share again in a few seconds.",
-          "Or: cargo install bore-cli (no signup needed)",
+          "Local only — for remote: cargo install bore-cli (no signup)",
+          "Or: --share-host <host:port> with a manual tunnel",
         ].join("\n"),
       };
-    }
-
-    return {
-      output: [
-        formatShareOutput(localBase, ctx.sessionId, invite.token, invite.id, scope),
-        "",
-        "Local only — for remote: cargo install bore-cli (no signup)",
-        "Or: --share-host <host:port> with a manual tunnel",
-      ].join("\n"),
-    };
+    });
   };
 }
 

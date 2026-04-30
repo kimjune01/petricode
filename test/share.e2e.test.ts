@@ -30,13 +30,13 @@ describe("share e2e", () => {
 
     const bridge = new ShareBridge(eventLog, queue);
 
-    // 2. /share kitchen
-    const share = makeShareHandler({ server, invites, sessionId });
-    const shareResult = share("kitchen");
-    expect(shareResult.output).toContain("Kitchen invite");
+    // 2. /share (use shareHost to keep test sync)
+    const share = makeShareHandler({ server, invites, sessionId, shareHost: `127.0.0.1:${port}` });
+    const shareResult = share("") as { output: string };
+    expect(shareResult.output).toContain("Shared session");
 
     // Extract token from URL
-    const tokenMatch = shareResult.output.match(/token=([^\s]+)/);
+    const tokenMatch = shareResult.output.match(/token=([^\s"]+)/);
     const kitchenToken = tokenMatch![1]!;
 
     // 3. Connect guest SSE client

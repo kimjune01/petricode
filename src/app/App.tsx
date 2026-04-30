@@ -286,29 +286,29 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious", shar
       if (!matchedSlashSkill) {
         const cmdResult = tryCommand(input);
         if (cmdResult) {
-          // Match on the parsed command name so `/clear something` is
-          // treated as /clear (and reports no-such-args), not silently
-          // dropped to the generic addSystemTurn branch which printed
-          // "Conversation cleared." while leaving turns intact.
-          if (skillCmdName === "clear") {
-            // Wipe both the React turn list AND the pipeline cache.
-            // Without pipeline.clear(), the model kept seeing the full
-            // pre-clear history on the next turn even though the UI was
-            // empty.
-            pipeline?.clear();
-            setState((prev) => ({
-              ...prev,
-              turns: [],
-              error: null,
-              tokenCount: pipeline?.tokenCount() ?? prev.tokenCount,
-            }));
-            addSystemTurn(cmdResult.output);
-            return;
-          }
+          const handleResult = (result: { output: string; exit?: boolean }) => {
+            if (skillCmdName === "clear") {
+              pipeline?.clear();
+              setState((prev) => ({
+                ...prev,
+                turns: [],
+                error: null,
+                tokenCount: pipeline?.tokenCount() ?? prev.tokenCount,
+              }));
+              addSystemTurn(result.output);
+              return;
+            }
 
-          addSystemTurn(cmdResult.output);
-          if (cmdResult.exit) {
-            exit();
+            addSystemTurn(result.output);
+            if (result.exit) {
+              exit();
+            }
+          };
+
+          if (cmdResult instanceof Promise) {
+            cmdResult.then(handleResult);
+          } else {
+            handleResult(cmdResult);
           }
           return;
         }

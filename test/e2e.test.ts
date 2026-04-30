@@ -514,7 +514,7 @@ describe("Session resume", () => {
 
 describe("/help and /clear", () => {
   test("/help lists all commands", () => {
-    const result = tryCommand("/help");
+    const result = tryCommand("/help") as { output: string } | null;
     expect(result).not.toBeNull();
     expect(result!.output).toContain("/help");
     expect(result!.output).toContain("/exit");
@@ -527,14 +527,14 @@ describe("/help and /clear", () => {
   });
 
   test("/clear returns cleared message", () => {
-    const result = tryCommand("/clear");
+    const result = tryCommand("/clear") as { output: string; exit?: boolean } | null;
     expect(result).not.toBeNull();
     expect(result!.output).toContain("cleared");
     expect(result!.exit).toBeUndefined();
   });
 
   test("unknown command returns error", () => {
-    const result = tryCommand("/nonexistent");
+    const result = tryCommand("/nonexistent") as { output: string } | null;
     expect(result).not.toBeNull();
     expect(result!.output).toContain("Unknown command");
   });
