@@ -4,7 +4,38 @@ Experimental coding agent harness. AGPL-3.0. TypeScript + Bun.
 
 A laboratory for agent architectures with six [Natural Framework](https://june.kim/the-natural-framework) roles: Perceive, Cache, Filter, Attend (human), Transmit, Consolidate. Each automated role is a swappable interface. The goal is to experiment our way into a harness that actually learns between sessions.
 
-## Quick start
+## Join a shared session
+
+Someone sent you a petricode link? Three options:
+
+**Option A — Browser (zero install, read-only)**
+
+Open the link in your browser. You'll see the conversation live.
+
+**Option B — Terminal (full TUI, can submit messages)**
+
+```bash
+# Install Bun if you don't have it
+curl -fsSL https://bun.sh/install | bash
+
+# Clone and install
+git clone https://github.com/kimjune01/petricode.git
+cd petricode
+bun install
+
+# Join the session
+bun run src/cli.ts attach <paste-the-url-here>
+```
+
+No API keys needed to join — you're connecting to someone else's agent.
+
+**Option C — If you already have petricode**
+
+```bash
+petricode attach <url>
+```
+
+## Quick start (running your own agent)
 
 ```bash
 bun install
@@ -12,9 +43,7 @@ bun test                    # 525 tests, no API keys needed
 bun run src/cli.ts          # TUI shell (interactive, full pipeline)
 ```
 
-## Sanity check (requires API keys)
-
-See [TESTING.md](TESTING.md) for the full testing guide, including how to run sanity checks with real models.
+Running your own agent requires API keys:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-...
@@ -33,6 +62,36 @@ Vertex AI when `GOOGLE_APPLICATION_CREDENTIALS` is set (project resolved
 from `GOOGLE_CLOUD_PROJECT` or `gcloud config get-value project`), or
 through the Gemini API when `GOOGLE_API_KEY` is set.
 
+See [TESTING.md](TESTING.md) for the full testing guide.
+
+## Share your session
+
+```bash
+# In petricode, type:
+> /share kitchen
+
+# First time with bore installed: starts a tunnel automatically
+# Prints a public URL — send it to the other person
+```
+
+For remote sharing, install [bore](https://github.com/ekzhang/bore) — free, open-source, no signup:
+
+```bash
+# macOS arm64
+curl -sL https://github.com/ekzhang/bore/releases/download/v0.6.0/bore-v0.6.0-aarch64-apple-darwin.tar.gz | tar xz && mv bore ~/bin/
+
+# macOS x86_64
+curl -sL https://github.com/ekzhang/bore/releases/download/v0.6.0/bore-v0.6.0-x86_64-apple-darwin.tar.gz | tar xz && mv bore ~/bin/
+
+# Linux x86_64
+curl -sL https://github.com/ekzhang/bore/releases/download/v0.6.0/bore-v0.6.0-x86_64-unknown-linux-musl.tar.gz | tar xz && mv bore ~/bin/
+
+# or via cargo
+cargo install bore-cli
+```
+
+`/share` auto-starts a bore tunnel if available. Without bore, it prints a localhost URL (works on LAN/tailnet). See [docs/sharing-guide.md](docs/sharing-guide.md) for the full guide.
+
 ## Architecture
 
 Five automated slots, one human slot. Every slot is an interface in `src/core/contracts.ts`.
@@ -42,22 +101,6 @@ User input → Perceive → Cache → Filter → [human decides] → Transmit �
 ```
 
 Three model tiers: primary (Anthropic), reviewer (OpenAI), fast (cheap). The reviewer is a [Maxwell's demon](https://june.kim/forge) — it sits at the gate between volley rounds, selects which changes pass, and the artifact's entropy decreases. Paid for honestly in reviewer tokens.
-
-### Session sharing
-
-Host types `/share kitchen`, gets a shareable URL. Guest runs `petricode attach <url>` for a full TUI with compose bar. Both talk to the same agent, same context window.
-
-For remote sharing (over the internet), install [bore](https://github.com/ekzhang/bore) — a free, open-source tunnel with no signup:
-
-```bash
-# macOS arm64
-curl -sL https://github.com/ekzhang/bore/releases/download/v0.6.0/bore-v0.6.0-aarch64-apple-darwin.tar.gz | tar xz && mv bore ~/bin/
-
-# or via cargo
-cargo install bore-cli
-```
-
-`/share` auto-starts a bore tunnel if available. See [docs/sharing-guide.md](docs/sharing-guide.md) for details. Protocol spec: [docs/messaging-protocol.md](docs/messaging-protocol.md).
 
 ## Structure
 
