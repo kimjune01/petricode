@@ -39,33 +39,38 @@ async function startBore(borePath: string, port: number): Promise<string | null>
   });
   tunnelProcess = proc;
 
-  // bore prints "listening at bore.pub:XXXXX" to stderr
   const reader = proc.stderr.getReader();
   const decoder = new TextDecoder();
   let buf = "";
 
-  for (let attempt = 0; attempt < 40; attempt++) {
-    const { done, value } = await Promise.race([
-      reader.read(),
-      new Promise<{ done: true; value: undefined }>((r) =>
-        setTimeout(() => r({ done: true, value: undefined }), 250),
-      ),
-    ]);
-    if (value) buf += decoder.decode(value, { stream: true });
-    if (done && !value) continue;
+  // Overall timeout — kill bore if it doesn't connect in 10s
+  const timeout = setTimeout(() => {
+    reader.cancel().catch(() => {});
+    stopTunnel();
+  }, 10_000);
 
-    // Strip ANSI escape sequences before matching — bore uses tracing
-    // which wraps output in color codes
-    const clean = buf.replace(/\x1b\[[0-9;]*m/g, "");
-    const match = clean.match(/bore\.pub:(\d+)/);
-    if (match) {
-      reader.cancel();
-      cachedUrl = `http://bore.pub:${match[1]}`;
-      return cachedUrl;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buf += decoder.decode(value, { stream: true });
+
+      // Strip ANSI escape sequences (bore uses tracing with color codes)
+      const clean = buf.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "");
+      const match = clean.match(/listening at\s+bore\.pub:(\d+)/);
+      if (match) {
+        clearTimeout(timeout);
+        cachedUrl = `http://bore.pub:${match[1]}`;
+        return cachedUrl;
+      }
     }
+  } catch {
+    // reader cancelled by timeout or process killed
+  } finally {
+    clearTimeout(timeout);
   }
 
-  reader.cancel();
   stopTunnel();
   return null;
 }
