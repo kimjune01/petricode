@@ -10,6 +10,38 @@ export interface ShareCommandContext {
   shareHost?: string;
 }
 
+function formatShareOutput(
+  baseUrl: string,
+  sessionId: string,
+  token: string,
+  inviteId: string,
+  scope: RoomScope,
+): string {
+  const url = `${baseUrl}/sessions/${sessionId}/events?token=${token}`;
+  const label = scope === "kitchen" ? "Kitchen invite (read + submit)" : "Living room invite (read-only)";
+
+  const shareBlock = [
+    `Join my petricode session (${scope === "kitchen" ? "you can chat" : "read-only"}):`,
+    ``,
+    `Watch in browser: ${url}`,
+    ``,
+    `Join from terminal:`,
+    `  curl -fsSL https://bun.sh/install | bash`,
+    `  git clone https://github.com/kimjune01/petricode.git && cd petricode && bun install`,
+    `  bun run src/cli.ts attach "${url}"`,
+  ].join("\n");
+
+  return [
+    `${label}`,
+    "",
+    "--- copy below ---",
+    shareBlock,
+    "--- copy above ---",
+    "",
+    `/revoke ${inviteId} to revoke`,
+  ].join("\n");
+}
+
 export function makeShareHandler(ctx: ShareCommandContext): (args: string) => CommandResult {
   let tunnelAttempted = false;
   let serverStarted = false;
@@ -17,72 +49,56 @@ export function makeShareHandler(ctx: ShareCommandContext): (args: string) => Co
   return (args: string): CommandResult => {
     const scope: RoomScope = args.trim() === "kitchen" ? "kitchen" : "living";
 
-    // Start server lazily on first /share
     if (!serverStarted) {
       ctx.server.start();
       serverStarted = true;
     }
 
     const invite = ctx.invites.create(ctx.sessionId, scope);
-    const label = scope === "kitchen" ? "Kitchen invite (read + submit)" : "Living room invite (read-only)";
 
-    // If --share-host was provided, use it directly
     if (ctx.shareHost) {
-      const url = `http://${ctx.shareHost}/sessions/${ctx.sessionId}/events?token=${invite.token}`;
       return {
-        output: [
-          `${label}:`,
-          `  ${url}`,
-          `  Revoke with /revoke ${invite.id}`,
-        ].join("\n"),
+        output: formatShareOutput(
+          `http://${ctx.shareHost}`, ctx.sessionId, invite.token, invite.id, scope,
+        ),
       };
     }
 
-    // Check if tunnel is already running
     const tunnelUrl = getTunnelUrl();
     if (tunnelUrl) {
-      const url = `${tunnelUrl}/sessions/${ctx.sessionId}/events?token=${invite.token}`;
       return {
-        output: [
-          `${label}:`,
-          `  ${url}`,
-          `  Revoke with /revoke ${invite.id}`,
-        ].join("\n"),
+        output: formatShareOutput(
+          tunnelUrl, ctx.sessionId, invite.token, invite.id, scope,
+        ),
       };
     }
 
-    // First share without tunnel — try to start one in background
-    const localUrl = `http://localhost:${ctx.server.port}/sessions/${ctx.sessionId}/events?token=${invite.token}`;
+    const localBase = `http://localhost:${ctx.server.port}`;
 
     if (!tunnelAttempted) {
       tunnelAttempted = true;
       startTunnel(ctx.server.port).then((url) => {
         if (url) {
-          console.log(`Tunnel ready: ${url}`);
-          console.log("Run /share again to get a shareable remote link.");
+          console.log(`Tunnel ready. Run /share again for a remote link.`);
         }
       }).catch(() => {});
 
       return {
         output: [
-          `${label} (local):`,
-          `  ${localUrl}`,
-          `  Revoke with /revoke ${invite.id}`,
+          formatShareOutput(localBase, ctx.sessionId, invite.token, invite.id, scope),
           "",
-          "Starting tunnel for remote access... run /share again in a few seconds.",
-          "Or install bore: cargo install bore-cli (no signup needed)",
+          "Starting tunnel for remote access... /share again in a few seconds.",
+          "Or: cargo install bore-cli (no signup needed)",
         ].join("\n"),
       };
     }
 
     return {
       output: [
-        `${label} (local only — no tunnel available):`,
-        `  ${localUrl}`,
-        `  Revoke with /revoke ${invite.id}`,
+        formatShareOutput(localBase, ctx.sessionId, invite.token, invite.id, scope),
         "",
-        "For remote sharing: cargo install bore-cli (no signup needed)",
-        "Or pass --share-host <host:port> with a manual tunnel.",
+        "Local only — for remote: cargo install bore-cli (no signup)",
+        "Or: --share-host <host:port> with a manual tunnel",
       ].join("\n"),
     };
   };
