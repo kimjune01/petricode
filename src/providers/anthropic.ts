@@ -70,6 +70,13 @@ function createAnthropicClient(model: string): Anthropic {
     process.env.CLAUDE_CODE_USE_VERTEX === "1" ||
     process.env.ANTHROPIC_VERTEX_PROJECT_ID
   ) {
+    // AnthropicVertex inherits from the base SDK which checks
+    // ANTHROPIC_API_KEY. An empty string (set but blank) causes
+    // "Could not resolve authentication method." Clear it so the
+    // Vertex auth path (ADC/service account) is used instead.
+    if (process.env.ANTHROPIC_API_KEY === "") {
+      delete process.env.ANTHROPIC_API_KEY;
+    }
     return new AnthropicVertex({
       projectId: process.env.ANTHROPIC_VERTEX_PROJECT_ID,
       region: resolveVertexRegion(model),
