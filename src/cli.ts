@@ -89,10 +89,14 @@ process.on("unhandledRejection", (reason) => {
 const args = process.argv.slice(2);
 const parsed = parseArgs(args);
 
-// Clear empty ANTHROPIC_API_KEY — the Vertex SDK inherits from the base
-// Anthropic SDK which treats "" as "set but broken" instead of falling
-// through to Vertex/ADC credentials.
-if (process.env.ANTHROPIC_API_KEY === "") {
+// When using Vertex AI, clear ANTHROPIC_API_KEY — the Vertex SDK
+// inherits from the base Anthropic SDK which treats any non-sk-ant key
+// as "set but broken" instead of falling through to ADC credentials.
+if (
+  (process.env.CLAUDE_CODE_USE_VERTEX === "1" || process.env.ANTHROPIC_VERTEX_PROJECT_ID) &&
+  process.env.ANTHROPIC_API_KEY !== undefined &&
+  !process.env.ANTHROPIC_API_KEY.startsWith("sk-ant-")
+) {
   delete process.env.ANTHROPIC_API_KEY;
 }
 
