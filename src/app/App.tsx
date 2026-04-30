@@ -265,6 +265,19 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious", shar
         for (const msg of pending) {
           if (controller.signal.aborted) break;
           share.bridge.emitGuestMessage(msg);
+
+          // Show guest message immediately before pipeline runs
+          const guestUserTurn: Turn = {
+            id: crypto.randomUUID(),
+            role: "user",
+            content: [{ type: "text", text: `[${msg.actor}] ${msg.text}` }],
+            timestamp: Date.now(),
+          };
+          setState((prev) => ({
+            ...prev,
+            turns: [...prev.turns, guestUserTurn],
+          }));
+
           startStreamThrottle();
           const guestTurn = await pipeline.turn(msg.text, {
             signal: controller.signal,
@@ -277,10 +290,7 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious", shar
           stopStreamThrottle();
           setState((prev) => ({
             ...prev,
-            turns: [...prev.turns,
-              { id: crypto.randomUUID(), role: "user" as const, content: [{ type: "text" as const, text: `[${msg.actor}] ${msg.text}` }], timestamp: Date.now() },
-              guestTurn,
-            ],
+            turns: [...prev.turns, guestTurn],
             tokenCount: pipeline.tokenCount(),
           }));
         }
@@ -463,6 +473,18 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious", shar
               if (controller.signal.aborted) break;
               drained++;
               share.bridge.emitGuestMessage(msg);
+
+              const guestUserTurn: Turn = {
+                id: crypto.randomUUID(),
+                role: "user",
+                content: [{ type: "text", text: `[${msg.actor}] ${msg.text}` }],
+                timestamp: Date.now(),
+              };
+              setState((prev) => ({
+                ...prev,
+                turns: [...prev.turns, guestUserTurn],
+              }));
+
               startStreamThrottle();
               const guestTurn = await pipeline.turn(msg.text, {
                 signal: controller.signal,
@@ -475,10 +497,7 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious", shar
               stopStreamThrottle();
               setState((prev) => ({
                 ...prev,
-                turns: [...prev.turns,
-                  { id: crypto.randomUUID(), role: "user" as const, content: [{ type: "text" as const, text: `[${msg.actor}] ${msg.text}` }], timestamp: Date.now() },
-                  guestTurn,
-                ],
+                turns: [...prev.turns, guestTurn],
                 tokenCount: pipeline.tokenCount(),
               }));
             }
