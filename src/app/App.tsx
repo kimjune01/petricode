@@ -366,49 +366,56 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious", shar
             share?.bridge.emitStreamChunk(delta);
           },
         });
-        // Identity check: a Ctrl+C-then-Enter race can null this ref
-        // and start turn 2 before turn 1's settle reaches here. If the
-        // ref now points at a different controller, leave it alone —
-        // erasing it would orphan the live turn (no Ctrl+C can reach
-        // it, double-submit guard waved through).
-        if (abortRef.current === controller) abortRef.current = null;
-        // Clear streamingText in the same render pass that appends the
-        // final turn — React batches both setStates within an event
-        // handler, so the user never sees a duplicate of the streamed
-        // text alongside the settled turn.
         share?.bridge.emitAssistantTurn(resultTurn);
 
-        // Drain guest message queue — process pending guest messages
-        if (share?.bridge.hasPendingMessages()) {
-          const pending = share.bridge.drainQueue();
-          for (const msg of pending) {
-            share.bridge.emitGuestMessage(msg);
-            // Feed guest message into the pipeline
-            const guestTurn = await pipeline.turn(msg.text, {
-              signal: controller.signal,
-              onText: (delta) => {
-                setStreamingText((prev) => prev + delta);
-                share.bridge.emitStreamChunk(delta);
-              },
-            });
-            share.bridge.emitAssistantTurn(guestTurn);
-            setState((prev) => ({
-              ...prev,
-              turns: [...prev.turns,
-                { id: crypto.randomUUID(), role: "user" as const, content: [{ type: "text" as const, text: `[${msg.actor}] ${msg.text}` }], timestamp: Date.now() },
-                guestTurn,
-              ],
-            }));
-            setStreamingText("");
-          }
-        }
-
+        // Append host result BEFORE draining guests so local TUI order
+        // matches remote SSE order: host user → host assistant → guest → ...
         setStreamingText("");
         setState((prev) => ({
           ...prev,
-          phase: "composing" as AppPhase,
           turns: [...prev.turns, resultTurn],
           tokenCount: pipeline.tokenCount(),
+        }));
+
+        // Drain guest message queue. Loop until empty (with fairness
+        // cap) so messages arriving during drain aren't stalled until
+        // the next host turn. abortRef stays set so Ctrl+C works.
+        if (share) {
+          const MAX_GUEST_DRAIN = 10;
+          let drained = 0;
+          while (share.bridge.hasPendingMessages() && drained < MAX_GUEST_DRAIN) {
+            const pending = share.bridge.drainQueue();
+            for (const msg of pending) {
+              if (controller.signal.aborted) break;
+              drained++;
+              share.bridge.emitGuestMessage(msg);
+              const guestTurn = await pipeline.turn(msg.text, {
+                signal: controller.signal,
+                onText: (delta) => {
+                  setStreamingText((prev) => prev + delta);
+                  share.bridge.emitStreamChunk(delta);
+                },
+              });
+              share.bridge.emitAssistantTurn(guestTurn);
+              setStreamingText("");
+              setState((prev) => ({
+                ...prev,
+                turns: [...prev.turns,
+                  { id: crypto.randomUUID(), role: "user" as const, content: [{ type: "text" as const, text: `[${msg.actor}] ${msg.text}` }], timestamp: Date.now() },
+                  guestTurn,
+                ],
+                tokenCount: pipeline.tokenCount(),
+              }));
+            }
+            if (controller.signal.aborted) break;
+          }
+        }
+
+        // Clear abort ref only after all work (host + guest) is done
+        if (abortRef.current === controller) abortRef.current = null;
+        setState((prev) => ({
+          ...prev,
+          phase: "composing" as AppPhase,
           error: null,
         }));
       } catch (err) {

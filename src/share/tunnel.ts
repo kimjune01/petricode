@@ -9,7 +9,8 @@ export async function startTunnel(port: number): Promise<string | null> {
   // Try bore first (no signup, free public relay)
   const borePath = await findBinary("bore");
   if (borePath) {
-    return startBore(borePath, port);
+    const url = await startBore(borePath, port);
+    if (url) return url;
   }
 
   // Fall back to ngrok (requires signup + auth token)

@@ -112,7 +112,7 @@ export default function AttachApp({ url }: AttachAppProps) {
           return;
         }
 
-        if (event.type === "message.assistant" && streamingText) {
+        if (event.type === "message.assistant") {
           setStreamingText("");
         }
 
@@ -134,10 +134,10 @@ export default function AttachApp({ url }: AttachAppProps) {
     };
   }, [url]);
 
-  // Detect kitchen scope by attempting a POST — if it succeeds, we have kitchen access
   useEffect(() => {
     if (!parsed) return;
-    // Try a lightweight scope check — POST with empty text to see if we get 403 or 400
+    let cancelled = false;
+    setScope("living");
     fetch(`${parsed.host}/sessions/${parsed.sessionId}/messages`, {
       method: "POST",
       headers: {
@@ -146,10 +146,9 @@ export default function AttachApp({ url }: AttachAppProps) {
       },
       body: JSON.stringify({}),
     }).then((resp) => {
-      // 400 = kitchen (bad request because no text, but auth passed)
-      // 403 = living (scope rejected)
-      if (resp.status === 400) setScope("kitchen");
+      if (!cancelled && resp.status === 400) setScope("kitchen");
     }).catch(() => {});
+    return () => { cancelled = true; };
   }, [url]);
 
   const handleSubmit = useCallback(async (input: string) => {
