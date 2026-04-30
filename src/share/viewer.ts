@@ -7,6 +7,7 @@ export function viewerHTML(sseUrl: string): string {
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/marked@15/lib/marked.umd.min.js"></script>
 <title>petricode</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -134,6 +135,15 @@ export function viewerHTML(sseUrl: string): string {
     font-size: 0.8rem;
     line-height: 1.5;
   }
+
+  .content a { color: #60a5fa; text-decoration: underline; text-underline-offset: 2px; }
+  .content a:hover { color: #93bbfd; }
+  .content ul, .content ol { padding-left: 1.5em; margin: 4px 0; }
+  .content li { margin: 2px 0; }
+  .content h1, .content h2, .content h3 { color: #fafafa; margin: 8px 0 4px; font-size: 1em; }
+  .content blockquote { border-left: 3px solid #3f3f46; padding-left: 8px; color: #a1a1aa; margin: 4px 0; }
+  .content p { margin: 4px 0; }
+  .content img { max-width: 100%; border-radius: 4px; }
 
   /* Streaming */
   #streaming {
@@ -291,6 +301,15 @@ export function viewerHTML(sseUrl: string): string {
     }
   }
 
+  function renderMd(text) {
+    if (typeof marked !== 'undefined' && marked.parse) {
+      try { return marked.parse(text, { breaks: true }); } catch(e) {}
+    }
+    var el = document.createElement('span');
+    el.textContent = text;
+    return el.innerHTML;
+  }
+
   function addTurn(cls, label, text) {
     hideEmpty();
     var div = document.createElement('div');
@@ -300,7 +319,11 @@ export function viewerHTML(sseUrl: string): string {
     labelEl.textContent = label;
     var contentEl = document.createElement('div');
     contentEl.className = 'content';
-    contentEl.textContent = text;
+    if (cls === 'assistant') {
+      contentEl.innerHTML = renderMd(text);
+    } else {
+      contentEl.textContent = text;
+    }
     div.appendChild(labelEl);
     div.appendChild(contentEl);
     conv.appendChild(div);
@@ -405,15 +428,17 @@ export function viewerHTML(sseUrl: string): string {
           e.preventDefault();
           var text = input.value.trim();
           if (!text) return;
-          var txnId = crypto.randomUUID();
+          var txnId = 'web-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
           input.value = '';
           addTurn('queued', 'you (sending)', text);
           fetch(postUrl, {
             method: 'POST',
             headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
             body: JSON.stringify({ text: text, txn_id: txnId })
-          }).catch(function() {
-            addTurn('system', 'error', 'Failed to send message');
+          }).then(function(resp) {
+            if (!resp.ok) addTurn('system', 'error', 'Send failed: ' + resp.status);
+          }).catch(function(err) {
+            addTurn('system', 'error', 'Failed to send: ' + err.message);
           });
         });
       }
