@@ -18,22 +18,11 @@ function formatShareOutput(
 ): string {
   const url = `${baseUrl}/sessions/${sessionId}/events?token=${token}`;
 
-  const shareBlock = [
-    `Join my petricode session:`,
-    ``,
-    `Watch in browser: ${url}`,
-    ``,
-    `Join from terminal:`,
-    `  curl -fsSL https://bun.sh/install | bash`,
-    `  git clone https://github.com/kimjune01/petricode.git && cd petricode && bun install`,
-    `  bun run src/cli.ts attach "${url}"`,
-  ].join("\n");
-
   return [
-    "Shared session (read + submit)",
+    "Shared session",
     "",
     "--- copy below ---",
-    shareBlock,
+    url,
     "--- copy above ---",
     "",
     `/revoke ${inviteId} to revoke`,

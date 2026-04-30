@@ -62,14 +62,12 @@ describe("/share command", () => {
     expect(result.output).toContain("192.168.1.100:7742");
   });
 
-  test("output includes copy block with browser and terminal links", () => {
+  test("output includes copy block with URL", () => {
     const { share } = setup(17779);
     const result = share("") as CommandResult;
     expect(result.output).toContain("--- copy below ---");
     expect(result.output).toContain("--- copy above ---");
-    expect(result.output).toContain("Watch in browser:");
-    expect(result.output).toContain("Join from terminal:");
-    expect(result.output).toContain("bun run src/cli.ts attach");
+    expect(result.output).toContain("token=");
   });
 });
 
