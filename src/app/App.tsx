@@ -54,12 +54,18 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious", shar
   const streamBufRef = useRef("");
   const streamFlushRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const lastFlushedRef = useRef("");
+
   const startStreamThrottle = useCallback(() => {
     streamBufRef.current = "";
+    lastFlushedRef.current = "";
     if (streamFlushRef.current) clearInterval(streamFlushRef.current);
     streamFlushRef.current = setInterval(() => {
-      setStreamingText(streamBufRef.current);
-    }, 80);
+      if (streamBufRef.current !== lastFlushedRef.current) {
+        lastFlushedRef.current = streamBufRef.current;
+        setStreamingText(streamBufRef.current);
+      }
+    }, 200);
   }, []);
 
   const stopStreamThrottle = useCallback(() => {
