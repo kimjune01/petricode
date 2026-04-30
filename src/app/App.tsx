@@ -306,7 +306,12 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious", shar
           };
 
           if (cmdResult instanceof Promise) {
-            cmdResult.then(handleResult);
+            addSystemTurn("Starting share server...");
+            setState((prev) => ({ ...prev, phase: "running" as AppPhase }));
+            cmdResult.then((r) => {
+              handleResult(r);
+              setState((prev) => ({ ...prev, phase: "composing" as AppPhase }));
+            });
           } else {
             handleResult(cmdResult);
           }
