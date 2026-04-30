@@ -39,7 +39,8 @@ async function startBore(borePath: string, port: number): Promise<string | null>
   });
   tunnelProcess = proc;
 
-  const reader = proc.stderr.getReader();
+  // bore writes to stdout when piped (not stderr)
+  const reader = proc.stdout.getReader();
   const decoder = new TextDecoder();
   let buf = "";
 
