@@ -5,6 +5,7 @@ import { serializeSSE, HEARTBEAT } from "./events.js";
 import { ShareEventLog } from "./eventLog.js";
 import { InviteRegistry, type Invite } from "./invites.js";
 import { GuestMessageQueue } from "./queue.js";
+import { viewerHTML } from "./viewer.js";
 
 interface SSEConnection {
   writer: WritableStreamDefaultWriter<Uint8Array>;
@@ -132,6 +133,18 @@ export class ShareServer {
 
     if (invite.sessionId !== requestSessionId) {
       return new Response("Forbidden", { status: 403 });
+    }
+
+    // Content negotiation: browser gets the viewer page, SSE clients get the stream
+    const accept = req.headers.get("accept") ?? "";
+    if (accept.includes("text/html") && !accept.includes("text/event-stream")) {
+      const sseUrl = url.toString();
+      return new Response(viewerHTML(sseUrl), {
+        headers: {
+          "Content-Type": "text/html; charset=utf-8",
+          "Referrer-Policy": "no-referrer",
+        },
+      });
     }
 
     const lastEventId = req.headers.get("last-event-id") ?? undefined;

@@ -209,4 +209,38 @@ describe("ShareServer", () => {
       clearTimeout(timeout);
     }
   });
+
+  test("browser Accept: text/html returns HTML viewer page", async () => {
+    const { invites, sessionId, port } = setup(17750);
+    const invite = invites.create(sessionId, "living");
+
+    const resp = await fetch(
+      `http://127.0.0.1:${port}/sessions/${sessionId}/events?token=${invite.token}`,
+      { headers: { Accept: "text/html" } },
+    );
+    expect(resp.status).toBe(200);
+    expect(resp.headers.get("content-type")).toContain("text/html");
+    const html = await resp.text();
+    expect(html).toContain("petricode");
+    expect(html).toContain("EventSource");
+    expect(html).toContain(invite.token);
+  });
+
+  test("Accept: text/event-stream returns SSE even if text/html is also listed", async () => {
+    const { eventLog, invites, sessionId, port } = setup(17751);
+    const invite = invites.create(sessionId, "living");
+
+    eventLog.append({
+      type: "message.user",
+      ts: new Date().toISOString(),
+      actor: "host",
+      payload: { text: "test" },
+    });
+
+    const text = await readSSE(port, `/sessions/${sessionId}/events`, {
+      token: invite.token,
+      maxEvents: 1,
+    });
+    expect(text).toContain("event: message.user");
+  });
 });
