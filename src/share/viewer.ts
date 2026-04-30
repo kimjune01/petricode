@@ -4,14 +4,17 @@ export function viewerHTML(sseUrl: string): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <title>petricode</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   ::selection { background: rgba(74,222,128,0.3); }
 
   body {
-    font-family: 'Lora', 'Charter', 'Bitstream Charter', 'Sitka Text', Cambria, Georgia, serif;
-    font-size: 19px;
+    font-family: 'JetBrains Mono', ui-monospace, 'Fira Code', monospace;
+    font-size: 15px;
     line-height: 1.4;
     background: #18181b;
     color: #d4d4d8;
@@ -35,13 +38,13 @@ export function viewerHTML(sseUrl: string): string {
     z-index: 1;
   }
   header h1 {
-    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
     font-size: 1rem;
     font-weight: 600;
     color: #fafafa;
   }
   #status {
-    font-family: 'Berkeley Mono', 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
     font-size: 0.7rem;
     padding: 2px 8px;
     border-radius: 3px;
@@ -65,7 +68,7 @@ export function viewerHTML(sseUrl: string): string {
   }
 
   .label {
-    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
     font-weight: 600;
     font-size: 0.7rem;
     letter-spacing: 0.02em;
@@ -75,7 +78,7 @@ export function viewerHTML(sseUrl: string): string {
   .content {
     white-space: pre-wrap;
     word-wrap: break-word;
-    font-size: 0.95rem;
+    font-size: 0.9rem;
     line-height: 1.4;
     max-width: 65ch;
   }
@@ -92,7 +95,7 @@ export function viewerHTML(sseUrl: string): string {
   .turn.system { border-left: 3px solid #52525b; padding-left: 12px; }
   .turn.system .label { color: #a1a1aa; }
   .turn.system .content {
-    font-family: 'Berkeley Mono', 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
     font-size: 0.8rem;
     color: #a1a1aa;
   }
@@ -102,7 +105,7 @@ export function viewerHTML(sseUrl: string): string {
   .turn.queued .label { color: #facc15; }
   .turn.queued::after {
     content: 'queued';
-    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
     font-size: 0.65rem;
     color: #facc15;
     background: rgba(250,204,21,0.1);
@@ -114,7 +117,7 @@ export function viewerHTML(sseUrl: string): string {
 
   /* Code */
   .content code {
-    font-family: 'Berkeley Mono', 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
     background: #27272a;
     color: #d4d4d8;
     padding: 1px 4px;
@@ -122,7 +125,7 @@ export function viewerHTML(sseUrl: string): string {
     font-size: 0.8rem;
   }
   .content pre {
-    font-family: 'Berkeley Mono', 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
     background: #27272a;
     padding: 12px;
     border-radius: 5px;
@@ -169,7 +172,7 @@ export function viewerHTML(sseUrl: string): string {
     padding: 8px 16px;
     background: #18181b;
     border-top: 1px solid #3f3f46;
-    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
     font-size: 0.75rem;
     color: #52525b;
     text-align: center;

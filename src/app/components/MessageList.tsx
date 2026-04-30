@@ -84,20 +84,11 @@ export default function MessageList({ turns, phase, streamingText }: MessageList
     );
   }
 
-  const settled = phase === "composing";
-  const staticTurns = settled ? turns : turns.slice(0, -1);
-  const liveTurn = settled ? null : turns[turns.length - 1];
-
   return (
     <>
-      <Static items={staticTurns}>
+      <Static items={turns}>
         {(turn) => <TurnView key={turn.id} turn={turn} />}
       </Static>
-      {liveTurn && (
-        <Box flexDirection="column">
-          <TurnView turn={liveTurn} />
-        </Box>
-      )}
       {streamingText && (
         <Box flexDirection="column" marginBottom={spacing.sm}>
           <Box>

@@ -47,11 +47,29 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious", shar
   });
   const [reviewerFindings, setReviewerFindings] = useState<string[]>([]);
   const [contextSummary, setContextSummary] = useState<string | undefined>(undefined);
-  // Live text the model is currently streaming, before it lands as a full
-  // Turn. Cleared when the pipeline resolves, errors, or aborts. Lets the
-  // user see assistant text appearing character-by-character instead of all
-  // at once when pipeline.turn() resolves.
+  // Live text the model is currently streaming. Throttled to reduce
+  // terminal repaint churn — chunks accumulate in a ref and flush to
+  // state every 80ms so scrollback stays usable during streaming.
   const [streamingText, setStreamingText] = useState("");
+  const streamBufRef = useRef("");
+  const streamFlushRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const startStreamThrottle = useCallback(() => {
+    streamBufRef.current = "";
+    if (streamFlushRef.current) clearInterval(streamFlushRef.current);
+    streamFlushRef.current = setInterval(() => {
+      setStreamingText(streamBufRef.current);
+    }, 80);
+  }, []);
+
+  const stopStreamThrottle = useCallback(() => {
+    if (streamFlushRef.current) {
+      clearInterval(streamFlushRef.current);
+      streamFlushRef.current = null;
+    }
+    setStreamingText(streamBufRef.current);
+    streamBufRef.current = "";
+  }, []);
   // Ctrl+C during a confirmation prompt must REJECT, not resolve("deny").
   // Resolving "deny" reaches toolSubpipe as a user denial and gets recorded
   // as "Denied by user" — making the LLM think the user evaluated and
@@ -330,7 +348,7 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious", shar
         timestamp: Date.now(),
       };
 
-      setStreamingText("");
+      startStreamThrottle();
       setState((prev) => ({
         ...prev,
         phase: "running" as AppPhase,
@@ -367,7 +385,7 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious", shar
         const resultTurn = await pipeline.turn(input, {
           signal: controller.signal,
           onText: (delta) => {
-            setStreamingText((prev) => prev + delta);
+            streamBufRef.current += delta;
             share?.bridge.emitStreamChunk(delta);
           },
         });
@@ -375,7 +393,7 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious", shar
 
         // Append host result BEFORE draining guests so local TUI order
         // matches remote SSE order: host user → host assistant → guest → ...
-        setStreamingText("");
+        stopStreamThrottle();
         setState((prev) => ({
           ...prev,
           turns: [...prev.turns, resultTurn],
@@ -394,15 +412,16 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious", shar
               if (controller.signal.aborted) break;
               drained++;
               share.bridge.emitGuestMessage(msg);
+              startStreamThrottle();
               const guestTurn = await pipeline.turn(msg.text, {
                 signal: controller.signal,
                 onText: (delta) => {
-                  setStreamingText((prev) => prev + delta);
+                  streamBufRef.current += delta;
                   share.bridge.emitStreamChunk(delta);
                 },
               });
               share.bridge.emitAssistantTurn(guestTurn);
-              setStreamingText("");
+              stopStreamThrottle();
               setState((prev) => ({
                 ...prev,
                 turns: [...prev.turns,
@@ -427,7 +446,7 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious", shar
         // Same identity guard as the success path — a settled abort
         // for turn 1 must not erase the controller for turn 2.
         if (abortRef.current === controller) abortRef.current = null;
-        setStreamingText("");
+        stopStreamThrottle();
         // Abort is not surfaced as an error — but we still need to drop
         // back to "composing" or the composer stays disabled. The
         // user-Ctrl+C path already sets phase to "composing" before this
