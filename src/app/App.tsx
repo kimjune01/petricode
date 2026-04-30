@@ -441,7 +441,35 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious", shar
           );
           return;
         }
-        const errMsg = err instanceof Error ? err.message : String(err);
+        const rawMsg = err instanceof Error ? err.message : String(err);
+        let errMsg = rawMsg;
+        if (rawMsg.includes("Could not resolve authentication method")) {
+          const usingVertex = process.env.CLAUDE_CODE_USE_VERTEX === "1" || !!process.env.ANTHROPIC_VERTEX_PROJECT_ID;
+          if (usingVertex) {
+            errMsg = [
+              rawMsg,
+              "",
+              "Vertex AI auth failed. Check:",
+              `  GOOGLE_APPLICATION_CREDENTIALS=${process.env.GOOGLE_APPLICATION_CREDENTIALS ?? "<not set>"}`,
+              `  ANTHROPIC_VERTEX_PROJECT_ID=${process.env.ANTHROPIC_VERTEX_PROJECT_ID ?? "<not set>"}`,
+              `  ANTHROPIC_API_KEY=${process.env.ANTHROPIC_API_KEY ? "(set — should be unset for Vertex)" : "(not set — ok)"}`,
+              "",
+              "If using a service account, ensure the key file exists and has Vertex AI permissions.",
+            ].join("\n");
+          } else {
+            errMsg = [
+              rawMsg,
+              "",
+              "Set ANTHROPIC_API_KEY or configure Vertex AI:",
+              "  export ANTHROPIC_API_KEY=sk-ant-...",
+              "  # or for Vertex:",
+              "  export ANTHROPIC_VERTEX_PROJECT_ID=your-project",
+              "  export GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json",
+            ].join("\n");
+          }
+        } else if (rawMsg.includes("429") || rawMsg.includes("RESOURCE_EXHAUSTED")) {
+          errMsg = `${rawMsg}\n\nRate limited. Wait a moment and try again, or check your Vertex AI quota.`;
+        }
         const failedTurn: Turn = {
           id: crypto.randomUUID(),
           role: "assistant",
