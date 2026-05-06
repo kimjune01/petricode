@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 // Ink is loaded lazily — headless mode (`-p`) skips the import entirely
 // so non-TTY scripts don't pay for the React/Ink boot or hit raw-mode
 // errors when stdin isn't a terminal.
@@ -51,6 +52,8 @@ function writeCrash(err: unknown): void {
   }
 }
 
+import { diagnose } from "./diagnose.js";
+
 // Bracketed paste mode is enabled by Composer's mount effect. On a normal
 // React unmount the cleanup effect disables it, but uncaught exceptions
 // and signals skip cleanup — leaving the user's terminal echoing literal
@@ -72,19 +75,23 @@ function registerBracketedPasteCleanup(): void {
   process.on("SIGTERM", () => { disableBracketedPaste(); process.exit(143); });
 }
 
-process.on("uncaughtException", (err) => {
+function reportCrash(err: unknown): void {
   writeCrash(err);
   disableBracketedPaste();
-  console.error(`\nCrash logged to ${crashLog}`);
+  const d = diagnose(err);
+  if (d) {
+    console.error(`\n\x1b[1;31m✗ ${d.cause}\x1b[0m`);
+    console.error(`  ${d.fix}`);
+  } else {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`\n\x1b[1;31m✗ ${msg}\x1b[0m`);
+  }
+  console.error(`\n  Full trace: ${crashLog}`);
   process.exit(1);
-});
+}
 
-process.on("unhandledRejection", (reason) => {
-  writeCrash(reason);
-  disableBracketedPaste();
-  console.error(`\nCrash logged to ${crashLog}`);
-  process.exit(1);
-});
+process.on("uncaughtException", reportCrash);
+process.on("unhandledRejection", reportCrash);
 
 const args = process.argv.slice(2);
 const parsed = parseArgs(args);

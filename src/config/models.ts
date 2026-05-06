@@ -109,6 +109,20 @@ export const DEFAULT_TIERS: TiersConfig = {
   },
 };
 
+export function resolveDefaultTiers(): TiersConfig {
+  if (process.env.OPENAI_API_KEY) return DEFAULT_TIERS;
+  if (process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.GOOGLE_API_KEY) {
+    return {
+      tiers: {
+        primary: { provider: "anthropic", model: "claude-opus-4-7" },
+        reviewer: { provider: "google", model: "gemini-2.5-pro" },
+        fast: { provider: "anthropic", model: "claude-haiku-4-5" },
+      },
+    };
+  }
+  return DEFAULT_TIERS;
+}
+
 export function validateTiers(config: unknown): TiersConfig {
   if (!config || typeof config !== "object") {
     throw new Error("Missing tiers configuration");

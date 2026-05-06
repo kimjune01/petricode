@@ -24,6 +24,8 @@ function formatShareOutput(
     "--- copy below ---",
     `${url}`,
     "",
+    `Terminal: curl -sN "${url}&format=ansi"`,
+    "",
     `https://github.com/kimjune01/petricode`,
     "--- copy above ---",
     "",

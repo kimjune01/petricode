@@ -5,7 +5,7 @@ import { join } from "path";
 import { homedir } from "os";
 import { existsSync, readFileSync } from "fs";
 import type { TiersConfig, ConfirmMode } from "../config/models.js";
-import { DEFAULT_TIERS, validateTiers } from "../config/models.js";
+import { resolveDefaultTiers, validateTiers } from "../config/models.js";
 import { TierRouter } from "../providers/router.js";
 import { RetryProvider } from "../providers/retry.js";
 import { Pipeline, type PipelineOptions } from "../agent/pipeline.js";
@@ -71,7 +71,7 @@ function loadTiersConfig(projectDir: string): TiersConfig {
     }
   }
 
-  return DEFAULT_TIERS;
+  return resolveDefaultTiers();
 }
 
 /**

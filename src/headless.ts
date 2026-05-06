@@ -12,6 +12,7 @@ import type { Turn, Content } from "./core/types.js";
 import type { Pipeline } from "./agent/pipeline.js";
 import type { ConfirmMode } from "./config/models.js";
 import { ClassifierEscalation } from "./agent/toolSubpipe.js";
+import { diagnose } from "./diagnose.js";
 
 export type HeadlessFormat = "text" | "json";
 
@@ -100,8 +101,12 @@ export async function runHeadlessTurn(
         stderr: failureNote + `petricode: classifier requested human review of ${err.toolName}: ${err.rationale}\n`,
       };
     }
+    const d = diagnose(err);
     const msg = err instanceof Error ? err.message : String(err);
-    return { exitCode: 1, stdout: "", stderr: `petricode: ${msg}\n` };
+    const stderr = d
+      ? `petricode: ${d.cause}\n  ${d.fix}\n`
+      : `petricode: ${msg}\n`;
+    return { exitCode: 1, stdout: "", stderr };
   }
 }
 
@@ -142,8 +147,12 @@ export async function runHeadless(opts: HeadlessOptions): Promise<HeadlessResult
     pipeline = result.pipeline;
     sessionId = result.sessionId;
   } catch (err) {
+    const d = diagnose(err);
     const msg = err instanceof Error ? err.message : String(err);
-    return { exitCode: 1, stdout: "", stderr: `petricode: ${msg}\n` };
+    const stderr = d
+      ? `petricode: ${d.cause}\n  ${d.fix}\n`
+      : `petricode: ${msg}\n`;
+    return { exitCode: 1, stdout: "", stderr };
   }
   const turnResult = await runHeadlessTurn(pipeline, opts.prompt, opts.format ?? "text");
   // Drain trace appends BEFORE returning. cli.ts goes straight to
