@@ -1,6 +1,9 @@
 {
   "name": "petricode",
   "type": "module",
+  "bin": {
+    "petricode": "src/cli.ts"
+  },
   "scripts": {
     "dev": "GOOGLE_GENAI_USE_VERTEXAI=true GOOGLE_CLOUD_PROJECT=qvs-atom-gcp-research GOOGLE_CLOUD_LOCATION=global bun run src/cli.ts",
     "typecheck": "tsc --noEmit"
