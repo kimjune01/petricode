@@ -6,11 +6,16 @@ import { ShareEventLog } from "./eventLog.js";
 import { InviteRegistry, type Invite } from "./invites.js";
 import { GuestMessageQueue } from "./queue.js";
 import { viewerHTML } from "./viewer.js";
+import { serializeANSI, type ANSIState } from "./ansi.js";
+
+type ConnectionFormat = "sse" | "ansi";
 
 interface SSEConnection {
   writer: WritableStreamDefaultWriter<Uint8Array>;
   invite: Invite;
   controller: AbortController;
+  format: ConnectionFormat;
+  ansiState?: ANSIState;
 }
 
 export interface ShareServerOptions {
@@ -148,6 +153,9 @@ export class ShareServer {
       });
     }
 
+    const format: ConnectionFormat =
+      url.searchParams.get("format") === "ansi" ? "ansi" : "sse";
+
     const lastEventId = req.headers.get("last-event-id") ?? undefined;
     const encoder = new TextEncoder();
 
@@ -155,7 +163,9 @@ export class ShareServer {
     const writer = writable.getWriter();
     const controller = new AbortController();
 
-    const conn: SSEConnection = { writer, invite, controller };
+    const ansiState: ANSIState | undefined =
+      format === "ansi" ? { streaming: false } : undefined;
+    const conn: SSEConnection = { writer, invite, controller, format, ansiState };
 
     // Replay first, buffer live events during replay, then subscribe.
     // This prevents live fanout from racing ahead of replayed history.
@@ -174,11 +184,16 @@ export class ShareServer {
         const replay = lastEventId
           ? this.eventLog.replay(lastEventId)
           : this.eventLog.replayCompacted();
+        const serialize = format === "ansi"
+          ? (e: ShareEvent) => serializeANSI(e, ansiState!)
+          : serializeSSE;
+
         const sentIds = new Set<string>();
         for (const event of replay) {
           if (controller.signal.aborted) break;
           sentIds.add(event.id);
-          await writer.write(encoder.encode(serializeSSE(event)));
+          const data = serialize(event);
+          if (data) await writer.write(encoder.encode(data));
         }
 
         // Drain buffered events. Use index loop because new events
@@ -190,7 +205,8 @@ export class ShareServer {
           drainIdx++;
           if (!sentIds.has(event.id)) {
             sentIds.add(event.id);
-            await writer.write(encoder.encode(serializeSSE(event)));
+            const data = serialize(event);
+            if (data) await writer.write(encoder.encode(data));
           }
         }
 
@@ -211,12 +227,18 @@ export class ShareServer {
     });
 
     return new Response(readable, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
-        "Referrer-Policy": "no-referrer",
-      },
+      headers: format === "ansi"
+        ? {
+            "Content-Type": "text/plain; charset=utf-8",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+          }
+        : {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Referrer-Policy": "no-referrer",
+          },
     });
   }
 
@@ -270,13 +292,23 @@ export class ShareServer {
 
   private fanOut(event: ShareEvent): void {
     const encoder = new TextEncoder();
-    const data = encoder.encode(serializeSSE(event));
+    const sseData = encoder.encode(serializeSSE(event));
 
     for (const conn of this.connections) {
       if (conn.controller.signal.aborted) {
         this.connections.delete(conn);
         continue;
       }
+
+      let data: Uint8Array;
+      if (conn.format === "ansi") {
+        const text = serializeANSI(event, conn.ansiState!);
+        if (!text) continue;
+        data = encoder.encode(text);
+      } else {
+        data = sseData;
+      }
+
       conn.writer.write(data).catch(() => {
         this.connections.delete(conn);
       });
@@ -292,6 +324,7 @@ export class ShareServer {
         this.connections.delete(conn);
         continue;
       }
+      if (conn.format === "ansi") continue;
       conn.writer.write(data).catch(() => {
         this.connections.delete(conn);
       });
