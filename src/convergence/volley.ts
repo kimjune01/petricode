@@ -1,11 +1,11 @@
 // ── Volley convergence protocol ──────────────────────────────────
-// Primary drafts, reviewer challenges, ≤5 rounds. Converged when
+// Primary drafts, reviewer challenges, ≤MAX_ROUNDS rounds. Converged when
 // the reviewer finds no issues.
 
 import type { Provider } from "../providers/provider.js";
 import type { Message } from "../core/types.js";
 
-const MAX_ROUNDS = 5;
+const MAX_ROUNDS = 20;
 // Per-call timeout. Without this, a hung provider stream (network
 // partition, rate-limit that doesn't surface as an error, provider
 // stuck mid-stream) blocks volley indefinitely with no recourse for

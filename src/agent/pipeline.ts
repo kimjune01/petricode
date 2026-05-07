@@ -30,6 +30,7 @@ import { substituteArguments } from "../skiller/consolidator.js";
 import type { ActivatedSkill } from "../skiller/types.js";
 import { createSkillTool } from "../tools/skill.js";
 import { inferProviderFromModel, listKnownModels } from "../config/models.js";
+import { DEFAULT_MAX_TOOL_ROUNDS } from "../config/defaults.js";
 
 export interface PipelineOptions {
   router: TierRouter;
@@ -61,7 +62,7 @@ export class Pipeline {
   onConfirm?: ConfirmFn;
   private classifier?: TriageClassifier;
   onClassified?: ClassifiedNotice;
-  private maxToolRounds: number = 10;
+  private maxToolRounds: number = DEFAULT_MAX_TOOL_ROUNDS;
   private permissiveShellGuard: boolean = false;
   private _sessionId!: string;
   private skills: Skill[] = [];
@@ -80,7 +81,7 @@ export class Pipeline {
     this.onConfirm = options.onConfirm;
     this.classifier = options.classifier;
     this.onClassified = options.onClassified;
-    this.maxToolRounds = options.maxToolRounds ?? 10;
+    this.maxToolRounds = options.maxToolRounds ?? DEFAULT_MAX_TOOL_ROUNDS;
     this.permissiveShellGuard = options.permissiveShellGuard ?? false;
     this._sessionId = options.sessionId ?? crypto.randomUUID();
 

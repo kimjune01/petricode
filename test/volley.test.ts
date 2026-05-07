@@ -82,15 +82,15 @@ describe("Volley", () => {
     expect(result.reviewer_findings[0]).toContain("error handling");
   });
 
-  test("max 5 rounds hard stop", async () => {
+  test("max 20 rounds hard stop", async () => {
     // Reviewer never satisfied
     const primary = mockProvider(["attempt"], "primary");
     const reviewer = mockProvider(["still broken"], "reviewer");
 
     const result = await volley("bad artifact", primary, reviewer);
     expect(result.converged).toBe(false);
-    expect(result.rounds).toBe(5);
-    expect(result.reviewer_findings).toHaveLength(5);
+    expect(result.rounds).toBe(20);
+    expect(result.reviewer_findings).toHaveLength(20);
   });
 
   test("returns reviewer findings from each round", async () => {

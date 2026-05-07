@@ -23,7 +23,7 @@ export async function runLoop(
     provider,
     config = {},
     toolExecutor,
-    maxIterations = 10,
+    maxIterations = 100,
   } = options;
 
   // Build initial conversation: a single user message
