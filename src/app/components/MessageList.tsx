@@ -70,12 +70,25 @@ interface MessageListProps {
  * long sessions that's enough screen-rewrite churn to manifest as black
  * flashes. Static caps the dynamic redraw region to the active turn.
  *
- * Promotion rule: while the pipeline is in flight, the last turn may still
- * be mutating (tool results filling in), so it stays dynamic. Once the
- * phase settles back to composing, every turn is committed and the whole
- * list moves into Static.
+ * Invariant: turns are append-only (never mutated post-commit) — every
+ * tool result or assistant continuation arrives as a brand-new Turn from
+ * the reducers in App.tsx / AttachApp.tsx. That makes it safe to put the
+ * entire `turns` array in <Static>: Ink keys items by identity, so each
+ * turn is written to scrollback exactly once on first render. Mutating a
+ * turn in place would be silently dropped — keep the append-only
+ * invariant if you change the reducers.
+ *
+ * The live streaming-text tail stays outside <Static> so it can repaint
+ * as chunks arrive; once the pipeline resolves it is cleared and the
+ * settled assistant Turn flows into Static on the next render.
  */
 export default function MessageList({ turns, phase, streamingText }: MessageListProps) {
+  // `phase` is intentionally unused right now — kept on the signature so
+  // callers don't need touching if we reintroduce a phase-gated Static
+  // promotion strategy. Reference it to keep the noUnusedParameters lint
+  // honest under strict mode.
+  void phase;
+
   if (turns.length === 0 && !streamingText) {
     return (
       <Box flexDirection="column">

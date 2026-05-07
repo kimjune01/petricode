@@ -269,6 +269,7 @@ export function viewerHTML(sseUrl: string): string {
 </div>
 <footer id="footer">read-only &middot; <a href="https://github.com/kimjune01/petricode">petricode</a></footer>
 <script src="https://cdn.jsdelivr.net/npm/marked@15/lib/marked.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
 <script>
 (function() {
   var conv = document.getElementById('conversation');
@@ -280,6 +281,10 @@ export function viewerHTML(sseUrl: string): string {
   var hasContent = false;
   var lastFrameAt = 0;
   var watchdog = null;
+  // Dedupe: txn_ids we've already rendered as 'queued' (server replay or our own echo)
+  var seenQueuedTxnIds = Object.create(null);
+  // Our own outgoing txn_ids — suppress server's queued echo for these
+  var ownTxnIds = Object.create(null);
 
   function resetWatchdog() {
     lastFrameAt = Date.now();
@@ -304,7 +309,13 @@ export function viewerHTML(sseUrl: string): string {
 
   function renderMd(text) {
     if (typeof marked !== 'undefined' && marked.parse) {
-      try { return marked.parse(text, { breaks: true }); } catch(e) {}
+      try {
+        var raw = marked.parse(text, { breaks: true });
+        if (typeof DOMPurify !== 'undefined' && DOMPurify.sanitize) {
+          return DOMPurify.sanitize(raw, { USE_PROFILES: { html: true } });
+        }
+        // DOMPurify failed to load — fall through to text-only
+      } catch(e) {}
     }
     var el = document.createElement('span');
     el.textContent = text;
@@ -364,6 +375,12 @@ export function viewerHTML(sseUrl: string): string {
 
   onSSE('message.queued', function(e) {
     var d = JSON.parse(e.data);
+    var txn = d.txn_id;
+    // Suppress server echo for messages we sent locally (already shown as "you (sending)")
+    if (txn && ownTxnIds[txn]) return;
+    // Suppress duplicates on EventSource reconnect / replay
+    if (txn && seenQueuedTxnIds[txn]) return;
+    if (txn) seenQueuedTxnIds[txn] = true;
     addTurn('queued', d.actor, d.text || '');
   });
 
@@ -437,6 +454,7 @@ export function viewerHTML(sseUrl: string): string {
           var text = input.value.trim();
           if (!text) return;
           var txnId = 'web-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+          ownTxnIds[txnId] = true;
           input.value = '';
           addTurn('queued', 'you (sending)', text);
           fetch(postUrl, {

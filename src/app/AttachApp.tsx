@@ -166,6 +166,9 @@ export default function AttachApp({ url }: AttachAppProps) {
     };
     setTurns((prev) => [...prev, echoTurn]);
 
+    // Clear the composer immediately on submit
+    setClearCount((c) => c + 1);
+
     try {
       await postMessage(parsed.host, parsed.sessionId, parsed.token, input, txn_id);
     } catch {
