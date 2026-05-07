@@ -4,7 +4,22 @@ let tunnelProcess: Subprocess | null = null;
 let cachedUrl: string | null = null;
 let pendingTunnel: Promise<string | null> | null = null;
 
+function tunnelDead(): boolean {
+  return tunnelProcess !== null && tunnelProcess.exitCode !== null;
+}
+
+function clearDeadTunnel(): void {
+  if (tunnelDead()) {
+    cachedUrl = null;
+    tunnelProcess = null;
+  }
+}
+
 export async function startTunnel(port: number): Promise<string | null> {
+  // If the cached URL points at a subprocess that has since exited, drop it
+  // so we restart instead of handing back a dead bore.pub:port.
+  clearDeadTunnel();
+
   if (cachedUrl) return cachedUrl;
   if (pendingTunnel) return pendingTunnel;
 
@@ -32,12 +47,22 @@ async function _startTunnel(port: number): Promise<string | null> {
   return null;
 }
 
+function watchExit(proc: Subprocess): void {
+  proc.exited.then(() => {
+    if (tunnelProcess === proc) {
+      tunnelProcess = null;
+      cachedUrl = null;
+    }
+  });
+}
+
 async function startBore(borePath: string, port: number): Promise<string | null> {
   const proc = Bun.spawn([borePath, "local", String(port), "--to", "bore.pub"], {
     stdout: "pipe",
     stderr: "pipe",
   });
   tunnelProcess = proc;
+  watchExit(proc);
 
   // bore writes to stdout when piped (not stderr)
   const reader = proc.stdout.getReader();
@@ -77,10 +102,12 @@ async function startBore(borePath: string, port: number): Promise<string | null>
 }
 
 async function startNgrok(ngrokPath: string, port: number): Promise<string | null> {
-  tunnelProcess = Bun.spawn([ngrokPath, "http", String(port), "--log", "stderr"], {
+  const proc = Bun.spawn([ngrokPath, "http", String(port), "--log", "stderr"], {
     stdout: "ignore",
     stderr: "ignore",
   });
+  tunnelProcess = proc;
+  watchExit(proc);
 
   for (let attempt = 0; attempt < 20; attempt++) {
     await new Promise((r) => setTimeout(r, 500));
@@ -114,6 +141,8 @@ export function stopTunnel(): void {
 }
 
 export function getTunnelUrl(): string | null {
+  // Never hand back a URL that points at a subprocess that has died.
+  clearDeadTunnel();
   return cachedUrl;
 }
 
