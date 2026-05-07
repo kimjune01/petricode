@@ -73,8 +73,13 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious", shar
       clearInterval(streamFlushRef.current);
       streamFlushRef.current = null;
     }
-    setStreamingText(streamBufRef.current);
+    // Clear streamingText — the settled Turn is about to land in <Static>
+    // and would otherwise render alongside the stale live tail, producing
+    // duplicated assistant blocks in scrollback. Resetting the ref alone
+    // is not enough; React state needs an explicit "".
     streamBufRef.current = "";
+    lastFlushedRef.current = "";
+    setStreamingText("");
   }, []);
   // Ctrl+C during a confirmation prompt must REJECT, not resolve("deny").
   // Resolving "deny" reaches toolSubpipe as a user denial and gets recorded
