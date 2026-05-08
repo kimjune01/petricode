@@ -1681,7 +1681,12 @@ describe("shell truncation partial-fill", () => {
     // Count payload bytes (excluding the truncation marker line).
     const marker = "\n[output truncated";
     const idx = result.indexOf(marker);
-    const payload = idx >= 0 ? result.slice(0, idx) : result;
+    let payload = idx >= 0 ? result.slice(0, idx) : result;
+    // Strip the signal-name prefix shell.ts prepends when truncation
+    // SIGTERMs the child (`[killed by SIGTERM]\n`). It's framing, not
+    // captured output, so it shouldn't count against the byte cap.
+    const killPrefix = /^\[killed by [A-Z0-9]+\]\n/;
+    payload = payload.replace(killPrefix, "");
     // Pre-fix: one chunk worth (up to ~64KB) lost. Post-fix: within
     // a small margin of the 1MB cap.
     const payloadBytes = Buffer.byteLength(payload, "utf8");
