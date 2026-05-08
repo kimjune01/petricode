@@ -68,18 +68,37 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious", shar
     }, 200);
   }, []);
 
-  const stopStreamThrottle = useCallback(() => {
+  // Settled-turn path: the returned Turn is about to land in <Static>
+  // and would otherwise render alongside the stale live tail, producing
+  // duplicated assistant blocks in scrollback. Resetting the ref alone
+  // is not enough; React state needs an explicit "".
+  const finishStreamThrottle = useCallback(() => {
     if (streamFlushRef.current) {
       clearInterval(streamFlushRef.current);
       streamFlushRef.current = null;
     }
-    // Clear streamingText — the settled Turn is about to land in <Static>
-    // and would otherwise render alongside the stale live tail, producing
-    // duplicated assistant blocks in scrollback. Resetting the ref alone
-    // is not enough; React state needs an explicit "".
     streamBufRef.current = "";
     lastFlushedRef.current = "";
     setStreamingText("");
+  }, []);
+
+  // Abort/error path: no settled Turn will land, so preserve whatever
+  // partial text has streamed so the user can still see what the model
+  // produced before interruption. Just stop the flush interval and
+  // leave streamingText alone — MessageList keeps rendering it as a
+  // live block until the next turn starts (startStreamThrottle resets
+  // the buffer).
+  const cancelStreamThrottle = useCallback(() => {
+    if (streamFlushRef.current) {
+      clearInterval(streamFlushRef.current);
+      streamFlushRef.current = null;
+    }
+    // One last flush so any chunks that arrived between the previous
+    // 200ms tick and the abort don't get dropped.
+    if (streamBufRef.current !== lastFlushedRef.current) {
+      lastFlushedRef.current = streamBufRef.current;
+      setStreamingText(streamBufRef.current);
+    }
   }, []);
   // Ctrl+C during a confirmation prompt must REJECT, not resolve("deny").
   // Resolving "deny" reaches toolSubpipe as a user denial and gets recorded
@@ -208,6 +227,9 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious", shar
       if ((state.phase === "running" || state.phase === "confirming") && abortRef.current) {
         abortRef.current.abort();
         abortRef.current = null;
+        // Stop the flush interval but preserve any partial streamed text
+        // — user wants to see what the model produced before they hit ^C.
+        cancelStreamThrottle();
         // If confirming, REJECT the pending confirmation (don't resolve false)
         // so toolSubpipe routes through interruptedResult, not "Denied by user".
         if (confirmResolveRef.current) {
@@ -298,7 +320,7 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious", shar
             },
           });
           share.bridge.emitAssistantTurn(guestTurn);
-          stopStreamThrottle();
+          finishStreamThrottle();
           setState((prev) => ({
             ...prev,
             turns: [...prev.turns, guestTurn],
@@ -310,7 +332,7 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious", shar
           const errMsg = err instanceof Error ? err.message : String(err);
           addSystemTurn(`[guest error] ${errMsg}`);
         }
-        stopStreamThrottle();
+        cancelStreamThrottle();
       }
 
       if (abortRef.current === controller) abortRef.current = null;
@@ -318,7 +340,7 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious", shar
     }, 500);
 
     return () => clearInterval(interval);
-  }, [share, pipeline, state.phase, addSystemTurn, startStreamThrottle, stopStreamThrottle]);
+  }, [share, pipeline, state.phase, addSystemTurn, startStreamThrottle, finishStreamThrottle, cancelStreamThrottle]);
 
   // Surface ALLOW verdicts inline so users see what auto-ran without a
   // y/n. ASK_USER's rationale is rendered inside ToolConfirmation via
@@ -465,7 +487,7 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious", shar
 
         // Append host result BEFORE draining guests so local TUI order
         // matches remote SSE order: host user → host assistant → guest → ...
-        stopStreamThrottle();
+        finishStreamThrottle();
         setState((prev) => ({
           ...prev,
           turns: [...prev.turns, resultTurn],
@@ -505,7 +527,7 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious", shar
                 },
               });
               share.bridge.emitAssistantTurn(guestTurn);
-              stopStreamThrottle();
+              finishStreamThrottle();
               setState((prev) => ({
                 ...prev,
                 turns: [...prev.turns, guestTurn],
@@ -527,7 +549,11 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious", shar
         // Same identity guard as the success path — a settled abort
         // for turn 1 must not erase the controller for turn 2.
         if (abortRef.current === controller) abortRef.current = null;
-        stopStreamThrottle();
+        // Preserve any partial streamed text on abort/error so the user
+        // can see what the model produced before the failure. The catch
+        // block below will append a [error] turn for non-abort errors;
+        // the live tail then sits above it in scrollback.
+        cancelStreamThrottle();
         // Abort is not surfaced as an error — but we still need to drop
         // back to "composing" or the composer stays disabled. The
         // user-Ctrl+C path already sets phase to "composing" before this
