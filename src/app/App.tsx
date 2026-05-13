@@ -281,6 +281,29 @@ export default function App({ pipeline, resumeSessionId, mode = "cautious", shar
     setState((prev) => ({ ...prev, turns: [...prev.turns, turn] }));
   }, []);
 
+  // Surface a system message when the heartbeat declares the tunnel dead
+  // (2 consecutive missed pings — bore.pub dropped us, NAT timeout, etc).
+  // Tunnel state is module-global, so this listener belongs here even if
+  // `share` itself isn't configured: the user may have started a tunnel
+  // through some other path. Registration is idempotent (last writer wins).
+  useEffect(() => {
+    let cancelled = false;
+    void import("../share/tunnel.js").then(({ setTunnelDeadCallback }) => {
+      if (cancelled) return;
+      setTunnelDeadCallback((deadUrl) => {
+        addSystemTurn(
+          `[share] tunnel dropped (${deadUrl}) — type /share to get a new URL`,
+        );
+      });
+    });
+    return () => {
+      cancelled = true;
+      void import("../share/tunnel.js").then(({ setTunnelDeadCallback }) => {
+        setTunnelDeadCallback(null);
+      });
+    };
+  }, [addSystemTurn]);
+
   // Poll guest message queue while idle — process guest messages even
   // when the host hasn't submitted anything.
   useEffect(() => {

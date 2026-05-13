@@ -1,7 +1,7 @@
 import type { CommandResult } from "./index.js";
 import type { ShareServer } from "../share/server.js";
 import type { InviteRegistry, RoomScope } from "../share/invites.js";
-import { startTunnel, getTunnelUrl } from "../share/tunnel.js";
+import { startTunnel, checkTunnel, getTunnelUrl } from "../share/tunnel.js";
 
 export interface ShareCommandContext {
   server: ShareServer;
@@ -24,7 +24,8 @@ function formatShareOutput(
     "--- copy below ---",
     `${url}`,
     "",
-    `Terminal: curl -sN "${url}&format=ansi"`,
+    `Terminal (read-only):  curl -sN "${url}&format=ansi"`,
+    `Terminal (read-write): petricode attach "${url}"`,
     "",
     `https://github.com/kimjune01/petricode`,
     "--- copy above ---",
@@ -44,6 +45,7 @@ export function makeShareHandler(ctx: ShareCommandContext): (args: string) => Co
 
     const invite = ctx.invites.create(ctx.sessionId, "kitchen");
 
+    // Manually configured host: synchronous, no tunnel involvement.
     if (ctx.shareHost) {
       return {
         output: formatShareOutput(
@@ -52,31 +54,49 @@ export function makeShareHandler(ctx: ShareCommandContext): (args: string) => Co
       };
     }
 
-    const tunnelUrl = getTunnelUrl();
-    if (tunnelUrl) {
-      return {
-        output: formatShareOutput(tunnelUrl, ctx.sessionId, invite.token, invite.id),
-      };
+    // No tunnel has ever been started in this process: nothing to ping.
+    // Go straight to startTunnel (which handles "bore not installed").
+    if (getTunnelUrl() === null) {
+      return startTunnel(ctx.server.port).then((url) =>
+        finalize(url, ctx.server.port, ctx.sessionId, invite.token, invite.id),
+      );
     }
 
-    // Start tunnel and wait for it (up to ~5s)
-    return startTunnel(ctx.server.port).then((url) => {
-      if (url) {
+    // We have a cached tunnel URL. Probe it — bore.pub may have dropped us
+    // (restart, NAT timeout, network blip) while our local subprocess is
+    // still happily running. checkTunnel() declares dead tunnels dead.
+    return checkTunnel().then((liveUrl) => {
+      if (liveUrl) {
         return {
-          output: formatShareOutput(url, ctx.sessionId, invite.token, invite.id),
+          output: formatShareOutput(liveUrl, ctx.sessionId, invite.token, invite.id),
         };
       }
-
-      const localBase = `http://localhost:${ctx.server.port}`;
-      return {
-        output: [
-          formatShareOutput(localBase, ctx.sessionId, invite.token, invite.id),
-          "",
-          "Local only — for remote: cargo install bore-cli (no signup)",
-          "Or: --share-host <host:port> with a manual tunnel",
-        ].join("\n"),
-      };
+      // Dead — try once more.
+      return startTunnel(ctx.server.port).then((url) =>
+        finalize(url, ctx.server.port, ctx.sessionId, invite.token, invite.id),
+      );
     });
+  };
+}
+
+function finalize(
+  url: string | null,
+  port: number,
+  sessionId: string,
+  token: string,
+  inviteId: string,
+): CommandResult {
+  if (url) {
+    return { output: formatShareOutput(url, sessionId, token, inviteId) };
+  }
+  const localBase = `http://localhost:${port}`;
+  return {
+    output: [
+      formatShareOutput(localBase, sessionId, token, inviteId),
+      "",
+      "Local only — for remote: cargo install bore-cli (no signup)",
+      "Or: --share-host <host:port> with a manual tunnel",
+    ].join("\n"),
   };
 }
 

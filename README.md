@@ -43,6 +43,27 @@ bun test                    # 525 tests, no API keys needed
 bun run src/cli.ts          # TUI shell (interactive, full pipeline)
 ```
 
+## Install as the `petricode` command
+
+Want to type `petricode` instead of `bun run src/cli.ts`? Run this **once** from the repo root:
+
+```bash
+bun link        # registers this checkout as a global package
+bun link petricode   # symlinks the `petricode` binary onto your PATH
+```
+
+Now from anywhere:
+
+```bash
+petricode                          # launch the TUI
+petricode -p "summarize README.md" # one-shot headless turn
+petricode attach <url>             # join a shared session
+```
+
+To remove it: `bun unlink petricode` from the repo root.
+
+> Note: the symlink points back at this checkout, so `git pull` updates the binary in place. No rebuild needed.
+
 Running your own agent requires API keys:
 
 ```bash
